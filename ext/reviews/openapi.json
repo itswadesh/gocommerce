@@ -370,6 +370,71 @@
           }
         }
       }
+    },
+    "/api/admin/x/reviews/products/{id}/summarize": {
+      "post": {
+        "tags": [
+          "admin:reviews"
+        ],
+        "summary": "Summarize what shoppers praise and complain about in a product's reviews",
+        "description": "Requires reviews.read. Runs the AI gateway's `reviews.summarize` task over the product's published reviews: the newest 50 at most, and fewer when their words pass about 32 KB. The model is sent each review's id, rating, title and body, never the reviewer's name or email, and the product's title. Each theme cites the reviews it comes from; a theme citing a review that was not sent fails the task's check and goes to the strong model. `count`, `rating` and the order of the themes are worked out by the engine, not the model. With fewer than 3 published reviews no model is asked and `state` is `too_few`. The same reviews asked about again are answered from the gateway's cache at no cost (`outcome` `cached`). Every run is recorded under AI usage.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewDigest"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "No summary was made, and `error.code` says why: `ai_unavailable` (the binary has no AI gateway), `ai_not_ready` (the gateway is off, or missing its key, cap or a model's price), `ai_data_kept_in` (Share message bodies is off) `ai_budget_exhausted` (this month's cap cannot cover the call) or `ai_credit_exhausted` (the store's AI credit is spent; the message says whether it was the free trial).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`ai_failed`: the provider failed, or neither model's answer passed the checks. Asking again may succeed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -498,6 +563,121 @@
               "type": "integer"
             },
             "description": "How many gave each rating, 1 to 5."
+          }
+        }
+      },
+      "ReviewTheme": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "type": "string",
+            "enum": [
+              "fit",
+              "quality",
+              "colour",
+              "delivery",
+              "value",
+              "other"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "A short phrase, written by the model."
+          },
+          "count": {
+            "type": "integer",
+            "description": "How many distinct reviews the theme cites, counted by the engine."
+          },
+          "review_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "The reviews the theme cites, each once."
+          }
+        }
+      },
+      "ReviewDigest": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "product": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "summarized",
+              "too_few"
+            ]
+          },
+          "rating": {
+            "$ref": "#/components/schemas/ReviewSummary"
+          },
+          "read": {
+            "type": "integer",
+            "description": "How many of the newest published reviews were read; fewer than `rating.count` when some were left out."
+          },
+          "praise": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewTheme"
+            },
+            "description": "Most cited first."
+          },
+          "complaints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewTheme"
+            },
+            "description": "Most cited first."
+          },
+          "reviews": {
+            "type": "array",
+            "description": "The reviews the themes cite, newest first.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "rating": {
+                  "type": "integer"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "cached",
+              "deterministic"
+            ]
+          },
+          "execution_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The run's record under AI usage."
+          },
+          "cost_micro_minor": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What this run cost, in millionths of a minor unit; 0 from the cache or without a model."
+          },
+          "currency": {
+            "type": "string"
           }
         }
       }

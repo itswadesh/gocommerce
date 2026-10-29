@@ -532,6 +532,26 @@ suggested category and an HSN code (an Indian store only) are kept in
 `ai_drafted` as suggestions and never applied. Create twice and nothing is
 made twice: a proposal's product is found by its `ai_drafted.item` mark.
 
+## Review summaries
+
+With the AI gateway, `ext/reviews` summarizes a product's published reviews
+(D153) through the gateway's `reviews.summarize` task:
+
+```http
+POST /api/admin/x/reviews/products/7/summarize   → praise and complaints, each theme citing review ids
+```
+
+The model reads the newest published reviews' ids, ratings, titles and
+bodies, never a name or an email, so the store's Share message bodies switch
+must be on. `rating`, each theme's `count` and the order of the themes are
+worked out by the engine from the cited ids. Fewer than three published
+reviews answers `state: too_few` without a model, and the same reviews asked
+about again come from the gateway's cache at no cost. A refusal carries a
+code saying what to fix: `ai_not_ready`, `ai_data_kept_in`,
+`ai_budget_exhausted`, `ai_credit_exhausted`, `ai_unavailable`, or
+`ai_failed` (try again). A summary from the cache, or for too few reviews,
+draws no AI credit.
+
 ## The sample shop
 
 A store can start with a sample shop (D94, D96): `POST /api/stores/create` with
