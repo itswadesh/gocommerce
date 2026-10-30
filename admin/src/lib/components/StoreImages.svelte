@@ -11,6 +11,7 @@
      * address in the form below is neither saved nor lost.
      */
     import { api, can, query, storeProfile } from "$lib/api.js";
+    import { loadProfile } from "$lib/settings.svelte.js";
     import { mediaQuery } from "$lib/media.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
@@ -68,6 +69,8 @@
                 [`${key}_media_id`]: id,
             });
             onsaved?.(saved);
+            // The panel's header draws the store's logo.
+            loadProfile({ force: true });
             status[key] = "saved";
             toast.success(id ? "Picture saved" : "Picture removed");
             setTimeout(() => status[key] === "saved" && (status[key] = ""), 1600);

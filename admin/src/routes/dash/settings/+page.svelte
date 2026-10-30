@@ -20,7 +20,7 @@
      * catalog prices include tax.
      */
     import { base } from "$app/paths";
-    import { settings, loadSettings } from "$lib/settings.svelte.js";
+    import { settings, loadSettings, loadProfile as refreshProfile } from "$lib/settings.svelte.js";
     import { storeProfile, can, stores as storesAPI } from "$lib/api.js";
     import { forgetStores, loadStores, myStores } from "$lib/stores.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
@@ -250,6 +250,8 @@
             // The name here is the store's name, so the account menu and the
             // store list change with it.
             loadStores().catch(() => {});
+            // And the panel's header draws the store's name and logo.
+            refreshProfile({ force: true });
         } catch (err) {
             toast.error(err);
         } finally {

@@ -4046,6 +4046,15 @@ button.media-check {
     max-width: 120px;
     object-fit: contain;
 }
+/* A store's logo drawn for dark backgrounds replaces its own in the dark
+   theme, and is hidden in the light one. */
+.app-brand-logo-dark,
+[data-color-scheme="dark"] .app-brand-logo.has-dark {
+    display: none;
+}
+[data-color-scheme="dark"] .app-brand-logo-dark {
+    display: block;
+}
 /* On a first visit the brand's name arrives with the auth-state answer, a
    moment after the page: it fades in rather than popping into place. */
 .app-brand-name:empty {
