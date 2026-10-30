@@ -1348,6 +1348,44 @@
         }
       }
     },
+    "/api/tracking-updates/{hook}": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "A carrier's tracking callback",
+        "description": "A core-owned route that hands a carrier's tracking callback to the fulfillment module that asked for it (TrackingReceiver), under a name the module chose: a carrier may refuse a callback address containing its own name, as Shiprocket does. No store is resolved for it; the module finds the store in whatever authenticates the call, and reports what it learns through Fulfillments.Track. What the module answers is its own; Shiprocket's (hook `courier-aggregator`) is always 200, because Shiprocket expects nothing else.",
+        "parameters": [
+          {
+            "name": "hook",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Received by the module."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/orders/{number}": {
       "get": {
         "tags": [
@@ -18903,6 +18941,20 @@
               "cancelled"
             ]
           },
+          "tracking_status": {
+            "type": "string",
+            "enum": [
+              "in_transit",
+              "out_for_delivery",
+              "delivery_failed",
+              "delivered",
+              "returning",
+              "returned",
+              "lost",
+              "cancelled"
+            ],
+            "description": "The carrier's latest word on the parcel, when a carrier module reports one. `delivery_failed` is a failed attempt (an NDR); `returning` and `returned` are the parcel going back to the store (RTO). Absent when no carrier has said anything."
+          },
           "lines": {
             "type": "array",
             "description": "What went in this parcel. Empty on a shipment recorded before shipments named their contents.",
@@ -19643,6 +19695,10 @@
           },
           "reason": {
             "type": "string"
+          },
+          "tracking_status": {
+            "type": "string",
+            "description": "What a carrier reported, on `order.shipment_updated`: one of the fulfillment `tracking_status` values. Its own words for it are in `reason`."
           },
           "change": {
             "$ref": "#/components/schemas/OrderChange"

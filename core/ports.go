@@ -145,6 +145,24 @@ type FulfillmentProvider interface {
 	Ship(ctx context.Context, order *Order, req ShipRequest) (Shipment, error)
 }
 
+// TrackingReceiver is an optional capability of a FulfillmentProvider whose
+// carrier calls back with tracking. The engine serves Tracking() at
+// POST /api/tracking-updates/{TrackingHook()}.
+//
+// The provider names the last segment rather than the engine using its code,
+// because a carrier may refuse a callback address containing its own name —
+// Shiprocket does. And the route binds no store: a carrier names none the
+// resolver understands, so the handler finds the store in whatever
+// authenticates the call and binds it with WithStore before reading anything.
+// A handler that forgets sees no rows, which fails closed.
+//
+// What the handler learns it reports through [Fulfillments.Track], never by
+// writing a core table.
+type TrackingReceiver interface {
+	TrackingHook() string
+	Tracking() http.Handler
+}
+
 // ShipRequest is what an operator asked for. Meta is the pass-through that
 // lets a carrier module accept its own options — courier choice, pickup slot —
 // without the engine learning any carrier's vocabulary.
@@ -329,6 +347,21 @@ func (a *App) RegisterFulfillment(f FulfillmentProvider) {
 	if owner, exists := a.fulfillmentOwners[code]; exists && owner != coreMigrationOwner {
 		a.regErrf("fulfillment code %q is already provided by module %q", code, owner)
 		return
+	}
+	if t, ok := f.(TrackingReceiver); ok {
+		hook := t.TrackingHook()
+		if hook == "" || strings.ContainsAny(hook, "/?#") {
+			a.regErrf("module %q: tracking hook %q is not a path segment", a.ownerName(), hook)
+			return
+		}
+		if _, taken := a.fulfillment.hooks[hook]; taken {
+			a.regErrf("tracking hook %q is already served for another carrier", hook)
+			return
+		}
+		if a.fulfillment.hooks == nil {
+			a.fulfillment.hooks = map[string]TrackingReceiver{}
+		}
+		a.fulfillment.hooks[hook] = t
 	}
 	a.fulfillment.providers[code] = f
 	a.fulfillmentOwners[code] = a.ownerName()
