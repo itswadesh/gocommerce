@@ -28,6 +28,7 @@
         "order.refund_settle": { icon: "ri-refund-2-line", label: "Refund settled by hand" },
         "order.shipment_update": { icon: "ri-truck-line", label: "Tracking corrected" },
         "order.shipment_delete": { icon: "ri-truck-line", label: "Shipment removed" },
+        "order.shipment_cancel": { icon: "ri-truck-line", label: "Shipment cancelled" },
         "order.mark_failed": { icon: "ri-error-warning-line", label: "Payment failed" },
     };
 
@@ -69,6 +70,8 @@
     let { entries = [], loading = false, currency = "USD" } = $props();
 
     function look(entry) {
+        // order.unshipped is a removal or a cancellation; the act says which.
+        if (entry.action === "order.shipment_cancel") return ACTIONS[entry.action];
         if (entry.name && EVENTS[entry.name]) return EVENTS[entry.name];
         // order.edited is deliberately not in that table: it is two different
         // things under one name, and the change block is what tells them apart.
