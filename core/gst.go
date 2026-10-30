@@ -20,15 +20,15 @@ type GSTIN string
 // GSTState is one state or union territory as GST numbers it.
 type GSTState struct {
 	// Code is the two-digit GST code, the first two characters of a GSTIN.
-	Code string
+	Code string `json:"code"`
 	// ISO is the code StateCode returns for the same place, empty for "Other
 	// Territory", which has no ISO subdivision.
-	ISO  string
-	Name string
+	ISO  string `json:"iso"`
+	Name string `json:"name"`
 	// UT is a union territory without a legislature, where UTGST takes the
 	// place of SGST. Delhi, Puducherry and Jammu and Kashmir have legislatures
 	// and charge SGST.
-	UT bool
+	UT bool `json:"ut"`
 }
 
 // gstStates is the one list of GST state codes; every lookup is derived from it.
