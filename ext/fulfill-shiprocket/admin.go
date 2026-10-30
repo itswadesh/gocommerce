@@ -22,7 +22,7 @@ func (m *Module) routes(app *gocommerce.App) {
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/documents/{kind}", m.handleDocument, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/pickup", m.handlePickup, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/cancel", m.handleCancel, gocommerce.RightOrdersFulfill)
-	app.HandleAdminFunc("POST "+base+"/shipments/{id}/track", m.handleTrack, gocommerce.RightOrdersRead)
+	app.HandleAdminFunc("POST "+base+"/shipments/{id}/track", m.handleTrack, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("GET "+base+"/shipments/{id}/ndr", m.handleNDR, gocommerce.RightOrdersRead)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/ndr", m.handleNDRAction, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/webhook", m.handleWebhookToken, gocommerce.RightPluginsWrite)

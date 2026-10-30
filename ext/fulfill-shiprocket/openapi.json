@@ -437,7 +437,7 @@
             "$ref": "#/components/parameters/PathID"
           }
         ],
-        "description": "Needs orders.read. Reads the waybill's tracking from Shiprocket and applies it as the webhook would: the booking's status, scans and delivery estimate, and the order's shipment through Fulfillments.Track. Every parcel still on its way is also asked about every thirty minutes, for the updates a webhook did not bring. 409 for a cancelled booking or one with no waybill; 422 when Shiprocket refuses.",
+        "description": "Needs orders.fulfill, since what it reads can deliver the order. Reads the waybill's tracking from Shiprocket and applies it as the webhook would: the booking's status, scans and delivery estimate, and the order's shipment through Fulfillments.Track. Every parcel still on its way is also asked about every thirty minutes, for the updates a webhook did not bring. 409 for a cancelled booking or one with no waybill; 422 when Shiprocket refuses.",
         "responses": {
           "200": {
             "description": "The booking.",

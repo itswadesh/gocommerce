@@ -6,9 +6,12 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,7 +101,20 @@ var terminal = []int{7, 8, 10, 12, 24, 25, 44, 45}
 // the order, through the engine. An update older than the last one applied is
 // dropped: Shiprocket's events can arrive out of order, and a late "in
 // transit" must not undo "out for delivery".
+//
+// The engine is told first and the row written after, so a failure between
+// them leaves the row as it was and the next webhook or poll tries again; the
+// other way round, a delivery recorded here and lost on the order would never
+// be asked about again. Both run detached from the request: Shiprocket hanging
+// up must not stop a delivery half-way.
 func (m *Module) apply(ctx context.Context, row *shipment, u srUpdate) error {
+	ctx = detached(ctx)
+	// The row as it is now, not as it was read before Shiprocket was asked: a
+	// webhook may have landed while a poll was waiting for its answer.
+	row, err := m.shipmentByID(ctx, row.ID)
+	if err != nil {
+		return err
+	}
 	if row.trackedAt != nil && u.at.Before(*row.trackedAt) {
 		return nil
 	}
@@ -106,37 +122,35 @@ func (m *Module) apply(ctx context.Context, row *shipment, u srUpdate) error {
 	if err != nil {
 		return err
 	}
-	if err := m.save(ctx, row.ID, map[string]any{
-		"status_code": u.code, "status": u.label, "scans": string(scans), "etd": u.etd, "tracked_at": u.at,
-	}); err != nil {
-		return err
-	}
+	set := map[string]any{"status_code": u.code, "status": u.label, "scans": string(scans), "etd": u.etd, "tracked_at": u.at}
 	status, known := engineStatus(u.code)
 	if !known {
 		m.log.Warn("shiprocket: a shipment status this module does not know; keeping the parcel in transit",
 			"status_id", u.code, "status", u.label, "awb", row.AWB)
 		status = gocommerce.TrackingInTransit
 	}
-	if status == "" {
-		return nil
-	}
 	if status == gocommerce.TrackingCancelled && row.CancelledAt == nil {
 		// Shiprocket called it off: the booking is over here too, so the card
 		// stops offering to cancel it and the next booking takes a new id.
-		now := time.Now()
-		row.CancelledAt = &now
-		if err := m.save(ctx, row.ID, map[string]any{"cancelled_at": now}); err != nil {
+		set["cancelled_at"] = time.Now()
+	}
+	if status != "" {
+		if err := m.tell(ctx, row, status, u); err != nil {
 			return err
 		}
 	}
+	return m.saveIfNewer(ctx, row.ID, u.at, set)
+}
+
+// tell gives the engine what Shiprocket said, for a parcel recorded on the order.
+func (m *Module) tell(ctx context.Context, row *shipment, status string, u srUpdate) error {
 	order, err := m.app.Order().Get(ctx, row.OrderID)
 	if err != nil {
 		return err
 	}
 	fid := recordedAs(order, row)
 	if fid == 0 {
-		// Booked but never recorded on the order, or a return's waybill:
-		// the row is the whole record.
+		// Booked but never recorded on the order: the row is the whole record.
 		return nil
 	}
 	detail := u.label
@@ -144,6 +158,33 @@ func (m *Module) apply(ctx context.Context, row *shipment, u srUpdate) error {
 		detail = u.scans[0].Activity
 	}
 	_, err = m.app.Ship().Track(ctx, fid, gocommerce.TrackingUpdate{Status: status, Detail: detail, At: u.at})
+	var apiErr *gocommerce.APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusConflict {
+		// The engine will never take this one — a cancellation of a parcel
+		// recorded delivered, say. Asking again would not change that.
+		m.log.Warn("shiprocket: the order would not take a tracking update", "awb", row.AWB, "status", status, "error", err)
+		return nil
+	}
+	return err
+}
+
+// saveIfNewer writes what Shiprocket said unless something newer was written
+// since this update was read.
+func (m *Module) saveIfNewer(ctx context.Context, id int64, at time.Time, set map[string]any) error {
+	cols := make([]string, 0, len(set))
+	for k := range set {
+		cols = append(cols, k)
+	}
+	sort.Strings(cols)
+	args := []any{id, at}
+	assign := make([]string, 0, len(cols)+1)
+	for _, k := range cols {
+		args = append(args, set[k])
+		assign = append(assign, fmt.Sprintf("%s = $%d", k, len(args)))
+	}
+	assign = append(assign, "updated_at = now()")
+	_, err := m.app.DB().ExecContext(ctx, "UPDATE shiprocket_shipments SET "+strings.Join(assign, ", ")+
+		" WHERE id = $1 AND (tracked_at IS NULL OR tracked_at <= $2)", args...)
 	return err
 }
 
@@ -163,9 +204,18 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	defer func() { gocommerce.Respond(w, http.StatusOK, map[string]bool{"accepted": accepted}) }()
 
 	key := r.Header.Get("x-api-key")
-	store, _, _ := strings.Cut(key, ".")
-	if store == "" {
-		m.log.Warn("shiprocket: a tracking call without a token")
+	prefix, _, _ := strings.Cut(key, ".")
+	if !gocommerce.ValidStoreID(prefix) {
+		m.log.Warn("shiprocket: a tracking call without a token this engine issues")
+		return
+	}
+	// A copy: the prefix would otherwise hold the whole header in memory for
+	// as long as anything keeps the id.
+	store := strings.Clone(prefix)
+	// The checks the store resolver makes for every other request: it exists
+	// and it is open. A suspended store's orders do not move.
+	if st, err := m.app.Stores().Get(r.Context(), store); err != nil || st.Status != "active" {
+		m.log.Warn("shiprocket: a tracking call for no open store", "store", store)
 		return
 	}
 	ctx := gocommerce.WithStore(r.Context(), store)
@@ -188,6 +238,11 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&ev); err != nil || ev.AWB == "" {
 		m.log.Warn("shiprocket: a tracking call this module could not read", "store", store)
+		return
+	}
+	if ev.ShipmentStatusID == 0 {
+		// No status code is no news about where the parcel is.
+		m.log.Warn("shiprocket: a tracking call with no shipment status", "store", store, "awb", ev.AWB)
 		return
 	}
 	row, err := m.shipmentByAWB(ctx, ev.AWB)
@@ -274,6 +329,7 @@ func (m *Module) track(ctx context.Context, rows []*shipment) (int, error) {
 		awbs = append(awbs, r.AWB)
 	}
 	applied := 0
+	var failed error
 	for start := 0; start < len(awbs); start += 50 {
 		batch := awbs[start:min(start+50, len(awbs))]
 		var out map[string]struct {
@@ -284,9 +340,17 @@ func (m *Module) track(ctx context.Context, rows []*shipment) (int, error) {
 				ETD            string `json:"etd"`
 			} `json:"tracking_data"`
 		}
-		if err := m.call(ctx, http.MethodPost, "/v1/external/courier/track/awbs", nil,
-			map[string]any{"awbs": batch}, &out); err != nil {
-			return applied, err
+		err := m.call(ctx, http.MethodPost, "/v1/external/courier/track/awbs", nil, map[string]any{"awbs": batch}, &out)
+		if _, perr := m.app.DB().ExecContext(ctx,
+			`UPDATE shiprocket_shipments SET polled_at = now() WHERE awb = ANY($1::text[])`, textArray(batch)); perr != nil {
+			return applied, perr
+		}
+		if err != nil {
+			// One refused batch — waybills from an account since replaced,
+			// say — must not stop the rest being asked about.
+			m.log.Warn("shiprocket: a tracking batch was refused", "error", err)
+			failed = err
+			continue
 		}
 		for awb, t := range out {
 			row, ok := byAWB[awb]
@@ -294,11 +358,15 @@ func (m *Module) track(ctx context.Context, rows []*shipment) (int, error) {
 				continue
 			}
 			scans := newestFirst(t.Data.Activities)
-			at := time.Now()
-			if len(scans) > 0 {
-				if parsed, err := time.ParseInLocation("2006-01-02 15:04:05", scans[0].Date, ist); err == nil {
-					at = parsed
-				}
+			// The newest scan's time is when Shiprocket learned this. Without
+			// one there is nothing to order it against a webhook by, and
+			// "now" would outrank every real report.
+			if len(scans) == 0 {
+				continue
+			}
+			at, err := time.ParseInLocation("2006-01-02 15:04:05", scans[0].Date, ist)
+			if err != nil {
+				continue
 			}
 			label := ""
 			if len(scans) > 0 {
@@ -312,7 +380,15 @@ func (m *Module) track(ctx context.Context, rows []*shipment) (int, error) {
 			applied++
 		}
 	}
-	return applied, nil
+	return applied, failed
+}
+
+func textArray(v []string) string {
+	quoted := make([]string, len(v))
+	for i, s := range v {
+		quoted[i] = strconv.Quote(s)
+	}
+	return "{" + strings.Join(quoted, ",") + "}"
 }
 
 // pending is what is worth asking about: booked, not cancelled, not finished,
@@ -324,7 +400,7 @@ func (m *Module) pending(ctx context.Context) ([]*shipment, error) {
 		WHERE awb <> '' AND cancelled_at IS NULL
 		  AND NOT (coalesce(status_code, 0) = ANY($1::int[]))
 		  AND created_at > now() - interval '60 days'
-		ORDER BY coalesce(tracked_at, created_at)
+		ORDER BY coalesce(polled_at, created_at)
 		LIMIT 500`, intArray(terminal))
 	if err != nil {
 		return nil, err

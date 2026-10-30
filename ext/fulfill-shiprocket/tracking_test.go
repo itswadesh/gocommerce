@@ -299,3 +299,63 @@ func TestShiprocketsCancellationClosesTheBooking(t *testing.T) {
 		t.Errorf("booking = %+v, want it closed", rows)
 	}
 }
+
+// A token naming no real store, or a store that is suspended, changes
+// nothing — and leaves nothing behind in memory.
+func TestAWebhookForNoLiveStoreChangesNothing(t *testing.T) {
+	h := newHarness(t, Config{}, gocommerce.Config{})
+	second, err := h.app.Stores().Create(context.Background(), "Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := gocommerce.WithStore(context.Background(), second.ID)
+	on := true
+	if _, err := h.app.Plugins().Update(b, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
+		"email": testEmail, "password": testPassword, "pickup_location": "Primary"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, tokenB := webhookToken(t, h.app, second.ID)
+	pb, err := h.app.Products().CreateProduct(b, gocommerce.ProductInput{Title: "b", Status: "active",
+		Variants: []gocommerce.VariantInput{{SKU: "SR-SUSP", PriceMinor: 1000, StockOnHand: ptr(5)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orderB := place(t, h.app, b, pb.DefaultVariant().ID, 1, "560001")
+	shipped, err := h.app.Ship().Create(b, orderB.ID, "shiprocket", gocommerce.ShipRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.DB().ExecContext(context.Background(), `UPDATE stores SET status = 'suspended' WHERE id = $1`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	post(t, h.app, tokenB, event(shipped.Fulfillments[0].Tracking, 7, "DELIVERED", "02 11 2026 10:00:00"))
+	if status, _ := trackingOf(t, h.app, b, orderB.ID); status != gocommerce.OrderShipped {
+		t.Errorf("a suspended store's order is %s after a webhook", status)
+	}
+
+	for _, key := range []string{strings.Repeat("x", 4096) + ".secret", "store_01ZZZZZZZZZZZZZZZZZZZZZZZZ.secret"} {
+		if rec := post(t, h.app, key, event("1", 7, "DELIVERED", "02 11 2026 10:00:00")); rec.Code != http.StatusOK {
+			t.Errorf("answered %d", rec.Code)
+		}
+	}
+	h.mod.live.Range(func(k, _ any) bool {
+		if s := k.(string); len(s) > 100 || s == "store_01ZZZZZZZZZZZZZZZZZZZZZZZZ" {
+			t.Errorf("a token's made-up store %.40q was kept", s)
+		}
+		return true
+	})
+}
+
+// A webhook that carries no status code says nothing about where the parcel is.
+func TestAWebhookWithoutAStatusMovesNothing(t *testing.T) {
+	app, _ := newApp(t, Config{})
+	_, token := webhookToken(t, app, "")
+	variant := measuredProduct(t, app, "SR-NOCODE")
+	order := placeAndShip(t, app, variant.ID, 1, nil)
+	ev := event(order.Fulfillments[0].Tracking, 0, "", "02 11 2026 10:00:00")
+	delete(ev, "shipment_status_id")
+	post(t, app, token, ev)
+	if _, tracked := trackingOf(t, app, context.Background(), order.ID); tracked != "" {
+		t.Errorf("a webhook with no status moved the parcel to %q", tracked)
+	}
+}
