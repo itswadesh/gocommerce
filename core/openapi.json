@@ -1066,6 +1066,71 @@
         }
       }
     },
+    "/api/store/password": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Get past a closed store's password",
+        "description": "For a store closed with a password (the store-close plugin, D168). GET /api/plugins says store-close is on and its password is set as `\"password\": true` — never the password itself. Send the password a visitor typed, and a right one answers with a pass for 30 days; send that pass back as `token` to check it, on every page if you like, which costs no try. A new password ends every pass. Only the storefront's pages are gated: the API, the cart and checkout answer as usual. Each client (an IPv6 /64) gets 20 password tries an hour on a store, right or wrong; past that, 429.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "description": "The password the visitor typed."
+                  },
+                  "token": {
+                    "type": "string",
+                    "description": "A pass an earlier answer gave, to check it is still good."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The password is right, or the pass is good.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "token": {
+                          "type": "string",
+                          "description": "The pass to keep, in a cookie, and send back as token."
+                        },
+                        "expires_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The store is open, or closed without a password."
+          },
+          "422": {
+            "description": "The password is wrong, or the pass is not good: forged, expired, or from before the password changed."
+          },
+          "429": {
+            "description": "Too many password tries from this client in the last hour."
+          }
+        }
+      }
+    },
     "/api/store": {
       "get": {
         "tags": [

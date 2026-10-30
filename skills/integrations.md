@@ -157,7 +157,8 @@ key := app.Plugins().String(ctx, "klaviyo", "private_key")
 ```
 
 Rules that keep it honest: a `secret` field is masked on every read and
-never public, whatever `Public` says; a `Public` field is handed to the
+its value is never public — a `Public` secret reads on the storefront as
+`true` or `false`, whether it is set (D168); any other `Public` field is handed to the
 storefront through `GET /api/plugins`; the screen's value wins over the
 module's `Config`, which stays as the fallback for an environment-first
 store; `DefaultEnabled` is the state before an operator touches it, so a
