@@ -86,7 +86,7 @@
 
     let editorOpen = $state(false);
     let editing = $state(null); // null = creating
-    let form = $state({ title: "", slug: "", position: "", parent_id: null });
+    let form = $state({ title: "", slug: "", position: "", parent_id: null, hsn_code: "" });
     /**
      * The fields products in this category are asked for, as the drawer edits
      * them. They live in the category's `metadata.attributes` — the same place

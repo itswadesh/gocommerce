@@ -17,7 +17,10 @@
     import { gst } from "$lib/api.js";
     import { rise } from "$lib/motion.js";
 
-    let { value = $bindable(""), id = undefined, placeholder = "6109.10 or “t-shirts”", disabled = false, ...rest } = $props();
+    // No fallback on value: binding a field that is not there yet (undefined)
+    // to a prop with one is an error that stops the whole screen. The box
+    // reads undefined as empty instead (typed, below).
+    let { value = $bindable(), id = undefined, placeholder = "6109.10 or “t-shirts”", disabled = false, ...rest } = $props();
 
     const listId = "hsn-" + Math.random().toString(36).slice(2, 10);
     let options = $state([]);
