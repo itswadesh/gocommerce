@@ -1024,7 +1024,7 @@ func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
 	start = time.Now()
 	if code, answer := send(64); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") ||
 		time.Since(start) > 1500*time.Millisecond {
-		t.Errorf("1.3 KB/s, never 0.5 s without a byte = %d %s after %v; want 400 at 0.5 s, under 8 KB/s once 0.5 s have passed",
+		t.Errorf("1.3 KB/s, never 0.5 s without a byte = %d %s after %v; want 400 within a second, 0.5 s behind 8 KB/s",
 			code, answer, time.Since(start).Round(100*time.Millisecond))
 	}
 	body, contentType = form("file", append(jpegRedTop(64, 64), make([]byte, 2<<20)...))

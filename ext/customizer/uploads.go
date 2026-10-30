@@ -194,8 +194,8 @@ func (a *arriving) extend() error {
 
 func readDeadline(start, now time.Time, n int64) time.Time {
 	idle := now.Sub(start) + uploadIdle
-	belowRate := max(uploadIdle, time.Duration(n)*time.Second/minUploadBytesPerSecond)
-	return start.Add(min(idle, belowRate, uploadWithin))
+	fallenBehind := uploadIdle + time.Duration(n)*time.Second/minUploadBytesPerSecond
+	return start.Add(min(idle, fallenBehind, uploadWithin))
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
