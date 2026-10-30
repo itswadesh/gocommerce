@@ -262,6 +262,7 @@
             ends_at: "",
             usage_limit: "",
             once_per_email: false,
+            prepaid_only: false,
             listed: false,
             active: true,
         };
@@ -296,6 +297,7 @@
             ends_at: d.ends_at ? d.ends_at.slice(0, 16) : "",
             usage_limit: d.usage_limit ? String(d.usage_limit) : "",
             once_per_email: d.once_per_email,
+            prepaid_only: !!d.prepaid_only,
             listed: !!d.listed,
             active: d.active,
         };
@@ -464,6 +466,7 @@
             title: form.title.trim(),
             kind: form.kind,
             once_per_email: form.once_per_email,
+            prepaid_only: form.prepaid_only,
             listed: form.listed,
             active: form.active,
             value_bp: 0,
@@ -1098,6 +1101,15 @@
         <div class="field-help">
             A deterrent rather than a control: this shop has no customer accounts, so a second
             address defeats it.
+        </div>
+
+        <div class="field m-t-sm">
+            <input id="d-prepaid" type="checkbox" bind:checked={form.prepaid_only} />
+            <label for="d-prepaid">Prepaid orders only</label>
+        </div>
+        <div class="field-help">
+            Refused when the shopper chooses cash on delivery, so the discount is a reason to pay
+            online.
         </div>
 
         <div class="field m-t-sm">

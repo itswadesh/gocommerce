@@ -51,6 +51,10 @@ var builtinPlugins = []PluginDef{
 	{
 		Key: CODPluginKey, Home: "/dash/settings/payments", Title: "Cash on delivery", Icon: "ri-hand-coin-line", Category: "payments", DefaultEnabled: true,
 		Description: "Shoppers pay in cash when the order arrives. Off, checkout offers only the gateways that are set up.",
+		Fields: []PluginField{
+			{Key: "fee", Label: "Extra charge", Kind: "number", Public: true,
+				Help: "Added to an order paid in cash on delivery, in the store's currency: 60 is ₹60. Empty charges nothing."},
+		},
 	},
 	{
 		Key: "guest-checkout", Home: homeStoreSettings, Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,

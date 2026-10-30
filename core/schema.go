@@ -107,8 +107,25 @@ func coreMigrations() []Migration {
 		{ID: "0089_store_images", SQL: migration0089StoreImages},
 		{ID: "0090_store_contact_page", SQL: migration0090StoreContactPage},
 		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
+		{ID: "0092_order_payment_fee", SQL: migration0092OrderPaymentFee},
+		{ID: "0093_discount_prepaid_only", SQL: migration0093DiscountPrepaidOnly},
 	}
 }
+
+// M93 — a discount that only an order paid up front gets: a code refused on
+// cash on delivery. Off on every existing rule, which is how they behaved.
+const migration0093DiscountPrepaidOnly = `
+ALTER TABLE discounts ADD COLUMN prepaid_only boolean NOT NULL DEFAULT false;
+`
+
+// M92 — what the payment method added to the order: the extra charge a store
+// makes for cash on delivery. Its own column rather than folded into shipping,
+// because the invoice has to say what it was for. Zero on every order before
+// it, which is what they were charged.
+const migration0092OrderPaymentFee = `
+ALTER TABLE orders
+    ADD COLUMN payment_fee_minor bigint NOT NULL DEFAULT 0 CHECK (payment_fee_minor >= 0);
+`
 
 // M91 — what a carrier last said about a parcel (Fulfillments.Track).
 //

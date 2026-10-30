@@ -181,6 +181,9 @@
                 <div><dt>Discount</dt><dd>−{formatMoney(o.discount)}</dd></div>
             {/if}
             <div><dt>Delivery{o.shipping_method ? ` (${o.shipping_method})` : ""}</dt><dd>{formatMoney(o.shipping)}</dd></div>
+            {#if o.payment_fee?.amount_minor}
+                <div><dt>Cash on delivery charge</dt><dd>{formatMoney(o.payment_fee)}</dd></div>
+            {/if}
             <div><dt>Tax{o.tax_inclusive ? " (included)" : ""}</dt><dd>{formatMoney(o.tax)}</dd></div>
             <div class="portal-sums-total"><dt>Total</dt><dd>{formatMoney(o.total)}</dd></div>
             {#if o.refunded?.amount_minor}

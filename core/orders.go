@@ -70,6 +70,9 @@ type Order struct {
 	// Empty means no rate was involved — a store still on the flat number.
 	ShippingMethod string `json:"shipping_method,omitempty"`
 	Discount       Money  `json:"discount"`
+	// PaymentFee is what the payment method added: the store's extra charge
+	// for cash on delivery. Part of Total, never of Subtotal.
+	PaymentFee Money `json:"payment_fee"`
 	// Tax is what was charged across every line. When TaxInclusive it is part
 	// of Subtotal rather than added to it, which is what that flag is for.
 	Tax          Money `json:"tax"`
@@ -353,12 +356,13 @@ const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_prov
 	o.address, o.lang, o.metadata, o.shipping_method,
 	coalesce((SELECT ch.code FROM channels ch WHERE ch.id = o.channel_id), ''),
 	o.created_at, o.updated_at,
-	o.tax_exempt_group_id, o.tax_exempt_group_code, o.tax_exempt_group_name`
+	o.tax_exempt_group_id, o.tax_exempt_group_code, o.tax_exempt_group_name,
+	o.payment_fee_minor`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
 	var addr, meta []byte
-	var subtotal, shipping, discount, tax, total, refunded int64
+	var subtotal, shipping, discount, tax, total, refunded, paymentFee int64
 	var exemptID sql.NullInt64
 	var exemptCode, exemptName sql.NullString
 	if err := row.Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider,
@@ -366,7 +370,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 		&tax, &o.TaxInclusive, &total, &refunded,
 		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta, &o.ShippingMethod,
 		&o.ChannelCode, &o.CreatedAt, &o.UpdatedAt,
-		&exemptID, &exemptCode, &exemptName); err != nil {
+		&exemptID, &exemptCode, &exemptName, &paymentFee); err != nil {
 		return nil, err
 	}
 	if exemptCode.Valid {
@@ -377,6 +381,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 	}
 	o.Subtotal = money(subtotal, o.Currency)
 	o.Shipping = money(shipping, o.Currency)
+	o.PaymentFee = money(paymentFee, o.Currency)
 	o.Discount = money(discount, o.Currency)
 	o.Tax = money(tax, o.Currency)
 	o.Total = money(total, o.Currency)
@@ -1489,10 +1494,10 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 				"an order must keep at least one line; cancel order %s instead", o.Number)
 		}
 
-		var shipping, discount int64
+		var shipping, discount, paymentFee int64
 		if err := tx.QueryRowContext(ctx,
-			`SELECT shipping_minor, discount_minor FROM orders WHERE id = $1`,
-			o.ID).Scan(&shipping, &discount); err != nil {
+			`SELECT shipping_minor, discount_minor, payment_fee_minor FROM orders WHERE id = $1`,
+			o.ID).Scan(&shipping, &discount, &paymentFee); err != nil {
 			return transitionResult{}, err
 		}
 		// The discount follows the basket it came off (D27, amended by D39). A
@@ -1508,7 +1513,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		if err != nil {
 			return transitionResult{}, err
 		}
-		total := subtotal + shipping - discount
+		total := subtotal + shipping - discount + paymentFee
 		if total < 0 {
 			// A discount larger than what is left of the order. The floor is the
 			// database's own CHECK; saying so beats a constraint violation.

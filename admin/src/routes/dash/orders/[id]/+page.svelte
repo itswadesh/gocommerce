@@ -1707,6 +1707,12 @@
                                             : "Free"}
                                     </span>
                                 </div>
+                                {#if order.payment_fee?.amount_minor}
+                                    <div class="order-line">
+                                        <span class="txt-hint">Cash on delivery charge</span>
+                                        <span class="txt-money">{formatMoney(order.payment_fee)}</span>
+                                    </div>
+                                {/if}
                                 <!-- Under the total rather than changing it: the
                                      total is what was agreed, and the refund is
                                      what came back off it. -->
