@@ -309,6 +309,12 @@ func (m *Module) pictureSize(ctx context.Context, what string, id int64) (width,
 	if err != nil {
 		return 0, 0, "", gocommerce.Validationf("%s is not a readable picture", what)
 	}
+	// The size a browser draws it at, which is what the panel measured and
+	// the storefront scales by: a phone's JPEG held on its side is shown
+	// turned by its EXIF orientation, its width and height swapped.
+	if format == "jpeg" && jpegOrientation(body) >= 5 {
+		return cfg.Height, cfg.Width, format, nil
+	}
 	return cfg.Width, cfg.Height, format, nil
 }
 

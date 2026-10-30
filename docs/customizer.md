@@ -47,8 +47,10 @@ design and adds that; remove the old line.
 }
 ```
 
-- **Coordinates** are the mockup's pixels. Draw the mockup at any size and
-  scale everything by the same factor.
+- **Coordinates** are the mockup's pixels as a browser shows it, so a JPEG
+  taken on a phone is measured turned the way its EXIF orientation says.
+  Draw the mockup from its `url` at any size and scale everything by the
+  same factor; a resized copy from the engine's image route is not turned.
 - **The overlay** is a transparent PNG the mockup's size, drawn above the
   design: the camera cut-out, the case's edges. `null` when the product has
   none.

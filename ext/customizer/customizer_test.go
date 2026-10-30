@@ -322,6 +322,24 @@ func TestASetupIsSavedReadAndServedToTheStorefront(t *testing.T) {
 	}
 }
 
+// A phone's photo used as the mockup is measured as the panel and the
+// storefront draw it: turned by its EXIF orientation.
+func TestAMockupIsMeasuredTheWayABrowserShowsIt(t *testing.T) {
+	h := newHarness(t, Config{})
+	c := h.phoneCase(h.ctx, "CASE-O")
+	sideways := h.media(h.ctx, "held.jpg", "image/jpeg", withExif(jpegRedTop(400, 200), 6, ""))
+	in := c.in
+	in.Mockup = &Picture{URL: sideways.URL, Width: 200, Height: 400}
+	if _, err := h.mod.Save(h.ctx, c.product.ID, in); err != nil {
+		t.Errorf("a 400 × 200 JPEG its EXIF turns upright, saved at 200 × 400 = %v, want it saved", err)
+	}
+	in.Mockup = &Picture{URL: sideways.URL, Width: 400, Height: 200}
+	in.PrintArea, in.OverlayURL, in.Enabled = nil, nil, false
+	if _, err := h.mod.Save(h.ctx, c.product.ID, in); err == nil || !strings.Contains(err.Error(), "200 × 400 pixels, not 400 × 200") {
+		t.Errorf("the same JPEG at its stored 400 × 200 = %v, want it refused as the 200 × 400 it is shown at", err)
+	}
+}
+
 func TestEveryRefusalOfASetup(t *testing.T) {
 	h := newHarness(t, Config{})
 	c := h.phoneCase(h.ctx, "CASE-V")
