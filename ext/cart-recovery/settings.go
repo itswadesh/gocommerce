@@ -41,7 +41,7 @@ type Step struct {
 // Action is something a step can do. Email, and WhatsApp: a basket carries a
 // number only when the shopper gave one and agreed to reminders on WhatsApp,
 // so a WhatsApp step goes to the baskets whose shoppers said yes and is
-// skipped for the rest (D168). SMS is not there: nobody agreed to a text. The
+// skipped for the rest (D169). SMS is not there: nobody agreed to a text. The
 // others are listed so the screen is built around a list of actions rather
 // than around email, and says why each is not there yet.
 type Action struct {

@@ -506,7 +506,7 @@ export const telegram = {
 };
 
 /**
- * whatsapp is ext/notify-whatsapp (D168): the store's WhatsApp Business
+ * whatsapp is ext/notify-whatsapp (D169): the store's WhatsApp Business
  * account, which approved template each moment sends, and how it went. The
  * account's IDs and secrets are the plugin's settings, like every credential.
  */

@@ -1,6 +1,6 @@
 // Package whatsapp sends a store's order updates and basket reminders as
 // WhatsApp messages, through Meta's WhatsApp Business Platform Cloud API
-// (D168). Each store connects its own WhatsApp Business account: a phone
+// (D169). Each store connects its own WhatsApp Business account: a phone
 // number ID, the account (WABA) ID and a system user's permanent access token,
 // sealed like every plugin secret (D110). Meta, not this module, is paid for
 // what is sent.
