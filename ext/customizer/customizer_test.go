@@ -347,9 +347,9 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 		{"print too big", func(s *SetupInput) { s.PrintSize.WidthMM = 1001 }, "between 0 and 1000 mm"},
 		{"dpi too low", func(s *SetupInput) { s.PrintSize.DPI = 71 }, "between 72 and 600 dpi"},
 		{"dpi too high", func(s *SetupInput) { s.PrintSize.DPI = 601 }, "between 72 and 600 dpi"},
-		{"print file too many pixels", func(s *SetupInput) {
-			s.PrintSize = &PrintSize{WidthMM: 500, HeightMM: 1000, DPI: 600}
-		}, "lower the resolution"},
+		{"print file over 6 megapixels", func(s *SetupInput) {
+			s.PrintSize = &PrintSize{WidthMM: 75, HeightMM: 150, DPI: 600}
+		}, "1772 × 3543 pixels, over 6 megapixels"},
 		{"unknown font", func(s *SetupInput) { s.Fonts = []string{"comic-sans"} }, "not a font"},
 		{"font twice", func(s *SetupInput) { s.Fonts = []string{"inter", "inter"} }, "chosen twice"},
 		{"words with no font", func(s *SetupInput) { s.Fonts = []string{} }, "choose a font"},
@@ -379,6 +379,11 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 
 	if _, err := h.mod.Save(h.ctx, c.product.ID+999, c.in); err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Errorf("a missing product = %v, want 404", err)
+	}
+	sharpest := c.in
+	sharpest.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 600}
+	if _, err := h.mod.Save(h.ctx, c.product.ID, sharpest); err != nil {
+		t.Errorf("a 1654 × 3307 print file, under 6 megapixels = %v, want it saved", err)
 	}
 	draft := SetupInput{Mockup: &Picture{URL: jpegMockup.URL, Width: 200, Height: 400}}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, draft); err != nil {

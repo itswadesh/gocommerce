@@ -56,7 +56,9 @@ design and adds that; remove the old line.
   `radius`. Clip the design to it.
 - **The print file** is `round(width_mm / 25.4 × dpi)` by
   `round(height_mm / 25.4 × dpi)` pixels. The print area has the same shape,
-  within 2%, so scaling it up by one factor fills the print file.
+  within 2%, so scaling it up by one factor fills the print file. A setup
+  never asks for more than 6 megapixels, so a photo-filled print file saved
+  as a PNG fits an upload: a 75 × 150 mm case at 300 dpi is 886 × 1772.
 - **Fonts** are keys from the theme editor's list. Load each family the way
   the storefront loads the theme's fonts.
 - **`min_photo_px`**: a photo whose shorter side is below this is likely to

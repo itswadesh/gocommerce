@@ -21,12 +21,17 @@ const (
 	maxMockupPx     = 8000
 	maxPrintMM      = 1000.0
 	minDPI, maxDPI  = 72, 600
-	maxPrintPx      = 20000
 	maxStickers     = 30
 	maxMinPhotoPx   = 10000
 	defaultDPI      = 300
 	defaultMinPhoto = 1000
 	aspectTolerance = 0.02
+	// maxPrintPixels is the largest print file a setup may ask for, so the
+	// storefront's PNG of it always fits an upload's maxUploadBytes. A photo
+	// filling the print came to at most 2.5 bytes a pixel in Go's encoder at
+	// its default compression, standing in for a browser's canvas, so 6
+	// megapixels is at most 15 MB; a 75 × 150 mm phone case at 300 dpi is 1.6.
+	maxPrintPixels = 6_000_000
 )
 
 var defaultFonts = []string{"inter", "poppins", "montserrat", "playfair-display", "lora"}
@@ -179,8 +184,8 @@ func (s Setup) check() error {
 	if p.DPI < minDPI || p.DPI > maxDPI {
 		return gocommerce.Validationf("the resolution must be between %d and %d dpi", minDPI, maxDPI)
 	}
-	if w, h := p.PrintPixels(); w > maxPrintPx || h > maxPrintPx {
-		return gocommerce.Validationf("the print file would be %d × %d pixels; the most is %d a side, so lower the resolution", w, h, maxPrintPx)
+	if w, h := p.PrintPixels(); w*h > maxPrintPixels {
+		return gocommerce.Validationf("the print file would be %d × %d pixels, over %d megapixels, which is more than a shopper's upload can carry; lower the resolution", w, h, maxPrintPixels/1_000_000)
 	}
 	if p.WidthMM > 0 && p.HeightMM > 0 && s.PrintArea != nil {
 		want := p.WidthMM / p.HeightMM
