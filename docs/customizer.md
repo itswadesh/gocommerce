@@ -83,12 +83,12 @@ design and adds that; remove the old line.
 | | |
 |---|---|
 | Types | JPEG and PNG. WebP, HEIC and the rest answer 415: draw them into a canvas and send a JPEG (a photo) or a PNG (anything with transparency) |
-| Size | 15 MB at most (413), and 40 megapixels and 16384 pixels a side at most (422). A picture that would take more than 256 MB to decode, turn and write again is refused too (422), with what to do in the message: a 16-bit PNG that large is to be saved as an 8-bit one, a progressive JPEG as an ordinary one. A 12-megapixel phone photo, ordinary or progressive, is well inside it |
-| Time | The file may take up to 3 minutes to arrive, as long as no 15 seconds pass without a byte; otherwise the answer is 400 `upload_too_slow`, which a shopper can act on by moving to a steadier connection |
+| Size | 15 MB at most (413), and 40 megapixels and 16384 pixels a side at most (422). A picture that would take more than 256 MB to decode, turn and write again is refused too (422), with what to do in the message: a 16-bit PNG that large is to be saved as an 8-bit one, a progressive JPEG as an ordinary one. A 12-megapixel phone photo, ordinary or progressive, is well inside it. A progressive JPEG of more than 99 scans, or an ordinary one with more scans than colour components, is refused too (422 `too_many_scans`): libjpeg writes 18 at most, so save it again as an ordinary JPEG |
+| Time | The file may take up to 3 minutes to arrive, as long as no 15 seconds pass without a byte and, once 15 seconds have passed, it has averaged 8 KB a second; otherwise the answer is 400 `upload_too_slow`, which a shopper can act on by moving to a steadier connection |
 | What is kept | The picture, decoded and written again: EXIF and its GPS position are dropped, a JPEG is first turned the way its camera was held, so `width` and `height` are the picture as it is seen, and a 16-bit PNG is kept at 8 bits |
 | Where | The store's media storage under a random name, not the media library. While it arrives and is decoded it is a file in the engine's temporary directory, which must be writable ([operations](operations.md#in-a-container)) |
-| Busy | Uploads are decoded one at a time. When eight are already waiting, or this one has waited 30 seconds, the answer is 503 `busy` with `Retry-After`, and nothing is kept: send it again then |
-| Limit | 30 an hour per address (429, with `Retry-After`) |
+| Busy | Uploads are decoded one at a time. When eight are already waiting, or this one has waited 30 seconds, the answer is 503 `busy` with `Retry-After`, and nothing is kept: send it again then. It does not count against the limit below |
+| Limit | 30 an hour per address (429, with `Retry-After`). An upload answered `busy` or `upload_too_slow` does not count |
 | Kept for | 30 days, then deleted, unless a design in a basket or on an order names it |
 
 The limit counts by the request's address, as every limit in the engine
