@@ -209,7 +209,9 @@ func (m *Module) start(ctx context.Context) error {
 		t := time.NewTicker(sweepEvery)
 		defer t.Stop()
 		for {
-			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+			// Every store, a suspended one too: its shoppers' photos are kept
+			// no longer than RetentionDays whether or not it is serving.
+			err := m.app.ForEveryStore(ctx, func(ctx context.Context) error {
 				_, _, err := m.Sweep(ctx)
 				return err
 			})
