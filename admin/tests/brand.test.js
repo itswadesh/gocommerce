@@ -44,10 +44,19 @@ test("the screens before a store and the header show the brand's name and logo",
     for (const path of ["../src/lib/components/AuthShell.svelte", "../src/routes/+layout.svelte"]) {
         const markup = stripComments(read(path));
         assert.doesNotMatch(markup, />\s*GoCommerce\s*</, `${path} prints a product name`);
-        assert.match(markup, /\{brand\.name\}/, `${path} does not print the brand's name`);
         assert.match(markup, /brand\.logo_url/, `${path} has no place for the brand's logo`);
     }
+    assert.match(stripComments(read("../src/lib/components/AuthShell.svelte")), /\{brand\.name\}/);
     assert.match(read("../src/routes/+layout.svelte"), /loadBrand\(\)/);
+});
+
+// Inside a store the header is the store (D167), and the brand only where the
+// store has said neither.
+test("inside a store the header shows the store's name and logo, else the brand's", () => {
+    const layout = stripComments(read("../src/routes/+layout.svelte"));
+    assert.match(layout, /\(own && profile\.name\) \|\| brand\.name/);
+    assert.match(layout, /profile\.all\.logo_url \? profile\.all\.logo_url : brand\.logo_url/);
+    assert.match(layout, /<span class="app-brand-name">\{name\}<\/span>/);
 });
 
 test("the brand comes from auth-state and is remembered per address", () => {

@@ -13,13 +13,13 @@ const cod = { code: "cod", name: "Cash on delivery", module: "core", configured:
 const codPlugin = (enabled) => ({ key: "payments-cod", module: "", enabled });
 const stripePlugin = (enabled) => ({ key: "payments-stripe", module: "payments-stripe", enabled });
 
-test("cash on delivery is switched by the plugin the engine names", () => {
+test("cash on delivery is switched by the plugin the engine names, and is green when on", () => {
     const card = providerCard(cod, [stripePlugin(true), codPlugin(true)]);
     assert.equal(card.plugin.key, "payments-cod");
-    assert.deepEqual(card.state, { label: "Built in", cls: "" });
+    assert.deepEqual(card.state, { label: "Active", cls: "label-success" });
 });
 
-test("switched off, cash on delivery says Off rather than Built in", () => {
+test("switched off, cash on delivery says Off", () => {
     const card = providerCard({ ...cod, configured: false }, [codPlugin(false)]);
     assert.deepEqual(card.state, { label: "Off", cls: "" });
 });
