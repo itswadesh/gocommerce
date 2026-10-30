@@ -203,7 +203,7 @@ type Config struct {
 	CORSOrigins []string
 	// TrustedProxies are the proxies in front of the engine that it believes
 	// about whom they forward for: a storefront's server, a load balancer
-	// (D161). A request from one of them counts as coming from the nearest
+	// (D163). A request from one of them counts as coming from the nearest
 	// address in its X-Forwarded-For that is not one of them, so a limit per
 	// address (sign-in, sign-up, password reset, order lookup) counts each
 	// shopper and not the proxy. Empty, the default, trusts nobody, loopback
