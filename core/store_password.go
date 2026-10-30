@@ -18,14 +18,12 @@ import (
 // GET /api/plugins; the storefront is told only that there is one.
 //
 // What the visitor keeps is a pass, not the password: the expiry and an HMAC
-// of the store and that expiry, keyed by the password. It needs no table and
-// no install key, and changing the password ends every pass at once, which is
-// how an owner takes the preview back.
-//
-// ponytail: the HMAC key is the password itself, so a stolen pass lets its
-// thief guess the password offline. Somebody holding a pass was let in
-// already; derive the key from an install secret if the password ever guards
-// more than a preview.
+// of the store and that expiry. The key is the password as stored: sealed
+// (D110), that is a random nonce and ciphertext nobody outside the database
+// has, so a stolen pass cannot be used to guess the password offline. Saving
+// the password seals it afresh, so it also ends every pass at once, which is
+// how an owner takes the preview back. On an install without a secrets key
+// the stored value is the password itself, and a pass is only as strong as it.
 
 const (
 	storeCloseKey = "store-close"
@@ -44,32 +42,42 @@ type StorePass struct {
 }
 
 // storePassword is the password of the store ctx is bound to, "" when the
-// store is open or closed without one.
-func (a *App) storePassword(r *http.Request) (string, error) {
+// store is open or closed without one, and the key its passes are signed
+// with: the password as it is stored.
+func (a *App) storePassword(r *http.Request) (password, passKey string, err error) {
 	on, err := a.plugins.Enabled(r.Context(), storeCloseKey)
 	if err != nil || !on {
-		return "", err
+		return "", "", err
 	}
-	return a.plugins.String(r.Context(), storeCloseKey, "password"), nil
+	password = a.plugins.String(r.Context(), storeCloseKey, "password")
+	if password == "" {
+		return "", "", nil
+	}
+	if err := a.db.QueryRowContext(r.Context(),
+		`SELECT coalesce(settings->>'password', '') FROM plugins WHERE key = $1`,
+		storeCloseKey).Scan(&passKey); err != nil {
+		return "", "", err
+	}
+	return password, passKey, nil
 }
 
-func storePassMAC(password, store string, exp int64) []byte {
-	m := hmac.New(sha256.New, []byte(password))
+func storePassMAC(passKey, store string, exp int64) []byte {
+	m := hmac.New(sha256.New, []byte(passKey))
 	m.Write([]byte("gocommerce-store-pass/v1\x00" + store + "\x00" + strconv.FormatInt(exp, 10)))
 	return m.Sum(nil)
 }
 
-func newStorePass(password, store string, now time.Time) StorePass {
+func newStorePass(passKey, store string, now time.Time) StorePass {
 	exp := now.Add(storePassTTL).Unix()
 	return StorePass{
-		Token:     strconv.FormatInt(exp, 10) + "." + base64.RawURLEncoding.EncodeToString(storePassMAC(password, store, exp)),
+		Token:     strconv.FormatInt(exp, 10) + "." + base64.RawURLEncoding.EncodeToString(storePassMAC(passKey, store, exp)),
 		ExpiresAt: time.Unix(exp, 0).UTC(),
 	}
 }
 
 // checkStorePass is whether token is a pass for this store and password that
 // has not expired.
-func checkStorePass(token, password, store string, now time.Time) (StorePass, bool) {
+func checkStorePass(token, passKey, store string, now time.Time) (StorePass, bool) {
 	expText, sig, ok := strings.Cut(token, ".")
 	if !ok {
 		return StorePass{}, false
@@ -79,7 +87,7 @@ func checkStorePass(token, password, store string, now time.Time) (StorePass, bo
 		return StorePass{}, false
 	}
 	mac, err := base64.RawURLEncoding.DecodeString(sig)
-	if err != nil || !hmac.Equal(mac, storePassMAC(password, store, exp)) {
+	if err != nil || !hmac.Equal(mac, storePassMAC(passKey, store, exp)) {
 		return StorePass{}, false
 	}
 	return StorePass{Token: token, ExpiresAt: time.Unix(exp, 0).UTC()}, true
@@ -98,7 +106,7 @@ func (a *App) handleStorePassword(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, Validationf("send the password, or the token a right password answered with"))
 		return
 	}
-	password, err := a.storePassword(r)
+	password, passKey, err := a.storePassword(r)
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -114,7 +122,7 @@ func (a *App) handleStorePassword(w http.ResponseWriter, r *http.Request) {
 	// A pass is 256 bits nobody can guess, so checking one costs no try: the
 	// storefront checks it on every page.
 	if in.Password == "" {
-		pass, ok := checkStorePass(in.Token, password, store, now)
+		pass, ok := checkStorePass(in.Token, passKey, store, now)
 		if !ok {
 			RespondError(w, r, wrong)
 			return
@@ -134,5 +142,5 @@ func (a *App) handleStorePassword(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, wrong)
 		return
 	}
-	Respond(w, http.StatusOK, newStorePass(password, store, now))
+	Respond(w, http.StatusOK, newStorePass(passKey, store, now))
 }
