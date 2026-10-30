@@ -632,18 +632,29 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
-func scanBomb(w, h, scans int) []byte {
+func scanBomb(w, h, scans int, between, resync []byte) []byte {
 	const endOfBands14, longestEndOfBandRun = 0xE0, 1<<15 - 1
 	b := []byte{0xFF, jpegStart}
 	q := bytes.Repeat([]byte{1}, 65)
 	q[0] = 0
 	b = append(b, segment(jpegQuant, q)...)
 	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
-	b = append(b, segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), endOfBands14))...)
+	acTable := segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), endOfBands14))
+	b = append(b, acTable...)
 	b = append(b, segment(jpegProgressive, []byte{8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0})...)
 	blocks := ((w + 7) / 8) * ((h + 7) / 8)
-	b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
-	b = append(b, make([]byte, (blocks+7)/8)...)
+	if resync == nil {
+		b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
+		b = append(b, make([]byte, (blocks+7)/8)...)
+	} else {
+		interval := blocks / 2
+		b = append(b, segment(jpegInterval, []byte{byte(interval >> 8), byte(interval)})...)
+		b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
+		b = append(b, make([]byte, (interval+7)/8)...)
+		b = append(append(b, resync...), 0xFF, jpegRestart0)
+		b = append(b, make([]byte, (blocks-interval+7)/8)...)
+		b = append(b, segment(jpegInterval, []byte{0, 0})...)
+	}
 	var bits []bool
 	for left := blocks; left > 0; left -= longestEndOfBandRun {
 		bits = append(bits, false)
@@ -668,32 +679,48 @@ func scanBomb(w, h, scans int) []byte {
 		}
 	}
 	for range scans - 1 {
-		b = append(b, ac...)
+		b = append(append(b, between...), ac...)
 	}
 	return append(b, 0xFF, jpegEnd)
 }
 
 func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	grey := jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x11}, adobe: -1})
-	scan := grey[bytes.Index(grey, []byte{0xFF, jpegScan}) : len(grey)-2]
-	for name, tc := range map[string]struct {
-		body []byte
-		want int
-	}{
-		"progressive, 99 scans":                 {scanBomb(512, 512, 99), http.StatusCreated},
-		"progressive, 100 scans":                {scanBomb(512, 512, 100), http.StatusUnprocessableEntity},
-		"colour, a scan for each component":     {jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}), http.StatusCreated},
-		"grey, its one component scanned twice": {append(append(bytes.Clone(grey[:len(grey)-2]), scan...), 0xFF, jpegEnd), http.StatusUnprocessableEntity},
-	} {
-		rec := h.uploadRaw("", "file", tc.body)
-		if rec.Code != tc.want || tc.want == http.StatusUnprocessableEntity && !strings.Contains(errorCode(t, rec), "too_many_scans") {
-			t.Errorf("%s = %d %s, want %d", name, rec.Code, rec.Body, tc.want)
+	refused := func(name string, body []byte, want int) {
+		t.Helper()
+		rec := h.uploadRaw("", "file", body)
+		if rec.Code != want || want == http.StatusUnprocessableEntity && !strings.Contains(errorCode(t, rec), "too_many_scans") {
+			t.Errorf("%s = %d %s, want %d", name, rec.Code, rec.Body, want)
 		}
 	}
+	grey := jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x11}, adobe: -1})
+	scan := grey[bytes.Index(grey, []byte{0xFF, jpegScan}) : len(grey)-2]
+	refused("colour, a scan for each component",
+		jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}), http.StatusCreated)
+	refused("grey, its one component scanned twice", append(append(bytes.Clone(grey[:len(grey)-2]), scan...), 0xFF, jpegEnd),
+		http.StatusUnprocessableEntity)
+
+	for name, between := range map[string][]byte{
+		"nothing":            nil,
+		"fill bytes":         {0xFF, 0xFF},
+		"a restart marker":   {0xFF, jpegRestart0},
+		"a stuffed zero":     {0xFF, 0x00},
+		"stray bytes":        {0x00, 0x12},
+		"a comment":          segment(jpegComment, []byte("x")),
+		"the AC table again": segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), 0xE0)),
+	} {
+		refused("progressive, 99 scans with "+name+" between them", scanBomb(512, 512, 99, between, nil), http.StatusCreated)
+		refused("progressive, 100 scans with "+name+" between them", scanBomb(512, 512, 100, between, nil), http.StatusUnprocessableEntity)
+	}
+	// image/jpeg's findRST skips "\xff\xff\x00" in a scan where a restart is
+	// due, where the walk takes it for a marker.
+	refused("progressive, 99 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 99, nil, []byte{0xFF, 0xFF, 0x00}),
+		http.StatusCreated)
+	refused("progressive, 100 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 100, nil, []byte{0xFF, 0xFF, 0x00}),
+		http.StatusUnprocessableEntity)
 
 	done := make(chan *httptest.ResponseRecorder, 1)
-	go func() { done <- h.uploadRaw("", "file", scanBomb(16384, 2441, 10_000)) }()
+	go func() { done <- h.uploadRaw("", "file", scanBomb(16384, 2441, 10_000, nil, nil)) }()
 	select {
 	case rec := <-done:
 		if rec.Code != http.StatusUnprocessableEntity {
