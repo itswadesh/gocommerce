@@ -51,6 +51,10 @@ const (
 	// whatever the picture: 1.1 MB in Go 1.27.
 	pngWriterState = 1200 << 10
 	spoolPrefix    = "customizer-upload-"
+	// uploadFloor is the bytes a second an upload must average once
+	// uploadIdle has passed: 64 kbit/s, a thirtieth of the 2 Mbit/s that
+	// brings a 10 MB print in 40 seconds.
+	uploadFloor = 8 << 10
 )
 
 var (
@@ -116,7 +120,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rc := http.NewResponseController(w)
-	body := &arriving{ReadCloser: r.Body, rc: rc, by: time.Now().Add(uploadWithin)}
+	body := &arriving{ReadCloser: r.Body, rc: rc, start: time.Now()}
 	if err := body.extend(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "time the upload"))
 		return
@@ -161,27 +165,27 @@ func busy(w http.ResponseWriter) {
 }
 
 // arriving moves the read deadline on with each read that brings bytes, so a
-// slow connection gets its file in and one that has stopped is let go.
+// slow connection gets its file in, and one that has stopped or sends a byte
+// now and then is let go.
 type arriving struct {
 	io.ReadCloser
-	rc *http.ResponseController
-	by time.Time
+	rc    *http.ResponseController
+	start time.Time
+	n     int64
 }
 
 func (a *arriving) Read(p []byte) (int, error) {
 	n, err := a.ReadCloser.Read(p)
 	if n > 0 {
+		a.n += int64(n)
 		_ = a.extend()
 	}
 	return n, err
 }
 
 func (a *arriving) extend() error {
-	next := time.Now().Add(uploadIdle)
-	if next.After(a.by) {
-		next = a.by
-	}
-	return a.rc.SetReadDeadline(next)
+	floor := max(uploadIdle, time.Duration(a.n)*time.Second/uploadFloor)
+	return a.rc.SetReadDeadline(a.start.Add(min(time.Since(a.start)+uploadIdle, floor, uploadWithin)))
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
