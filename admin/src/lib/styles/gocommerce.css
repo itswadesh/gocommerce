@@ -12975,6 +12975,56 @@ html .tw\:rounded-2xl {
     outline: 2px solid var(--markColor);
     outline-offset: 1px;
 }
+/* The card's title shares its row with the reverse pickup button. */
+.sr-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.sr-card-head .order-card-title {
+    margin: 0;
+}
+/* Booking a reverse pickup: the lines that went out, how many come back. */
+.sr-return {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+}
+.sr-return-line {
+    display: grid;
+    grid-template-columns: 1fr 72px auto;
+    align-items: center;
+    gap: 8px;
+}
+.sr-return-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.sr-return-line input,
+.sr-return select {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+}
+.sr-return-line input:focus-visible,
+.sr-return select:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.sr-return-label {
+    background: color-mix(in srgb, var(--markColor), transparent 85%);
+}
 /* The webhook's address and token, each copyable, wrapping on a phone rather
    than pushing the drawer sideways. */
 .sr-hook {

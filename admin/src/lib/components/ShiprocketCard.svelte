@@ -15,6 +15,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
     import ShiprocketNDR from "$lib/components/ShiprocketNDR.svelte";
+    import ShiprocketReturn from "$lib/components/ShiprocketReturn.svelte";
 
     let { order = null, onchanged } = $props();
 
@@ -81,6 +82,10 @@
     const BEFORE_PICKUP = [0, 1, 2, 3, 4, 5, 11, 13, 15, 20, 27, 52];
     const cancellable = (row) => BEFORE_PICKUP.includes(row.status_code ?? 0);
 
+    /* A reverse pickup can be booked once something has gone out. */
+    let returning = $state(false);
+    const shipped = $derived((order?.line_items ?? []).some((l) => (l.shipped_quantity ?? 0) > 0));
+
     async function refresh(row) {
         await act(row, "track", "track", "Tracking refreshed");
         onchanged?.();
@@ -93,13 +98,34 @@
     ];
 </script>
 
-{#if rows.length}
+{#if rows.length || (shipped && mayFulfill)}
     <section class="order-card sr-card" in:rise>
-        <h6 class="order-card-title m-b-10">Shiprocket</h6>
+        <div class="sr-card-head m-b-10">
+            <h6 class="order-card-title">Shiprocket</h6>
+            {#if shipped && mayFulfill && !returning}
+                <button type="button" class="btn sm transparent secondary" onclick={() => (returning = true)}>
+                    <i class="ri-arrow-go-back-line" aria-hidden="true"></i>
+                    <span class="txt">Reverse pickup</span>
+                </button>
+            {/if}
+        </div>
+        {#if returning}
+            <ShiprocketReturn
+                {order}
+                oncancel={() => (returning = false)}
+                onbooked={(row) => {
+                    rows = [...rows.filter((r) => r.id !== row.id), row];
+                    returning = false;
+                }}
+            />
+        {/if}
         <div class="list">
             {#each rows as row (row.id)}
                 <div class="list-item sr-row" class:cancelled={!!row.cancelled_at}>
                     <div class="sr-row-head">
+                        {#if row.return}
+                            <span class="label sr-return-label">Return</span>
+                        {/if}
                         <span class="label">{row.courier_name || "Courier not assigned"}</span>
                         {#if row.awb}
                             <span class="txt-code txt-sm">{row.awb}</span>
@@ -110,7 +136,7 @@
                         {/if}
                         {#if row.cancelled_at}
                             <span class="label">Cancelled</span>
-                        {:else if !row.fulfillment_id}
+                        {:else if !row.fulfillment_id && !row.return}
                             <span class="label label-warning" title="Booked at Shiprocket but not recorded as a shipment of this order">Not on this order</span>
                         {/if}
                         <div class="flex-fill"></div>
