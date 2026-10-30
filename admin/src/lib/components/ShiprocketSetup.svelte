@@ -24,7 +24,7 @@
         result = null;
         try {
             result = await request("POST", "/api/admin/x/fulfill-shiprocket/connect", {
-                body: { email: form.email ?? "", password: form.password ?? "", base_url: form.base_url ?? "" },
+                body: { email: form.email ?? "", password: form.password ?? "" },
             });
             const names = (result.pickup_locations ?? []).map((p) => p.name);
             if (!names.includes(form.pickup_location)) {

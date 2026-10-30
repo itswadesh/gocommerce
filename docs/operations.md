@@ -424,7 +424,9 @@ shown again; the login token Shiprocket gives for it is kept in memory only.
 A cash-on-delivery order goes out in one parcel, collecting the order's total;
 an order not in rupees or not to India is refused, since this is Shiprocket's
 domestic service. An install that embeds the engine can pass an account in
-`shiprocket.Config`, which every store without its own falls back to.
+`shiprocket.Config`, which every store without its own falls back to — so an
+install that hosts stores for other people leaves it empty: every one of those
+stores would otherwise book on, and see the pickup addresses of, that account.
 
 ### Several brands
 

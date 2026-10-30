@@ -153,17 +153,19 @@ func recordedAs(order *gocommerce.Order, s *shipment) int64 {
 }
 
 // claim finds or makes the row a booking of these contents works on, and takes
-// its lease.
+// its lease, returning the row as the lease found it and the lease's token.
 //
-// An earlier row the engine never recorded — booked, then refused under the
-// order's lock, or a step that failed — is the same parcel being tried again,
-// so it is reused. One holding different contents is refused rather than
-// silently reused or abandoned: it is a live Shiprocket order, and somebody
-// should cancel it before a different parcel is booked.
-func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents string) (*shipment, error) {
+// Contents are the parcel's lines and what the courier is to collect. An
+// earlier row the engine never recorded — booked, then refused under the
+// order's lock, or a step that failed — with the same contents is the same
+// parcel being tried again, so it is reused. One with different contents is
+// refused rather than silently reused or abandoned: it is a live Shiprocket
+// order, holding other items or telling the courier to collect another
+// amount, and somebody should cancel it before a different parcel is booked.
+func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents string) (*shipment, time.Time, error) {
 	rows, err := m.shipmentsOf(ctx, order.ID)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	var pending *shipment
 	for _, s := range rows {
@@ -172,24 +174,19 @@ func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents st
 		}
 	}
 	if pending != nil && pending.contents != contents {
-		return nil, gocommerce.Conflictf("Shiprocket order %s holds a different parcel of this order and was never recorded here. "+
-			"Ship the same items, or cancel it under Shiprocket on this order first", pending.ChannelOrderID)
+		return nil, time.Time{}, gocommerce.Conflictf("Shiprocket order %s was made for different items, or to collect a different amount, "+
+			"and was never recorded here. Cancel it under Shiprocket on this order, then ship again", pending.ChannelOrderID)
 	}
 	if pending == nil {
-		// Shiprocket refuses an order id it has seen, so the sequence counts
-		// every row, cancelled ones too, and any parcel booked through this
-		// provider before rows were kept.
-		seq := len(rows)
-		legacy := 0
-		for _, f := range order.Fulfillments {
-			if f.Provider == "shiprocket" {
-				legacy++
-			}
-		}
-		seq = max(seq, legacy) + 1
-		channel := order.Number
-		if seq > 1 {
-			channel = fmt.Sprintf("%s-%d", order.Number, seq)
+		// The order's number for people to find it by, and its id, which no
+		// other store's order shares — two stores on one Shiprocket account
+		// both have a GC-000001. The underscore keeps these apart from the
+		// ids this module gave before (the number, then number-2), and the
+		// sequence counts cancelled rows, because Shiprocket refuses an id it
+		// has seen.
+		channel := fmt.Sprintf("%s_%d", order.Number, order.ID)
+		if seq := len(rows) + 1; seq > 1 {
+			channel = fmt.Sprintf("%s-%d", channel, seq)
 		}
 		pending, err = scanShipment(m.app.DB().QueryRowContext(ctx, `
 			INSERT INTO shiprocket_shipments (order_id, channel_order_id, contents)
@@ -197,41 +194,67 @@ func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents st
 			ON CONFLICT (store_id, channel_order_id) DO UPDATE SET updated_at = shiprocket_shipments.updated_at
 			RETURNING `+shipmentColumns, order.ID, channel, contents))
 		if err != nil {
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		if pending.OrderID != order.ID || pending.contents != contents {
-			return nil, gocommerce.Conflictf("Shiprocket order id %s is already taken by another booking", channel)
+			return nil, time.Time{}, gocommerce.Conflictf("Shiprocket order id %s is already taken by another booking", channel)
 		}
 	}
-	if err := m.lease(ctx, pending.ID); err != nil {
-		return nil, err
-	}
-	return pending, nil
+	return m.lease(ctx, pending.ID)
 }
 
-// lease takes a row for one booking or cancellation at a time. It is a column
-// and not a transaction because what it guards is a call to Shiprocket, and
-// rule 5 keeps those outside transactions; it lapses on its own if the
-// process dies holding it.
-func (m *Module) lease(ctx context.Context, id int64) error {
-	res, err := m.app.DB().ExecContext(ctx, `
-		UPDATE shiprocket_shipments SET booking_until = now() + interval '2 minutes', updated_at = now()
-		WHERE id = $1 AND (booking_until IS NULL OR booking_until < now())`, id)
+// lease takes a row for one booking or cancellation at a time, and returns the
+// row as it is now — a cancellation that finished a moment ago shows — with
+// the lease's token. It is a column and not a transaction because what it
+// guards is calls to Shiprocket, and rule 5 keeps those outside transactions.
+// Ten minutes outlasts the slowest booking (seven calls at thirty seconds,
+// and a login); it lapses on its own if the process dies holding it.
+func (m *Module) lease(ctx context.Context, id int64) (*shipment, time.Time, error) {
+	var until time.Time
+	row, err := scanShipment(scanFirst(m.app.DB().QueryRowContext(ctx, `
+		UPDATE shiprocket_shipments SET booking_until = now() + interval '10 minutes', updated_at = now()
+		WHERE id = $1 AND cancelled_at IS NULL AND (booking_until IS NULL OR booking_until < now())
+		RETURNING booking_until, `+shipmentColumns, id), &until))
+	if errors.Is(err, sql.ErrNoRows) {
+		if s, lerr := m.shipmentByID(ctx, id); lerr == nil && s.CancelledAt != nil {
+			return nil, time.Time{}, gocommerce.Conflictf("Shiprocket order %s was cancelled", s.ChannelOrderID)
+		}
+		return nil, time.Time{}, gocommerce.Conflictf("this parcel is being booked or cancelled with Shiprocket right now; wait a moment and look again")
+	}
 	if err != nil {
-		return err
+		return nil, time.Time{}, err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return gocommerce.Conflictf("this parcel is being booked or cancelled with Shiprocket right now; wait a moment and look again")
-	}
-	return nil
+	return row, until, nil
 }
 
-func (m *Module) release(ctx context.Context, id int64) {
+// release gives a lease back, and only the one this caller took: a lease that
+// lapsed and was taken by another request is that request's to give back.
+func (m *Module) release(ctx context.Context, id int64, token time.Time) {
 	// A fresh context: the lease must be given back even when the request
 	// that took it was cancelled.
+	_, _ = m.app.DB().ExecContext(detached(ctx),
+		`UPDATE shiprocket_shipments SET booking_until = NULL WHERE id = $1 AND booking_until = $2`, id, token)
+}
+
+// detached is ctx's store without ctx's cancellation, for writes that must
+// land whatever became of the request.
+func detached(ctx context.Context) context.Context {
 	store, _ := gocommerce.StoreFrom(ctx)
-	_, _ = m.app.DB().ExecContext(gocommerce.WithStore(context.Background(), store),
-		`UPDATE shiprocket_shipments SET booking_until = NULL WHERE id = $1`, id)
+	return gocommerce.WithStore(context.Background(), store)
+}
+
+// scanFirst lets a row with one leading column be read by scanShipment.
+type firstScanner struct {
+	row   interface{ Scan(...any) error }
+	first any
+}
+
+func scanFirst(row interface{ Scan(...any) error }, first any) firstScanner {
+	return firstScanner{row: row, first: first}
+}
+
+func (f firstScanner) Scan(dest ...any) error {
+	return f.row.Scan(append([]any{f.first}, dest...)...)
 }
 
 // save writes the columns a step filled in.

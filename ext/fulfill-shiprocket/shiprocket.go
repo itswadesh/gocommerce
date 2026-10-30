@@ -58,8 +58,10 @@ type Config struct {
 	DefaultLengthCm  float64
 	DefaultBreadthCm float64
 	DefaultHeightCm  float64
-	// BaseURL overrides the endpoint, for tests.
-	BaseURL string `plugin:"base_url"`
+	// BaseURL overrides the endpoint, for tests. It is the install's and never
+	// a store setting: a store's saved password is sent wherever it points, so
+	// whoever may change it must already be trusted with every password.
+	BaseURL string
 	// Client overrides the HTTP client.
 	Client *http.Client
 }
@@ -161,7 +163,6 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "password", Label: "API user password", Kind: "secret", Required: !inCode},
 			{Key: "pickup_location", Label: "Pickup location", Kind: "text", Required: !inCode, Help: "The pickup address nickname registered in Shiprocket. Test the connection to choose from the account's own."},
 			{Key: "default_weight_kg", Label: "Default weight (kg)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 0.5},
-			{Key: "base_url", Label: "API base URL", Kind: "url", Outbound: true, Help: "Empty for production."},
 		},
 	})
 	m.finish(&m.cfg)
@@ -196,17 +197,22 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	if err := domestic(order); err != nil {
 		return gocommerce.Shipment{}, err
 	}
-	if paymentMethodFor(order) == "COD" && !wholeOrder(order, req.Lines) {
+	method, collectMinor := terms(order, req.Lines)
+	if method == "COD" && !wholeOrder(order, req.Lines) {
 		return gocommerce.Shipment{}, gocommerce.Validationf(
 			"a cash-on-delivery order goes out through Shiprocket in one parcel: the courier collects the order's total, " +
 				"and how to split what it collects between parcels is not something to guess. Ship every item together, or ship by hand")
 	}
 
-	row, err := m.claim(ctx, order, contentsOf(req.Lines))
+	// What the courier collects is part of what the Shiprocket order is: a
+	// booking resumed after the order was paid or edited would collect the
+	// old amount, so it counts as different contents and is refused.
+	contents := fmt.Sprintf("%s|%s:%d", contentsOf(req.Lines), method, collectMinor)
+	row, lease, err := m.claim(ctx, order, contents)
 	if err != nil {
 		return gocommerce.Shipment{}, err
 	}
-	defer m.release(ctx, row.ID)
+	defer m.release(ctx, row.ID, lease)
 
 	if row.ShipmentID == 0 {
 		if err := m.createOrder(ctx, row, order, req); err != nil {
@@ -219,7 +225,7 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 			// precisely: the operator needs to know the parcel is half-booked
 			// rather than not booked at all — and that pressing Ship again
 			// carries on from here.
-			return gocommerce.Shipment{}, halfBooked(order, row, err)
+			return gocommerce.Shipment{}, m.halfBooked(row, err)
 		}
 	}
 	// Neither of these stops the parcel: it is booked, and both can be asked
@@ -243,14 +249,19 @@ func (m *Module) Ship(ctx context.Context, order *gocommerce.Order, req gocommer
 	}, nil
 }
 
-func halfBooked(order *gocommerce.Order, row *shipment, err error) error {
-	msg := fmt.Sprintf("Shiprocket order %s was created but no waybill was assigned: %s. Ship again to retry with the same order",
-		row.ChannelOrderID, strings.TrimPrefix(errText(err), "Shiprocket said: "))
+// halfBooked says a Shiprocket order exists with no waybill. Always a 422 with
+// those words: a failure the engine would read as "could not reach the
+// carrier" tells the operator nothing was booked, which is not so.
+func (m *Module) halfBooked(row *shipment, err error) error {
+	reason := strings.TrimPrefix(errText(err), "Shiprocket said: ")
 	var apiErr *gocommerce.APIError
-	if errors.As(err, &apiErr) && apiErr.Status < 500 {
-		return &gocommerce.APIError{Status: apiErr.Status, Code: apiErr.Code, Message: msg}
+	if !errors.As(err, &apiErr) {
+		m.log.Error("shiprocket: no answer to a waybill request", "shipment_id", row.ShipmentID, "error", err)
+		reason = "Shiprocket did not answer"
 	}
-	return fmt.Errorf("%s: %w", msg, err)
+	return &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "provider_refused",
+		Message: fmt.Sprintf("Shiprocket order %s was created but no waybill was assigned: %s. Ship again to retry with the same order",
+			row.ChannelOrderID, reason)}
 }
 
 func errText(err error) string {
@@ -329,6 +340,7 @@ type srOrder struct {
 	ShipmentID int64
 	AWB        string
 	Courier    string
+	Cancelled  bool
 }
 
 // findOrder looks an order up by the id this module gave it. "Orders › Get
@@ -339,6 +351,7 @@ func (m *Module) findOrder(ctx context.Context, channelOrderID string) (*srOrder
 		Data []struct {
 			ID             int64  `json:"id"`
 			ChannelOrderID string `json:"channel_order_id"`
+			Status         string `json:"status"`
 			Shipments      []struct {
 				ID      int64  `json:"id"`
 				AWB     string `json:"awb"`
@@ -347,7 +360,7 @@ func (m *Module) findOrder(ctx context.Context, channelOrderID string) (*srOrder
 		} `json:"data"`
 	}
 	if err := m.call(ctx, http.MethodGet, "/v1/external/orders",
-		map[string][]string{"search": {channelOrderID}}, nil, &out); err != nil {
+		map[string][]string{"search": {channelOrderID}, "per_page": {"100"}}, nil, &out); err != nil {
 		return nil, err
 	}
 	for _, o := range out.Data {
@@ -356,12 +369,24 @@ func (m *Module) findOrder(ctx context.Context, channelOrderID string) (*srOrder
 			continue
 		}
 		s := o.Shipments[0]
-		return &srOrder{ID: o.ID, ShipmentID: s.ID, AWB: s.AWB, Courier: s.Courier}, nil
+		return &srOrder{ID: o.ID, ShipmentID: s.ID, AWB: s.AWB, Courier: s.Courier,
+			Cancelled: strings.Contains(strings.ToUpper(o.Status), "CANCEL")}, nil
 	}
 	return nil, nil
 }
 
+// adopt takes over an order Shiprocket already has under this row's id. One
+// cancelled in Shiprocket's own dashboard cannot be shipped and its id cannot
+// be reused, so the row is closed and the next press books a new one.
 func (m *Module) adopt(ctx context.Context, row *shipment, found *srOrder) error {
+	if found.Cancelled {
+		now := time.Now()
+		row.CancelledAt = &now
+		if err := m.save(detached(ctx), row.ID, map[string]any{"cancelled_at": now}); err != nil {
+			return err
+		}
+		return refused(fmt.Sprintf("order %s was cancelled in Shiprocket. Ship again to book a new one", row.ChannelOrderID))
+	}
 	row.SROrderID, row.ShipmentID = found.ID, found.ShipmentID
 	set := map[string]any{"sr_order_id": found.ID, "shipment_id": found.ShipmentID}
 	if found.AWB != "" && row.AWB == "" {
@@ -394,7 +419,6 @@ func (m *Module) orderPayload(ctx context.Context, order *gocommerce.Order, req 
 	}
 	items := make([]map[string]any, 0, len(req.Lines))
 	var units int
-	var valueMinor int64
 	for _, ship := range req.Lines {
 		line, ok := byLine[ship.OrderLineID]
 		if !ok {
@@ -407,7 +431,6 @@ func (m *Module) orderPayload(ctx context.Context, order *gocommerce.Order, req 
 			"selling_price": rupees(line.UnitPrice.AmountMinor),
 		})
 		units += ship.Quantity
-		valueMinor += line.UnitPrice.AmountMinor * int64(ship.Quantity)
 	}
 
 	// sub_total is what Shiprocket takes as the order's amount: "the total is
@@ -416,11 +439,7 @@ func (m *Module) orderPayload(ctx context.Context, order *gocommerce.Order, req 
 	// discounts and tax as the engine settled them — and nothing is passed
 	// beside it that Shiprocket could add or take away. Prepaid, it is what the
 	// box is worth.
-	method := paymentMethodFor(order)
-	subTotal := valueMinor
-	if method == "COD" {
-		subTotal = order.Total.AmountMinor
-	}
+	method, subTotal := terms(order, req.Lines)
 
 	conf := m.conf(ctx)
 	return map[string]any{
@@ -495,6 +514,10 @@ func (m *Module) assignAWB(ctx context.Context, row *shipment, courierID string)
 		} `json:"response"`
 	}
 	if err := m.call(ctx, http.MethodPost, "/v1/external/courier/assign/awb", nil, payload, &assigned); err != nil {
+		// Assigned, and the answer lost on the way back: Shiprocket has it.
+		if found, ferr := m.findOrder(ctx, row.ChannelOrderID); ferr == nil && found != nil && found.AWB != "" {
+			return m.adopt(ctx, row, found)
+		}
 		return err
 	}
 	d := assigned.Response.Data
@@ -595,32 +618,79 @@ func (m *Module) document(ctx context.Context, row *shipment, kind string) error
 // {awbs: [awb]}, which Shiprocket allows until the parcel is out for pickup;
 // then the order itself, "Create Or Update Order › Cancel an Order": POST
 // /v1/external/orders/cancel {ids: [order id]}.
+//
+// The row is marked cancelled as soon as the parcel can no longer travel —
+// its waybill called off, or with none, its order — so pressing Cancel again
+// never asks Shiprocket for a cancellation it already made. A refused order
+// cancel after the waybill's is logged: the order holds no live waybill.
 func (m *Module) cancel(ctx context.Context, row *shipment) error {
+	if row.createSent && row.SROrderID == 0 {
+		// An order whose creation was never answered may exist all the same.
+		if found, err := m.findOrder(ctx, row.ChannelOrderID); err == nil && found != nil && !found.Cancelled {
+			row.SROrderID, row.ShipmentID, row.AWB = found.ID, found.ShipmentID, found.AWB
+		}
+	}
+	done := func() error {
+		now := time.Now()
+		row.CancelledAt = &now
+		return m.save(detached(ctx), row.ID, map[string]any{"cancelled_at": now})
+	}
 	if row.AWB != "" {
 		if err := m.call(ctx, http.MethodPost, "/v1/external/orders/cancel/shipment/awbs", nil,
 			map[string]any{"awbs": []string{row.AWB}}, nil); err != nil {
+			return err
+		}
+		if err := done(); err != nil {
 			return err
 		}
 	}
 	if row.SROrderID != 0 {
 		if err := m.call(ctx, http.MethodPost, "/v1/external/orders/cancel", nil,
 			map[string]any{"ids": []int64{row.SROrderID}}, nil); err != nil {
+			if row.CancelledAt != nil {
+				m.log.Warn("shiprocket: the waybill was cancelled and its order was not", "order_id", row.SROrderID, "error", err)
+				return nil
+			}
 			return err
 		}
 	}
-	now := time.Now()
-	row.CancelledAt = &now
-	return m.save(ctx, row.ID, map[string]any{"cancelled_at": now})
+	if row.CancelledAt == nil {
+		return done()
+	}
+	return nil
 }
 
 // paymentMethodFor tells the carrier whether to collect money on delivery.
 // Getting this wrong means either a courier who does not ask for payment, or
 // one who asks a customer who has already paid.
+//
+// Only an unpaid cash-on-delivery order is collected. Paid at the counter,
+// refunded, or on a trade account settled on terms, nothing is: a courier
+// asking those customers for cash is the worse of the two mistakes.
 func paymentMethodFor(order *gocommerce.Order) string {
-	if order.PaymentStatus == gocommerce.PaymentPaid {
-		return "Prepaid"
+	if order.PaymentProvider == gocommerce.CodeCOD && order.PaymentStatus == gocommerce.PaymentPending {
+		return "COD"
 	}
-	return "COD"
+	return "Prepaid"
+}
+
+// terms is how a parcel is paid for and the amount Shiprocket is given for
+// it: on cash on delivery what the courier collects, the order's own total —
+// shipping, discounts and tax as the engine settled them — and prepaid what
+// the box is worth.
+func terms(order *gocommerce.Order, lines []gocommerce.ShipLine) (method string, minor int64) {
+	method = paymentMethodFor(order)
+	if method == "COD" {
+		return method, order.Total.AmountMinor
+	}
+	byLine := make(map[int64]gocommerce.OrderLine, len(order.Lines))
+	for _, l := range order.Lines {
+		byLine[l.ID] = l
+	}
+	for _, l := range lines {
+		minor += byLine[l.OrderLineID].UnitPrice.AmountMinor * int64(l.Quantity)
+	}
+	return method, minor
 }
 
 // weight is what to declare, in kilograms.

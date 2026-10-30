@@ -56,12 +56,13 @@ func pathID(r *http.Request) (int64, error) {
 // handleConnect tries an API user before it is saved: it logs in and lists
 // the account's pickup locations, which is both the test and the list the
 // pickup location is chosen from. A password left as the mask means the one
-// already saved; nothing typed here is stored by this route.
+// already saved; nothing typed here is stored by this route. It always calls
+// the install's Shiprocket address: a saved password goes nowhere a store
+// names.
 func (m *Module) handleConnect(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
-		BaseURL  string `json:"base_url"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -74,9 +75,6 @@ func (m *Module) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	if p := in.Password; p != "" && p != gocommerce.SecretMask {
 		c.Password = p
-	}
-	if b := strings.TrimSpace(in.BaseURL); b != "" {
-		c.BaseURL = b
 	}
 	if strings.TrimSpace(c.Email) == "" || strings.TrimSpace(c.Password) == "" {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("type the API user's email and password first"))
@@ -264,26 +262,35 @@ func (m *Module) handleCancel(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	fid := recordedAs(order, row)
 	for _, f := range order.Fulfillments {
-		if f.ID == fid && f.Status == "delivered" {
+		if f.ID == recordedAs(order, row) && f.Status == "delivered" {
 			m.fail(w, r, gocommerce.Conflictf("that parcel was delivered; it cannot be cancelled"))
 			return
 		}
 	}
 	if row.CancelledAt == nil {
-		if err := m.lease(ctx, row.ID); err != nil {
+		// The row as the lease finds it: a booking that finished since it was
+		// read has a waybill to cancel now.
+		leased, token, err := m.lease(ctx, row.ID)
+		if err != nil {
 			m.fail(w, r, err)
 			return
 		}
-		err := m.cancel(ctx, row)
-		m.release(ctx, row.ID)
+		row = leased
+		err = m.cancel(ctx, row)
+		m.release(ctx, row.ID, token)
 		if err != nil {
 			m.fail(w, r, err)
 			return
 		}
 	}
-	if fid != 0 {
+	// Read again: the parcel may have been recorded while Shiprocket was
+	// being asked.
+	if order, err = m.app.Order().Get(ctx, row.OrderID); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	if fid := recordedAs(order, row); fid != 0 {
 		if _, err := m.app.Ship().Cancel(ctx, fid, "Cancelled on Shiprocket"); err != nil {
 			m.fail(w, r, err)
 			return

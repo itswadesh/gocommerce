@@ -74,6 +74,7 @@ func (l *logBuffer) String() string {
 
 type harness struct {
 	app  *gocommerce.App
+	mod  *Module
 	fake *fakeShiprocket
 	logs *logBuffer
 }
@@ -96,7 +97,8 @@ func newHarness(t *testing.T, cfg Config, engine gocommerce.Config) *harness {
 	engine.AllowPrivateURLs = true
 	engine.Currency = "INR"
 	engine.Logger = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	return &harness{app: gctest.NewWithConfig(t, engine, New(cfg)), fake: fake, logs: logs}
+	mod := New(cfg)
+	return &harness{app: gctest.NewWithConfig(t, engine, mod), mod: mod, fake: fake, logs: logs}
 }
 
 // measuredProduct creates a product whose single variant has a real weight and
@@ -353,7 +355,7 @@ func TestChangingTheAPIUserTakesEffectAtOnce(t *testing.T) {
 		t.Helper()
 		on := true
 		if _, err := h.app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
-			"email": email, "password": password, "pickup_location": "Primary", "base_url": h.fake.URL}}); err != nil {
+			"email": email, "password": password, "pickup_location": "Primary"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -445,7 +447,7 @@ func TestConnectTriesTheAccountAndListsItsPickups(t *testing.T) {
 	ctx := context.Background()
 	on := true
 	if _, err := h.app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
-		"email": testEmail, "password": testPassword, "pickup_location": "Primary", "base_url": h.fake.URL}}); err != nil {
+		"email": testEmail, "password": testPassword, "pickup_location": "Primary"}}); err != nil {
 		t.Fatal(err)
 	}
 	rec = gctest.AdminRequest(t, h.app, http.MethodPost, "/api/admin/x/fulfill-shiprocket/connect",
@@ -461,7 +463,7 @@ func TestTheSecretNeverLeavesTheServer(t *testing.T) {
 	ctx := context.Background()
 	on := true
 	if _, err := h.app.Plugins().Update(ctx, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
-		"email": testEmail, "password": testPassword, "pickup_location": "Primary", "base_url": h.fake.URL}}); err != nil {
+		"email": testEmail, "password": testPassword, "pickup_location": "Primary"}}); err != nil {
 		t.Fatal(err)
 	}
 	variant := measuredProduct(t, h.app, "SR-SECRET")
@@ -517,7 +519,7 @@ func TestEachStoreBooksOnItsOwnAccount(t *testing.T) {
 	// Only store A has connected an account so far.
 	on := true
 	if _, err := h.app.Plugins().Update(a, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
-		"email": testEmail, "password": testPassword, "pickup_location": "Primary", "base_url": h.fake.URL}}); err != nil {
+		"email": testEmail, "password": testPassword, "pickup_location": "Primary"}}); err != nil {
 		t.Fatal(err)
 	}
 	orderA := place(t, h.app, a, variantA.ID, 1, "560001")
@@ -529,7 +531,7 @@ func TestEachStoreBooksOnItsOwnAccount(t *testing.T) {
 	}
 
 	if _, err := h.app.Plugins().Update(b, PluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
-		"email": "b@example.test", "password": "b-pass", "pickup_location": "Second warehouse", "base_url": h.fake.URL}}); err != nil {
+		"email": "b@example.test", "password": "b-pass", "pickup_location": "Second warehouse"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.app.Ship().Create(b, orderB.ID, "shiprocket", gocommerce.ShipRequest{}); err != nil {
@@ -581,8 +583,8 @@ func TestCancelCallsItOffEverywhere(t *testing.T) {
 	if _, err := app.Ship().Create(context.Background(), shipped.ID, "shiprocket", gocommerce.ShipRequest{}); err != nil {
 		t.Fatalf("ship again: %v", err)
 	}
-	if got := fake.last(t, testEmail).OrderID; got != shipped.Number+"-2" {
-		t.Errorf("second booking's id = %q, want %s-2", got, shipped.Number)
+	if got, want := fake.last(t, testEmail).OrderID, shipped.Number+"_"+itoa(shipped.ID)+"-2"; got != want {
+		t.Errorf("second booking's id = %q, want %s", got, want)
 	}
 }
 
