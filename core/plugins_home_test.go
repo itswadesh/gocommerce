@@ -50,6 +50,7 @@ func TestCoreSaysWhereEachBuiltInFeatureIsSetUp(t *testing.T) {
 		"header-scripts":        "",
 		"google-analytics":      "",
 		"meta-pixel":            "",
+		"criteo":                "",
 		"tidio":                 "",
 		"tawk-to":               "",
 		"umami":                 "",

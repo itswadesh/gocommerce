@@ -17,7 +17,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 
 	addOns := map[string]bool{
 		// Analytics
-		"google-analytics": true, "meta-pixel": true, "umami": true, "plausible": true,
+		"google-analytics": true, "meta-pixel": true, "criteo": true, "umami": true, "plausible": true,
 		// Chat
 		"tidio": true, "tawk-to": true, "whatsapp-chat": true,
 		// Marketing

@@ -114,6 +114,13 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
+		Key: "criteo", Title: "Criteo", Icon: "ri-advertisement-line", Category: "analytics",
+		Description: "Criteo's OneTag, for retargeting ads that show shoppers the products they looked at.",
+		Fields: []PluginField{
+			{Key: "account_id", Label: "Account ID", Kind: "text", Public: true, Required: true, Help: "The number after a= in Criteo's tag: ld.js?a=12345."},
+		},
+	},
+	{
 		Key: "tidio", Title: "Tidio", Icon: "ri-chat-smile-3-line", Category: "chat",
 		Description: "Tidio's live chat and chatbot widget.",
 		Fields: []PluginField{
