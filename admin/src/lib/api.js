@@ -381,7 +381,7 @@ export const storeProfile = {
 };
 
 /**
- * India's GST reference lists, compiled into the engine (D171): the state codes
+ * India's GST reference lists, compiled into the engine (D172): the state codes
  * a GSTIN starts with, and the HSN/SAC master a product's tariff code is
  * picked from.
  */

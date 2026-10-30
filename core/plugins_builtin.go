@@ -35,7 +35,7 @@ var builtinPlugins = []PluginDef{
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "textarea", Public: true, Required: true, Default: "We are closed for a short while. Back soon."},
 			// Public only as whether it is set; the engine checks it
-			// (POST /api/store/password, D169).
+			// (POST /api/store/password, D170).
 			{Key: "password", Label: "Password", Kind: "secret", Public: true,
 				Help: "Leave empty to close the store to everyone. Set, the storefront asks for it and lets in whoever types it: share it with the people you want to see the store before it opens. Changing it signs them all out."},
 		},
