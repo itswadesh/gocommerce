@@ -1,6 +1,6 @@
 <script>
     /**
-     * An HSN/SAC code box that searches India's GST master as you type (D171).
+     * An HSN/SAC code box that searches India's GST master as you type (D172).
      *
      * The value is whatever is in the box, so a code the master does not list
      * — it trails the tariff — can still be typed and saved; the line under

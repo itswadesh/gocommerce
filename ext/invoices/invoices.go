@@ -314,7 +314,7 @@ var errAlreadyIssued = errors.New("invoice already issued")
 //
 // A variant's own hs_code wins. Without one, the product's category is asked,
 // then its parent and so on up to the root, and the nearest that has a code
-// gives it (D170). Nearest, because a subcategory is the narrower and so the
+// gives it (D171). Nearest, because a subcategory is the narrower and so the
 // truer classification: "Jewellery" may say 7113 while "Imitation" under it
 // says 7117. A product has one category, so there is nothing to choose between
 // sideways.

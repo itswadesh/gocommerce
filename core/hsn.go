@@ -17,7 +17,7 @@ import (
 // Embedded for the reason the Shopify taxonomy is (taxonomy.go): a picker that
 // reaches the network fails in an air-gapped deployment and drifts between two
 // installs of the same version. It is reference data, read-only, so it is a
-// file and not a table — no store owns a row of it (D171).
+// file and not a table — no store owns a row of it (D172).
 //
 // Source: the GST portal's HSN/SAC master,
 // https://tutorial.gst.gov.in/downloads/HSN_SAC.xlsx, fetched 2026-10-30.

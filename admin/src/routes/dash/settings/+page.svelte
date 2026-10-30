@@ -91,7 +91,7 @@
         { key: "address_line1", label: "Address" },
         { key: "address_line2", label: "Address line 2" },
         { key: "city", label: "City" },
-        // A list of GST states for an Indian store (D171), whose GSTIN has to
+        // A list of GST states for an Indian store (D172), whose GSTIN has to
         // agree with it; a text box anywhere else.
         { key: "state", label: "State or region", kind: "select" },
         { key: "postal_code", label: "Postal code" },

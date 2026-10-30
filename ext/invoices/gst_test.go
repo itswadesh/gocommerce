@@ -190,7 +190,7 @@ func TestAnIntraStateInvoiceSplitsEighteenPercent(t *testing.T) {
 	}
 }
 
-// A store sets HSN once per category (D170): a variant without its own takes
+// A store sets HSN once per category (D171): a variant without its own takes
 // the nearest category up the tree that has one, and a variant's own still wins.
 func TestAProductWithoutHSNTakesItsCategorys(t *testing.T) {
 	ctx := context.Background()

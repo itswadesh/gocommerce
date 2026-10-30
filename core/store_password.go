@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// A closed store can keep a password (D169): the storefront shows the
+// A closed store can keep a password (D170): the storefront shows the
 // store-close message with a password field, and a visitor who knows it gets
 // in — an owner showing the shop before it launches. The password is a secret
 // of the store-close plugin, so it is sealed at rest (D110) and never in
