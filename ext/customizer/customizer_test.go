@@ -54,7 +54,7 @@ func pngOf(w, h int, alpha bool) []byte {
 			if alpha && x < w/2 {
 				a = 0
 			}
-			img.Set(x, y, color.NRGBA{uint8(x), uint8(y), 90, a})
+			img.SetNRGBA(x, y, color.NRGBA{uint8(x), uint8(y), 90, a})
 		}
 	}
 	var b bytes.Buffer
@@ -214,7 +214,8 @@ func (h *harness) upload(store string, file []byte) Upload {
 func (h *harness) design(store string, c caseProduct, variant int64, photo string) *httptest.ResponseRecorder {
 	h.t.Helper()
 	preview := h.upload(store, pngOf(160, 320, false))
-	print := h.upload(store, pngOf(160, 320, false))
+	w, ht := c.in.PrintSize.PrintPixels()
+	print := h.upload(store, pngOf(w, ht, false))
 	return h.send(http.MethodPost, "/x/customizer/designs", store, map[string]any{
 		"product_id": c.product.ID, "variant_id": variant,
 		"preview_upload_id": preview.ID, "print_upload_id": print.ID,
@@ -535,6 +536,19 @@ func TestADesignIsCheckedAgainstItsProduct(t *testing.T) {
 		}
 	}
 
+	small := h.upload("", pngOf(825, 1654, false)).ID
+	wrongSize := base([]map[string]any{shape(0)})
+	wrongSize["print_upload_id"] = small
+	if rec := h.send(http.MethodPost, "/x/customizer/designs", "", wrongSize); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(errorCode(t, rec), "the print file is 825 × 1654 pixels; this product prints at 827 × 1654") {
+		t.Errorf("a print file two pixels narrow = %d %s, want 400; a rounding is one pixel, not two", rec.Code, rec.Body)
+	}
+	near := h.upload("", pngOf(828, 1653, false)).ID
+	wrongSize["print_upload_id"] = near
+	if rec := h.send(http.MethodPost, "/x/customizer/designs", "", wrongSize); rec.Code != http.StatusCreated {
+		t.Errorf("a print file a pixel off each way = %d %s, want it taken as the editor's rounding", rec.Code, rec.Body)
+	}
+
 	noText := c.in
 	noText.Tools = &Tools{Upload: true, Background: true}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, noText); err != nil {
@@ -608,6 +622,15 @@ func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 		t.Errorf("an add-on made to a design = %d, want 400", rec.Code)
 	}
 
+	// The shop changes the print after the designs were made: each order
+	// line still says the size its own print file was made for.
+	resized := c.in
+	resized.PrintSize = &PrintSize{WidthMM: 35, HeightMM: 70, DPI: 300}
+	resized.PrintArea = &PrintArea{X: 30, Y: 30, Width: 140, Height: 280}
+	if _, err := h.mod.Save(h.ctx, c.product.ID, resized); err != nil {
+		t.Fatal(err)
+	}
+
 	result, err := h.app.Order().Checkout(h.ctx, "cod", gocommerce.CheckoutInput{
 		CartID: cart.Token, Email: "asha@example.com", Name: "Asha",
 		Address: gocommerce.Address{Line1: "1 MG Road", City: "Bengaluru", State: "KA", PostalCode: "560001", Country: "IN", Phone: "+919800000000"},
@@ -639,6 +662,10 @@ func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 	photos := d["photos"].([]any)
 	if len(photos) != 1 || photos[0].(map[string]any)["url"] != photo.URL {
 		t.Errorf("photos = %v, want the original photo", photos)
+	}
+	if got, _ := json.Marshal(map[string]any{"size": d["print_size"], "area": d["print_area"]}); string(got) !=
+		`{"area":{"height":320,"radius":16,"width":160,"x":20,"y":20},"size":{"dpi":300,"height_mm":140,"width_mm":70}}` {
+		t.Errorf("print = %s, want the size and area the design was made for, not the setup's since", got)
 	}
 
 	again, _ := h.app.Cart().Create(h.ctx, "")

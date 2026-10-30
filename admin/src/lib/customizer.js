@@ -186,6 +186,7 @@ export function designSummary(design) {
         .filter((l) => l.type === "text")
         .map((l) => ({ text: l.text, font: family.get(l.font) || fontName(l.font), color: l.color }));
     const count = (type) => layers.filter((l) => l.type === type).length;
+    const size = design?.print_size;
     return {
         words,
         fonts: [...new Set(words.map((w) => w.font))],
@@ -193,5 +194,6 @@ export function designSummary(design) {
         shapes: count("shape"),
         stickers: count("sticker"),
         background: design?.document?.background ?? null,
+        print: size?.width_mm > 0 ? `${size.width_mm} × ${size.height_mm} mm at ${size.dpi} dpi` : null,
     };
 }

@@ -59,6 +59,7 @@
                     <i class="ri-download-2-line" aria-hidden="true"></i>
                     Download print file
                 </a>
+                {#if summary.print}<span class="txt-hint">, {summary.print}</span>{/if}
             </li>
             {#each design.photos ?? [] as photo, i (photo.upload_id)}
                 <li>

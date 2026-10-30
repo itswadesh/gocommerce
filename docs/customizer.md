@@ -128,6 +128,8 @@ proxy's address, so an install behind one raises `Config.UploadsPerHour`.
 - At most 50 layers and 64 KB. An unknown field anywhere is refused, so a
   version 2 document is a new version, not extra fields on this one.
 - Every upload must be one of this store's and not yet deleted (above).
+- The print file must be `print_size` in pixels, a pixel either way for the
+  editor's rounding, or the design is refused (400).
 
 `POST /x/customizer/designs` answers 201 with `{"design_id", "preview_url"}`,
 and is limited to 30 an hour per address.
@@ -155,14 +157,17 @@ order exists. Each designed order line keeps `metadata.design`:
   "print_url": "…",
   "document": {"version": 1, "background": "#f4e1d2", "layers": ["…"]},
   "photos": [{"upload_id": "…", "url": "…", "width": 3000, "height": 4000}],
-  "fonts": [{"key": "poppins", "family": "Poppins"}]
+  "fonts": [{"key": "poppins", "family": "Poppins"}],
+  "print_size": {"width_mm": 75, "height_mm": 150, "dpi": 300},
+  "print_area": {"x": 100, "y": 100, "width": 800, "height": 1600, "radius": 80}
 }
 ```
 
 It is a copy, so a later change to the product's setup, or the design being
-deleted, never changes a placed order. The panel's order page shows the
-preview, the print file to download, the original photos and the words and
-fonts used.
+deleted, never changes a placed order. `print_size` and `print_area` are the
+setup's as they were when the design was saved, the size its print file was
+made for. The panel's order page shows the preview, the print file to
+download with its size, the original photos and the words and fonts used.
 
 ## Privacy and retention
 

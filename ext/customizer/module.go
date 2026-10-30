@@ -141,6 +141,21 @@ CREATE INDEX customizer_design_uploads_upload_idx ON customizer_design_uploads (
 			"customizer_products", "customizer_uploads", "customizer_designs", "customizer_design_uploads"),
 		gocommerce.WithholdFromReports("0003_withhold_from_reports",
 			"customizer_uploads", "customizer_designs", "customizer_design_uploads"),
+		{
+			// The print's size and where it sits on the mockup, as they were
+			// when the design was made, so the order says what to print
+			// whatever later happens to the product's setup. A design saved
+			// before this has neither.
+			ID: "0004_design_print",
+			SQL: `
+ALTER TABLE customizer_designs
+    ADD COLUMN print_size jsonb NOT NULL DEFAULT '{}',
+    ADD COLUMN print_area jsonb NOT NULL DEFAULT '{}';
+ALTER TABLE customizer_designs
+    ALTER COLUMN print_size DROP DEFAULT,
+    ALTER COLUMN print_area DROP DEFAULT;
+`,
+		},
 	}
 }
 

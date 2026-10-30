@@ -249,21 +249,37 @@ func (m *Module) CreateDesign(ctx context.Context, in DesignInput) (*Saved, erro
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "encode the design")
 	}
+	printSize, err := json.Marshal(s.PrintSize)
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "encode the print size")
+	}
+	printArea, err := json.Marshal(s.PrintArea)
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "encode the print area")
+	}
 	id, err := randomID()
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "name the design")
 	}
 	var preview string
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
-		urls, err := holdUploads(ctx, tx, uploads)
+		held, err := holdUploads(ctx, tx, uploads)
 		if err != nil {
 			return err
 		}
-		preview = urls[in.PreviewUploadID]
+		// The print shop prints the file at the print size, so a file of any
+		// other size comes out stretched or soft. A pixel either way is a
+		// rounding of the editor's own.
+		w, h := s.PrintSize.PrintPixels()
+		if p := held[in.PrintUploadID]; abs(p.Width-w) > 1 || abs(p.Height-h) > 1 {
+			return gocommerce.Validationf("the print file is %d × %d pixels; this product prints at %d × %d", p.Width, p.Height, w, h)
+		}
+		preview = held[in.PreviewUploadID].URL
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO customizer_designs (id, product_id, variant_id, document, preview_upload_id, print_upload_id)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			id, in.ProductID, in.VariantID, stored, in.PreviewUploadID, in.PrintUploadID); err != nil {
+			INSERT INTO customizer_designs (id, product_id, variant_id, document, preview_upload_id, print_upload_id,
+			                                print_size, print_area)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			id, in.ProductID, in.VariantID, stored, in.PreviewUploadID, in.PrintUploadID, printSize, printArea); err != nil {
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `
@@ -281,33 +297,35 @@ func (m *Module) CreateDesign(ctx context.Context, in DesignInput) (*Saved, erro
 	return &Saved{ID: id, PreviewURL: preview}, nil
 }
 
-// holdUploads reads the uploads' addresses and keeps the sweep off them until
-// the transaction ends: it deletes only uploads it can lock.
-func holdUploads(ctx context.Context, tx *sql.Tx, ids []string) (map[string]string, error) {
+// holdUploads reads the uploads and keeps the sweep off them until the
+// transaction ends: it deletes only uploads it can lock.
+func holdUploads(ctx context.Context, tx *sql.Tx, ids []string) (map[string]Upload, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT id, url FROM customizer_uploads WHERE id = ANY($1::text[]) FOR SHARE`, texts(ids))
+		`SELECT id, url, width, height FROM customizer_uploads WHERE id = ANY($1::text[]) FOR SHARE`, texts(ids))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	urls := map[string]string{}
+	held := map[string]Upload{}
 	for rows.Next() {
-		var id, url string
-		if err := rows.Scan(&id, &url); err != nil {
+		var u Upload
+		if err := rows.Scan(&u.ID, &u.URL, &u.Width, &u.Height); err != nil {
 			return nil, err
 		}
-		urls[id] = url
+		held[u.ID] = u
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	for _, id := range ids {
-		if _, ok := urls[id]; !ok {
+		if _, ok := held[id]; !ok {
 			return nil, gocommerce.Validationf("upload %s is not one of this store's, or has expired; upload it again", id)
 		}
 	}
-	return urls, nil
+	return held, nil
 }
+
+func abs(n int) int { return max(n, -n) }
 
 func texts(values []string) string {
 	b := []byte{'{'}
@@ -356,14 +374,14 @@ func (m *Module) lineDesign(ctx context.Context, tx *sql.Tx, designID string, va
 		return nil, gocommerce.NotFoundf("no design %q in this store", designID)
 	}
 	var productID, madeFor int64
-	var raw []byte
+	var raw, printSize, printArea []byte
 	var preview, print string
 	err := tx.QueryRowContext(ctx, `
 		UPDATE customizer_designs d SET vouched_at = now()
 		FROM customizer_uploads p, customizer_uploads x
 		WHERE d.id = $1 AND p.id = d.preview_upload_id AND x.id = d.print_upload_id
-		RETURNING d.product_id, d.variant_id, d.document, p.url, x.url`, designID).
-		Scan(&productID, &madeFor, &raw, &preview, &print)
+		RETURNING d.product_id, d.variant_id, d.document, p.url, x.url, d.print_size, d.print_area`, designID).
+		Scan(&productID, &madeFor, &raw, &preview, &print, &printSize, &printArea)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, gocommerce.NotFoundf("no design %q in this store", designID)
 	}
@@ -409,6 +427,7 @@ func (m *Module) lineDesign(ctx context.Context, tx *sql.Tx, designID string, va
 		Snapshot: gocommerce.Metadata{
 			"id": designID, "preview_url": preview, "print_url": print, "document": doc,
 			"photos": photos, "fonts": fontsOf(fonts),
+			"print_size": json.RawMessage(printSize), "print_area": json.RawMessage(printArea),
 		},
 	}, nil
 }

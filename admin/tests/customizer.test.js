@@ -157,6 +157,7 @@ test("an order line's design is summed up for the person printing it", () => {
                 { type: "shape", shape: "heart" },
             ],
         },
+        print_size: { width_mm: 75, height_mm: 150, dpi: 300 },
     });
     assert.deepEqual(s, {
         words: [
@@ -168,5 +169,6 @@ test("an order line's design is summed up for the person printing it", () => {
         shapes: 1,
         stickers: 0,
         background: "#112233",
+        print: "75 × 150 mm at 300 dpi",
     });
 });
