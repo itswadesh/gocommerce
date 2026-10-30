@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// India's GST reference lists (D170): the state codes and the HSN/SAC master.
+// India's GST reference lists (D171): the state codes and the HSN/SAC master.
 // Both are compiled into the binary and the same for every store, so they
 // are read with catalog.read — the right every role holds — like the
 // taxonomy master is read with the catalog.

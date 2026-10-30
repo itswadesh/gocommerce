@@ -1072,7 +1072,7 @@
           "system"
         ],
         "summary": "Get past a closed store's password",
-        "description": "For a store closed with a password (the store-close plugin, D168). GET /api/plugins says store-close is on and its password is set as `\"password\": true` — never the password itself. Send the password a visitor typed, and a right one answers with a pass for 30 days; send that pass back as `token` to check it, on every page if you like, which costs no try. A new password ends every pass. Only the storefront's pages are gated: the API, the cart and checkout answer as usual. Each client (an IPv6 /64) gets 20 password tries an hour on a store, right or wrong; past that, 429.",
+        "description": "For a store closed with a password (the store-close plugin, D169). GET /api/plugins says store-close is on and its password is set as `\"password\": true` — never the password itself. Send the password a visitor typed, and a right one answers with a pass for 30 days; send that pass back as `token` to check it, on every page if you like, which costs no try. A new password ends every pass. Only the storefront's pages are gated: the API, the cart and checkout answer as usual. Each client (an IPv6 /64) gets 20 password tries an hour on a store, right or wrong; past that, 429.",
         "requestBody": {
           "required": true,
           "content": {
@@ -16862,7 +16862,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every state and union territory as GST numbers it, in code order — the table a GSTIN's first two digits are checked against, compiled into the binary (D170). For an Indian address's state picker and anywhere a place of supply is chosen.",
+        "description": "Every state and union territory as GST numbers it, in code order — the table a GSTIN's first two digits are checked against, compiled into the binary (D171). For an Indian address's state picker and anywhere a place of supply is chosen.",
         "responses": {
           "200": {
             "description": "The whole list.",
@@ -16902,7 +16902,7 @@
             "adminToken": []
           }
         ],
-        "description": "India's HSN (goods) and SAC (services) codes from the GST portal's master, embedded in the binary and read-only (D170). `?q=` of digits is a code prefix, dots and spaces ignored (`6109.10`); anything else is words that must all appear in the description or its heading. Results are in code order and page like any listing; no `q` is an empty page.",
+        "description": "India's HSN (goods) and SAC (services) codes from the GST portal's master, embedded in the binary and read-only (D171). `?q=` of digits is a code prefix, dots and spaces ignored (`6109.10`); anything else is words that must all appear in the description or its heading. Results are in code order and page like any listing; no `q` is an empty page.",
         "parameters": [
           {
             "name": "q",
