@@ -67,7 +67,7 @@ produces it, and is never repurposed.
 | `order.paid` | Money arrived | Also confirms a pending order, so it becomes shippable |
 | `order.unpaid` | A payment recorded in error was taken back | `payment_status` goes back to `pending`; the order's `status` and its stock do not move. Refused once anything has been refunded. Clearing a recorded payment *failure* is silent, because the failure was never announced |
 | `order.shipped` | A parcel was booked | Fires once per parcel. Payload carries `tracking` and a `shipment` block naming what went in this one and what is still owed; `status` is `partial` while the order still owes units |
-| `order.unshipped` | A shipment recorded in error was removed | Payload carries the same `shipment` block, describing the parcel that came back; `status` is what is left — `partial` or `confirmed` |
+| `order.unshipped` | A shipment recorded in error was removed, or a booked parcel was cancelled (it stays on the order as `cancelled`, and `reason` says why) | Payload carries the same `shipment` block, describing the parcel that came back; `status` is what is left — `partial` or `confirmed` |
 | `order.delivered` | The customer received it | |
 | `order.undelivered` | A delivery recorded in error was taken back | The order, and the fulfillments marked delivered with it, go back to `shipped`. Nothing moved when the delivery was recorded, so nothing moves back |
 | `order.refunded` | Money went back through the provider | Fires once per refund, so two partial refunds are two events. Payload carries a `refund` block and `reason`; `payment_status` says whether this one finished the job — `paid` while the store still holds part of it, `refunded` once the parts add up to the total |

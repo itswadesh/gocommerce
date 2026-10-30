@@ -544,20 +544,9 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 			return transitionResult{}, NotFoundf("fulfillment not found")
 		}
 
-		want, remaining, err := shippingState(ctx, tx, o.ID)
+		remaining, err := rederiveAfterUnshipping(ctx, tx, o)
 		if err != nil {
 			return transitionResult{}, err
-		}
-		// The guard the old count had, widened by one value and no further.
-		// Delete refuses nothing but a delivered order, so an unconditional
-		// re-derivation would walk a cancelled order carrying a stray
-		// fulfillment row to confirmed — a state change nobody asked for and no
-		// event explains.
-		if (o.Status == OrderShipped || o.Status == OrderPartial) && want != o.Status {
-			if err := setOrderStatus(ctx, tx, o.ID, want); err != nil {
-				return transitionResult{}, err
-			}
-			o.Status = want
 		}
 		payload := f.app.orders.eventPayload(o)
 		payload.Shipment = &ShipmentEvent{
@@ -570,6 +559,103 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 			Summary: "Removed a shipment from order " + o.Number,
 		}, nil
 	})
+}
+
+// rederiveAfterUnshipping puts the order's status back in line with the
+// parcels still carrying it, once one has stopped counting.
+func rederiveAfterUnshipping(ctx context.Context, tx *sql.Tx, o *Order) (remaining int, err error) {
+	want, remaining, err := shippingState(ctx, tx, o.ID)
+	if err != nil {
+		return 0, err
+	}
+	// The guard the old count had, widened by one value and no further.
+	// Delete refuses nothing but a delivered order, so an unconditional
+	// re-derivation would walk a cancelled order carrying a stray
+	// fulfillment row to confirmed — a state change nobody asked for and no
+	// event explains.
+	if (o.Status == OrderShipped || o.Status == OrderPartial) && want != o.Status {
+		if err := setOrderStatus(ctx, tx, o.ID, want); err != nil {
+			return 0, err
+		}
+		o.Status = want
+	}
+	return remaining, nil
+}
+
+// Cancel records that a booked parcel will not travel — the carrier cancelled
+// it, or the store did before it was collected — and puts what it held back
+// on what the order owes.
+//
+// Not Delete: the booking happened, and the order's history should say so.
+// The row stays, marked cancelled, which every count of what has shipped
+// already leaves out. A second cancel is a no-op, because a carrier's webhook
+// and the operator who pressed the button may both report the same fact.
+func (f *Fulfillments) Cancel(ctx context.Context, id int64, reason string) (*Order, error) {
+	var orderID int64
+	if err := f.app.db.QueryRowContext(ctx,
+		`SELECT order_id FROM fulfillments WHERE id = $1`, id).Scan(&orderID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, NotFoundf("fulfillment not found")
+		}
+		return nil, err
+	}
+	return f.app.orders.transition(ctx, orderID, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
+		var status, carrier string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT status, carrier FROM fulfillments WHERE id = $1 FOR UPDATE`, id).Scan(&status, &carrier); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return transitionResult{}, NotFoundf("fulfillment not found")
+			}
+			return transitionResult{}, err
+		}
+		switch status {
+		case "cancelled":
+			return transitionResult{}, nil
+		case "delivered":
+			return transitionResult{}, Conflictf("that parcel of order %s was delivered; it cannot be cancelled", o.Number)
+		}
+		if o.Status == OrderDelivered {
+			return transitionResult{}, Conflictf(
+				"order %s is delivered; undo the delivery before cancelling what shipped it", o.Number)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE fulfillments SET status = 'cancelled', updated_at = now() WHERE id = $1`, id); err != nil {
+			return transitionResult{}, err
+		}
+		held, err := parcelContents(ctx, tx, id)
+		if err != nil {
+			return transitionResult{}, err
+		}
+		remaining, err := rederiveAfterUnshipping(ctx, tx, o)
+		if err != nil {
+			return transitionResult{}, err
+		}
+		payload := f.app.orders.eventPayload(o)
+		payload.Reason = reason
+		payload.Shipment = &ShipmentEvent{
+			FulfillmentID: id, Carrier: carrier,
+			RemainingUnits: remaining, Lines: held,
+		}
+		summary := "Cancelled a shipment of order " + o.Number
+		if reason != "" {
+			summary += " — " + reason
+		}
+		return transitionResult{
+			Event: EventOrderUnshipped, Payload: payload,
+			Action: AuditOrderShipmentCancel, Summary: summary,
+		}, nil
+	})
+}
+
+// Parcel is what a shipment of these lines would physically be — the figure
+// Create hands the provider — for a carrier module to quote on before
+// anything is booked. Empty lines means everything the order still owes.
+func (f *Fulfillments) Parcel(ctx context.Context, o *Order, lines []ShipLine) (Parcel, error) {
+	resolved, err := resolveShipLines(o, lines)
+	if err != nil {
+		return Parcel{}, err
+	}
+	return f.parcelFor(ctx, o, resolved)
 }
 
 // parcelFor works out what a shipment physically is, from the variants behind

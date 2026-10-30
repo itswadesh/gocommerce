@@ -39,6 +39,7 @@ set by a caller.
 | payment failed → pending | `Pay().MarkUnpaid(ctx, id)` | `POST /api/admin/orders/{id}/mark-unpaid` | none |
 | confirmed → partial | `Ship().Create(ctx, id, code, req)` with `req.Lines` | `POST /api/admin/create-fulfillment` | `order.shipped` |
 | confirmed\|partial → shipped | `Ship().Create(ctx, id, code, req)` | `POST /api/admin/create-fulfillment` | `order.shipped` |
+| partial\|shipped → confirmed\|partial, a parcel called off | `Ship().Cancel(ctx, fulfillmentID, reason)` | *(a carrier module's route, such as Shiprocket's cancel)* | `order.unshipped` |
 | shipped → delivered | `Order().MarkDelivered(ctx, id)` | `POST /api/admin/orders/{id}/deliver` | `order.delivered` |
 | pending\|confirmed → cancelled | `Order().Cancel(ctx, id, reason)` | `POST /api/admin/orders/{id}/cancel` | `order.cancelled` |
 | paid → paid \| refunded | `Pay().Refund(ctx, id, RefundRequest{...}, by)` | `POST /api/admin/orders/{id}/refund` | `order.refunded` |
