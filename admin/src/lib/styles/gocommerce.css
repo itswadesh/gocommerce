@@ -12667,3 +12667,218 @@ html .tw\:rounded-2xl {
     background: var(--cardFace);
     color: var(--surfaceTxtHintColor);
 }
+
+/* ------------------------------------------------------------- Shiprocket */
+
+/*
+ * The courier picker in the ship dialog, the bookings card on an order and
+ * the account check in Shiprocket's settings drawer. Each choice is a row
+ * with its radio inside the label, so the whole row is the hit target; the
+ * selected row says so with its edge and a whisper of the mark colour, never
+ * colour alone (the radio is drawn too). Movement is a short press and a
+ * fade, both gone under reduced motion while the change of edge stays.
+ */
+.sr-couriers {
+    margin-top: var(--smSpacing);
+}
+.sr-couriers-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px var(--smSpacing);
+    margin-bottom: 8px;
+}
+.sr-couriers-title {
+    font-weight: 600;
+}
+.sr-weight {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sr-weight input {
+    width: 96px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    transition: border-color 150ms ease-out;
+}
+.sr-weight input:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.sr-couriers-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+}
+.sr-spinner {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    border: 2px solid var(--surfaceAlt3Color);
+    border-top-color: var(--markColor);
+    animation: sr-spin 0.8s linear infinite;
+}
+@keyframes sr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+.sr-alert {
+    margin: 0;
+}
+.sr-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.sr-pick {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--surfaceAlt3Color);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--smFontSize);
+    cursor: pointer;
+    transition:
+        border-color 150ms ease-out,
+        background-color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.sr-pick.active {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor), transparent 90%);
+    font-weight: 600;
+}
+.sr-courier-list,
+.sr-pickups {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: opacity 200ms ease-out;
+}
+/* A re-quote in flight: the old list stays readable and says it is old. */
+.sr-courier-list.stale {
+    opacity: 0.55;
+}
+.sr-courier,
+.sr-pickup {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 2px 10px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    cursor: pointer;
+    transition:
+        border-color 150ms ease-out,
+        background-color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.sr-pickup {
+    grid-template-columns: auto 1fr;
+}
+.sr-courier input,
+.sr-pickup input {
+    margin: 0;
+}
+.sr-courier.active,
+.sr-pickup.active {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor), transparent 92%);
+}
+.sr-courier-name,
+.sr-pickup-name {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.sr-courier-rate {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.sr-courier-meta,
+.sr-pickup > .txt-hint {
+    grid-column: 2 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    min-width: 0;
+}
+.sr-cod {
+    font-size: 11px;
+}
+.sr-courier:focus-within,
+.sr-pickup:focus-within,
+.sr-pick:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 2px;
+}
+@media (hover: hover) {
+    .sr-courier:hover,
+    .sr-pickup:hover,
+    .sr-pick:hover {
+        border-color: var(--txtHintColor);
+    }
+}
+.sr-courier:active,
+.sr-pickup:active,
+.sr-pick:active {
+    transform: scale(0.99);
+}
+.sr-connected {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--successColor);
+    font-weight: 600;
+}
+/* Two classes, to win over list.css's centred row. */
+.order-card .sr-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    transition: opacity 200ms ease-out;
+}
+.order-card .sr-row.cancelled {
+    opacity: 0.6;
+}
+.sr-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+.sr-row-head .txt-code {
+    overflow-wrap: anywhere;
+}
+.sr-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .sr-courier:active,
+    .sr-pickup:active,
+    .sr-pick:active {
+        transform: none;
+    }
+    .sr-spinner {
+        animation-duration: 1.6s;
+    }
+}
