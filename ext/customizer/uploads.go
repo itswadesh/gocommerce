@@ -101,7 +101,7 @@ var (
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
 	errTooManyScans = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "too_many_scans",
-		Message: "this photo is saved in more passes than a camera or photo editor writes; save it again as an ordinary JPEG"}
+		Message: "this photo is saved in more passes than a camera or photo editor writes; open it in a photo editor and save it again"}
 	errTooSlow = &gocommerce.APIError{Status: http.StatusBadRequest, Code: "upload_too_slow",
 		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
