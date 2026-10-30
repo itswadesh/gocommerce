@@ -154,7 +154,8 @@ type FulfillmentProvider interface {
 // Shiprocket does. And the route binds no store: a carrier names none the
 // resolver understands, so the handler finds the store in whatever
 // authenticates the call and binds it with WithStore before reading anything.
-// A handler that forgets sees no rows, which fails closed.
+// It arrives bound to an id no store has, so a handler that forgets sees no
+// rows, which fails closed.
 //
 // What the handler learns it reports through [Fulfillments.Track], never by
 // writing a core table.

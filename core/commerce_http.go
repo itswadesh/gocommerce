@@ -212,8 +212,15 @@ func (a *App) handleTrackingUpdate(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, NotFoundf("no carrier sends tracking to %q", r.PathValue("hook")))
 		return
 	}
-	receiver.Tracking().ServeHTTP(w, r)
+	// Bound to no store a statement can match — not the host's, not an
+	// embedder's fallback — so a provider that forgets to bind the store its
+	// caller proved sees no rows rather than somebody else's.
+	receiver.Tracking().ServeHTTP(w, r.WithContext(WithStore(r.Context(), unboundCallback)))
 }
+
+// unboundCallback is the store a carrier callback starts bound to: never a
+// store id, which NewStoreID makes "store_" and a ULID.
+const unboundCallback = "tracking-callback"
 
 // ------------------------------------------------------------------ orders
 

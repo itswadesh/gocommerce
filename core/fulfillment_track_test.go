@@ -240,3 +240,55 @@ func TestACarrierCallbackIsServedWithoutAStore(t *testing.T) {
 		t.Errorf("an unknown hook = %d, want 404", rec.Code)
 	}
 }
+
+// Carriers' reports arrive out of order. One older than what the parcel
+// already shows changes nothing.
+func TestALateUpdateDoesNotUndoANewerOne(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := confirmedOrder(t, app, orderSpec{"TRACK-LATE", 1})
+	shipped, err := app.Ship().Create(ctx, order.ID, ProviderManual, ShipRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parcel := shipped.Fulfillments[0].ID
+	newer := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	if _, err := app.Ship().Track(ctx, parcel, TrackingUpdate{Status: TrackingOutForDelivery, At: newer}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Ship().Track(ctx, parcel, TrackingUpdate{Status: TrackingInTransit, At: newer.Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if got := parcelOf(t, app, order.ID, parcel).TrackingStatus; got != TrackingOutForDelivery {
+		t.Errorf("after a late report the parcel is %q, want out for delivery", got)
+	}
+	if n := len(eventsNamed(t, app, order.ID, EventOrderShipmentUpdated)); n != 1 {
+		t.Errorf("%d updates, want 1: the late report said nothing new", n)
+	}
+}
+
+// A delivery taken back — the customer says it never came — leaves the parcel
+// open for the carrier's real delivery later.
+func TestAnUndoneDeliveryCanBeDeliveredAgain(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := confirmedOrder(t, app, orderSpec{"TRACK-UNDO", 1})
+	shipped, err := app.Ship().Create(ctx, order.ID, ProviderManual, ShipRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parcel := shipped.Fulfillments[0].ID
+	if _, err := app.Ship().Track(ctx, parcel, TrackingUpdate{Status: TrackingDelivered}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Order().MarkUndelivered(ctx, order.ID); err != nil {
+		t.Fatal(err)
+	}
+	o, err := app.Ship().Track(ctx, parcel, TrackingUpdate{Status: TrackingDelivered})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Status != OrderDelivered {
+		t.Errorf("the carrier's second delivery left the order %s", o.Status)
+	}
+}

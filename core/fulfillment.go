@@ -620,13 +620,14 @@ func (f *Fulfillments) Cancel(ctx context.Context, id int64, reason string) (*Or
 type parcelState struct {
 	id                       int64
 	status, carrier, tracked string
+	trackedAt                sql.NullTime
 }
 
 func lockParcel(ctx context.Context, tx *sql.Tx, id int64) (parcelState, error) {
 	p := parcelState{id: id}
 	if err := tx.QueryRowContext(ctx,
-		`SELECT status, carrier, tracking_status FROM fulfillments WHERE id = $1 FOR UPDATE`, id).
-		Scan(&p.status, &p.carrier, &p.tracked); err != nil {
+		`SELECT status, carrier, tracking_status, tracking_updated_at FROM fulfillments WHERE id = $1 FOR UPDATE`, id).
+		Scan(&p.status, &p.carrier, &p.tracked, &p.trackedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return p, NotFoundf("fulfillment not found")
 		}
@@ -716,9 +717,10 @@ type TrackingUpdate struct {
 // and changes nothing else.
 //
 // It is idempotent, because carriers repeat themselves: the status a parcel
-// already has says nothing new and writes nothing. Once a parcel is
-// delivered, returned or cancelled, later reports are ignored — a scan
-// arriving late must not walk a delivered parcel back into a van.
+// already has says nothing new and writes nothing. Reports arrive out of
+// order, so one whose At is older than the last applied is ignored too; and
+// once a parcel is delivered, returned or cancelled, later reports are —
+// a scan arriving late must not walk a delivered parcel back into a van.
 func (f *Fulfillments) Track(ctx context.Context, id int64, u TrackingUpdate) (*Order, error) {
 	if !trackingStatuses[u.Status] {
 		return nil, Validationf("no tracking status called %q", u.Status)
@@ -739,6 +741,13 @@ func (f *Fulfillments) Track(ctx context.Context, id int64, u TrackingUpdate) (*
 		if p.status != "shipped" || p.tracked == TrackingReturned || p.tracked == u.Status {
 			return transitionResult{}, nil
 		}
+		if !u.At.IsZero() && p.trackedAt.Valid && u.At.Before(p.trackedAt.Time) {
+			return transitionResult{}, nil
+		}
+		at := u.At
+		if at.IsZero() {
+			at = time.Now()
+		}
 		if u.Status == TrackingCancelled {
 			return f.cancelLocked(ctx, tx, o, p, firstNonEmpty(u.Detail, "Cancelled by the carrier"))
 		}
@@ -747,8 +756,8 @@ func (f *Fulfillments) Track(ctx context.Context, id int64, u TrackingUpdate) (*
 			parcelStatus = "delivered"
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE fulfillments SET status = $2, tracking_status = $3, tracking_updated_at = now(), updated_at = now()
-			WHERE id = $1`, id, parcelStatus, u.Status); err != nil {
+			UPDATE fulfillments SET status = $2, tracking_status = $3, tracking_updated_at = $4, updated_at = now()
+			WHERE id = $1`, id, parcelStatus, u.Status, at); err != nil {
 			return transitionResult{}, err
 		}
 		held, err := parcelContents(ctx, tx, id)

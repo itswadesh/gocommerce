@@ -962,7 +962,8 @@ func (s *Orders) MarkUndelivered(ctx context.Context, id int64) (*Order, error) 
 		// Only the ones this delivery moved. A fulfillment cancelled separately
 		// stays cancelled — it was not part of what is being undone.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE fulfillments SET status = 'shipped', updated_at = now()
+			`UPDATE fulfillments SET status = 'shipped', updated_at = now(),
+			     tracking_status = CASE WHEN tracking_status = 'delivered' THEN '' ELSE tracking_status END
 			 WHERE order_id = $1 AND status = 'delivered'`, o.ID); err != nil {
 			return transitionResult{}, err
 		}
