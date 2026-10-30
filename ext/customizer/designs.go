@@ -391,15 +391,15 @@ func (m *Module) lineDesign(ctx context.Context, tx *sql.Tx, designID string, va
 	if madeFor != variantID {
 		return nil, gocommerce.Validationf("this design was made for variant %d, not %d", madeFor, variantID)
 	}
-	// The plugin's switch is read through tx like everything else here: a
-	// pooled connection taken while the basket's or the checkout's
-	// transaction holds one waits on the very pool those transactions fill.
-	var made, ordered, on bool
+	var made, ordered bool
 	if err := tx.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM customizer_products WHERE product_id = $1 AND enabled),
-		       EXISTS (SELECT 1 FROM order_lines WHERE metadata ? 'design' AND metadata->'design'->>'id' = $2),
-		       EXISTS (SELECT 1 FROM plugins WHERE key = $3 AND enabled)`,
-		productID, designID, pluginKey).Scan(&made, &ordered, &on); err != nil {
+		       EXISTS (SELECT 1 FROM order_lines WHERE metadata ? 'design' AND metadata->'design'->>'id' = $2)`,
+		productID, designID).Scan(&made, &ordered); err != nil {
+		return nil, err
+	}
+	on, err := m.app.Plugins().EnabledTx(ctx, tx, pluginKey)
+	if err != nil {
 		return nil, err
 	}
 	if !made || !on {
