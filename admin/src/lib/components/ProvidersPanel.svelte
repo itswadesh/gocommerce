@@ -197,8 +197,8 @@
             {/if}
             <div class="card-grid provider-grid">
                 {#each inUse as card (card.code)}
-                    <!-- Green only when its label says Active: a built-in method is
-                         configured by nature, and green would read as "turned on". -->
+                    <!-- Green only when its label says Active: a switched-on built-in
+                         (cash on delivery) is, one with no switch is not. -->
                     <section class="card provider-card" class:active={card.state.label === "Active"}>
                         <div class="flex gap-10">
                             {@render mark(card)}
