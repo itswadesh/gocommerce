@@ -50,7 +50,7 @@ const placeBody = `{
      "publishTime": "2026-08-10T10:00:00Z",
      "googleMapsUri": "https://www.google.com/maps/reviews/data=2"},
     {"name": "places/x/reviews/3", "relativePublishTimeDescription": "3 months ago", "rating": 4,
-     "authorAttribution": {"displayName": "Meera", "uri": "https://www.google.com/maps/contrib/3/reviews", "photoUri": "https://lh3.googleusercontent.com/a/three"},
+     "authorAttribution": {"displayName": "Meera", "uri": "//www.google.com/maps/contrib/3/reviews", "photoUri": "//lh3.googleusercontent.com/a/three"},
      "publishTime": "2026-07-01T10:00:00Z"},
     {"name": "places/x/reviews/4", "relativePublishTimeDescription": "4 months ago", "rating": 5,
      "text": {"text": "Good.", "languageCode": "en"},
@@ -233,6 +233,10 @@ func TestThePlaceIsGooglesOwnAnswerReadAfreshEachTime(t *testing.T) {
 	if got.Reviews[2].Text != "" || got.Reviews[2].Rating != 4 {
 		t.Errorf("a rating with no words = %+v", got.Reviews[2])
 	}
+	// Google writes some attribution links scheme-relative; they are kept, as https.
+	if a := got.Reviews[2].Author; a.URI != "https://www.google.com/maps/contrib/3/reviews" || a.PhotoURI != "https://lh3.googleusercontent.com/a/three" {
+		t.Errorf("scheme-relative author links = %+v", a)
+	}
 
 	h.google.mu.Lock()
 	path, key, mask := h.google.paths[0], h.google.keys[0], h.google.masks[0]
@@ -320,7 +324,10 @@ type productReviewsFeed struct {
 	Reviews []struct {
 		ID       string `xml:"review_id"`
 		Reviewer struct {
-			Name string `xml:"name"`
+			Name struct {
+				Anonymous string `xml:"is_anonymous,attr"`
+				Value     string `xml:",chardata"`
+			} `xml:"name"`
 		} `xml:"reviewer"`
 		Verified  string `xml:"is_verified_purchase"`
 		Timestamp string `xml:"review_timestamp"`
@@ -361,8 +368,24 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The test shopper buys it, so their reviews are verified purchases.
+	mug, err := h.app.Products().CreateProduct(ctx, gocommerce.ProductInput{
+		Title: "Old Mug", Slug: "old-mug", Status: "active", Vendor: "Acme",
+		Variants: []gocommerce.VariantInput{{SKU: "MUG-1", PriceMinor: 900, StockOnHand: &stock}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The test shopper buys both, so their reviews are verified purchases.
 	gctest.Buy(t, h.app, gocommerce.CodeCOD, tee.Variants[0].ID, 1)
+	gctest.Buy(t, h.app, gocommerce.CodeCOD, mug.Variants[0].ID, 1)
+	if rec := gctest.Request(t, h.app, http.MethodPost, "/x/reviews", reviews.ReviewInput{
+		ProductID: mug.ID, Name: "GC", Email: "gctest@example.com", Rating: 5, Body: "Still my favourite mug."}); rec.Code != http.StatusCreated {
+		t.Fatalf("mug review = %d: %s", rec.Code, rec.Body)
+	}
+	archived := gocommerce.ProductArchived
+	if _, err := h.app.Products().UpdateProduct(ctx, mug.ID, gocommerce.ProductPatch{Status: &archived}); err != nil {
+		t.Fatal(err)
+	}
 	post := func(name, email string, rating int, title, body string) {
 		t.Helper()
 		rec := gctest.Request(t, h.app, http.MethodPost, "/x/reviews", reviews.ReviewInput{
@@ -372,6 +395,8 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 		}
 	}
 	post("Asha Kumari Rao", "gctest@example.com", 5, "Soft", "Soft cotton, true to size.")
+	// A name that is itself contact details goes as Anonymous.
+	post("98765 43210", "gctest@example.com", 3, "", "Fits as expected.")
 	post("GC Test", "gctest@example.com", 1, "", "Shrank after one wash.")
 	// Not a buyer: Google takes only reviews from customers who bought.
 	post("Stranger", "stranger@example.com", 5, "", "Looks great in the photos.")
@@ -409,6 +434,11 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 	if !strings.Contains(body, `xsi:noNamespaceSchemaLocation="http://www.google.com/shopping/reviews/schema/product/2.4/product_reviews.xsd"`) {
 		t.Errorf("feed does not name its schema:\n%s", body)
 	}
+	// The XSD is a sequence, so order is part of validity: is_verified_purchase
+	// comes after the products.
+	if first := body[strings.Index(body, "<review>"):]; strings.Index(first, "<is_verified_purchase>") < strings.Index(first, "</products>") {
+		t.Errorf("is_verified_purchase precedes the products, against the XSD's sequence:\n%s", body)
+	}
 	var feed productReviewsFeed
 	if err := xml.Unmarshal(rec.Body.Bytes(), &feed); err != nil {
 		t.Fatalf("feed is not XML: %v\n%s", err, body)
@@ -416,25 +446,28 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 	if feed.Version != "2.4" || feed.Publisher.Name == "" {
 		t.Errorf("version %q publisher %q", feed.Version, feed.Publisher.Name)
 	}
-	if len(feed.Reviews) != 2 {
-		t.Fatalf("reviews = %d, want the two verified, published, contact-free ones:\n%s", len(feed.Reviews), body)
+	if len(feed.Reviews) != 4 {
+		t.Fatalf("reviews = %d, want the four verified, published, contact-free ones:\n%s", len(feed.Reviews), body)
 	}
 	byContent := map[string]int{}
 	for i, rv := range feed.Reviews {
 		byContent[rv.Content] = i
 		// Every element the schema requires.
-		if rv.ID == "" || rv.Reviewer.Name == "" || rv.Timestamp == "" || rv.Content == "" ||
+		if rv.ID == "" || rv.Reviewer.Name.Value == "" || rv.Timestamp == "" || rv.Content == "" ||
 			rv.URL.Value == "" || rv.Overall.Value == "" || len(rv.Products) == 0 {
 			t.Errorf("review %d lacks a required element: %+v", i, rv)
 		}
 		if _, err := time.Parse(time.RFC3339, rv.Timestamp); err != nil {
 			t.Errorf("review_timestamp %q is not xs:dateTime", rv.Timestamp)
 		}
-		if rv.URL.Type != "group" || rv.URL.Value != "https://shop.example/products/crew-tee" {
-			t.Errorf("review_url = %+v", rv.URL)
-		}
 		if rv.Overall.Min != "1" || rv.Overall.Max != "5" || rv.Verified != "true" {
 			t.Errorf("rating %+v verified %q", rv.Overall, rv.Verified)
+		}
+		if rv.Products[0].Name == "Old Mug" {
+			continue
+		}
+		if rv.URL.Type != "group" || rv.URL.Value != "https://shop.example/products/crew-tee" {
+			t.Errorf("review_url = %+v", rv.URL)
 		}
 		// One product per variant, named as the product feed names it.
 		if len(rv.Products) != 2 {
@@ -456,11 +489,25 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 		t.Fatalf("want the five-star and the one-star review, got %v", byContent)
 	}
 	// A full name is personal information Google asks not to receive.
-	if got := feed.Reviews[five].Reviewer.Name; got != "Asha R." {
+	if got := feed.Reviews[five].Reviewer.Name.Value; got != "Asha R." || feed.Reviews[five].Reviewer.Name.Anonymous != "" {
 		t.Errorf("reviewer = %q, want the first name and an initial", got)
 	}
 	if feed.Reviews[five].Title != "Soft" || feed.Reviews[five].Overall.Value != "5" || feed.Reviews[one].Overall.Value != "1" {
 		t.Errorf("five = %+v one = %+v", feed.Reviews[five], feed.Reviews[one])
+	}
+	anon, ok := byContent["Fits as expected."]
+	if !ok || feed.Reviews[anon].Reviewer.Name.Value != "Anonymous" || feed.Reviews[anon].Reviewer.Name.Anonymous != "true" {
+		t.Errorf("a reviewer named by a phone number = %+v", feed.Reviews[anon].Reviewer)
+	}
+	// A review outlives its product being on sale: Google deletes a review
+	// that leaves the feed, and its policy says not to.
+	old, ok := byContent["Still my favourite mug."]
+	if !ok || len(feed.Reviews[old].Products) != 1 || strings.Join(feed.Reviews[old].Products[0].SKUs, ",") != "MUG-1" ||
+		feed.Reviews[old].Products[0].URL != "https://shop.example/products/old-mug" {
+		t.Errorf("the archived product's review = %+v", feed.Reviews[old])
+	}
+	if strings.Contains(gctest.Request(t, h.app, http.MethodGet, "/x/feeds/google.xml", nil).Body.String(), "MUG-1") {
+		t.Errorf("the archived product is in the product feed")
 	}
 	for _, never := range []string{"Stranger", "gc@example.com", "98765", "elsewhere", "Rejected", "Sample", "gctest@example.com"} {
 		if strings.Contains(body, never) {
@@ -504,7 +551,7 @@ func TestTheSurveyIsBuiltFromTheOrderAlone(t *testing.T) {
 
 	// Somebody else's token, or none, opens nothing.
 	for _, bad := range []string{"/x/google-reviews/survey/" + order.Number + "?token=wrong", "/x/google-reviews/survey/" + order.Number} {
-		if rec := gctest.Request(t, h.app, http.MethodGet, bad, nil); rec.Code != http.StatusNotFound && rec.Code != http.StatusBadRequest {
+		if rec := gctest.Request(t, h.app, http.MethodGet, bad, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s = %d", bad, rec.Code)
 		}
 	}
@@ -526,6 +573,25 @@ func TestTheSurveyIsBuiltFromTheOrderAlone(t *testing.T) {
 func TestTheModuleDeclaresItsRoutes(t *testing.T) {
 	h := newHarness(t)
 	gctest.AssertSpecCoversModuleRoutes(t, h.app, "google-reviews")
+}
+
+func TestTheDailyLimitIsEachStoresAndEachDays(t *testing.T) {
+	m := New(Config{})
+	day := time.Date(2026, 10, 30, 23, 0, 0, 0, time.UTC)
+	for i, want := range []bool{true, true, false} {
+		if got := m.takeLookup("a", 2, day); got != want {
+			t.Errorf("store a, lookup %d = %v, want %v", i+1, got, want)
+		}
+	}
+	if !m.takeLookup("b", 2, day) {
+		t.Errorf("store a's lookups were counted against store b")
+	}
+	if !m.takeLookup("a", 2, day.Add(2*time.Hour)) {
+		t.Errorf("a new UTC day did not start a new count")
+	}
+	if m.takeLookup("a", 0, day.Add(48*time.Hour)) {
+		t.Errorf("a limit of 0 allowed a lookup")
+	}
 }
 
 func TestReviewerNames(t *testing.T) {

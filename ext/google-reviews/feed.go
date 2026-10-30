@@ -19,15 +19,17 @@ import (
 // the Product Ratings policies (support.google.com/merchants/answer/6098512):
 //
 //   - every published review, low ratings included, and the whole set each
-//     time, since a review missing from a fetch is deleted;
+//     time, since a review missing from a fetch is deleted: one of a product
+//     no longer on sale stays, named as it was;
 //   - only reviews from customers who bought, so only verified ones;
 //   - no personal information: the reviewer is a first name and an initial,
-//     and a review whose words hold an email address, a phone number or a
-//     link is left out rather than edited;
+//     or Anonymous when the name is itself an email address, a phone number
+//     or a link; a review whose words hold one is left out rather than
+//     edited;
 //   - products named by the identifiers the product feed uses, so they match.
 //
-// ponytail: a review of a product no longer in the product feed (archived or
-// deleted) is left out, since it has no product to rate; Google then drops it.
+// A review of a deleted product is left out: it has no page or identifier
+// left to name, so Google drops it.
 type reviewFeed struct {
 	XMLName   xml.Name `xml:"feed"`
 	XSI       string   `xml:"xmlns:xsi,attr"`
@@ -39,10 +41,14 @@ type reviewFeed struct {
 	Reviews []feedReview `xml:"reviews>review"`
 }
 
+// The elements are in the XSD's sequence, which is not the order the schema
+// page lists them in: a validator reads the XSD.
 type feedReview struct {
-	ID        int64  `xml:"review_id"`
-	Reviewer  string `xml:"reviewer>name"`
-	Verified  bool   `xml:"is_verified_purchase"`
+	ID       int64 `xml:"review_id"`
+	Reviewer struct {
+		Anonymous bool   `xml:"is_anonymous,attr,omitempty"`
+		Name      string `xml:",chardata"`
+	} `xml:"reviewer>name"`
 	Timestamp string `xml:"review_timestamp"`
 	Title     string `xml:"title,omitempty"`
 	Content   string `xml:"content"`
@@ -56,6 +62,7 @@ type feedReview struct {
 		Value int `xml:",chardata"`
 	} `xml:"ratings>overall"`
 	Products []feedProduct `xml:"products>product"`
+	Verified bool          `xml:"is_verified_purchase"`
 }
 
 type feedProduct struct {
@@ -92,9 +99,16 @@ func (m *Module) handleFeed(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Conflictf("the product ratings feed is made of your product reviews: %s", feedProblem(err)))
 		return
 	}
-	byProduct := map[int64][]feeds.Variant{}
+	// A product on sale is named by the variants the product feed lists; one
+	// that is not, by all it has.
+	byProduct, listed := map[int64][]feeds.Variant{}, map[int64]bool{}
 	for _, v := range variants {
-		byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
+		listed[v.ProductID] = listed[v.ProductID] || v.Listed
+	}
+	for _, v := range variants {
+		if v.Listed || !listed[v.ProductID] {
+			byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
+		}
 	}
 
 	feed := reviewFeed{
@@ -106,12 +120,15 @@ func (m *Module) handleFeed(w http.ResponseWriter, r *http.Request) {
 	feed.Reviews = []feedReview{}
 	for _, rv := range published {
 		products := byProduct[rv.ProductID]
-		name := reviewerName(rv.Name)
-		if !rv.Verified || len(products) == 0 || name == "" || hasContact(rv.Title) || hasContact(rv.Body) {
+		if !rv.Verified || len(products) == 0 || hasContact(rv.Title) || hasContact(rv.Body) {
 			continue
 		}
-		fr := feedReview{ID: rv.ID, Reviewer: name, Verified: true, Timestamp: rv.CreatedAt.UTC().Format(time.RFC3339),
+		fr := feedReview{ID: rv.ID, Verified: true, Timestamp: rv.CreatedAt.UTC().Format(time.RFC3339),
 			Title: rv.Title, Content: rv.Body}
+		fr.Reviewer.Name = reviewerName(rv.Name)
+		if fr.Reviewer.Name == "" || hasContact(rv.Name) {
+			fr.Reviewer.Anonymous, fr.Reviewer.Name = true, "Anonymous"
+		}
 		fr.URL.Type, fr.URL.Value = "group", products[0].Page
 		fr.Overall.Min, fr.Overall.Max, fr.Overall.Value = 1, 5, rv.Rating
 		for _, v := range products {
