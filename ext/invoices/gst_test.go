@@ -313,6 +313,28 @@ func TestDeliveryIsAnUntaxedLine(t *testing.T) {
 	}
 }
 
+// Cash on delivery's extra charge (D165) is a line of its own, untaxed like
+// delivery, so the invoice still adds up to the order.
+func TestTheCashOnDeliveryChargeIsALine(t *testing.T) {
+	app := gstStore(t, gocommerce.Config{}, gstModule(""), "Odisha", supplierGSTIN)
+	taxRate(t, app, gocommerce.TaxRateInput{Name: "GST 18%", RateBP: 1800, Country: "IN"})
+	if _, err := app.Plugins().Update(context.Background(), gocommerce.CODPluginKey,
+		gocommerce.PluginPatch{Settings: map[string]any{"fee": "60"}}); err != nil {
+		t.Fatal(err)
+	}
+	p := hsnProduct(t, app, "CLOTH", 10000, "630790")
+
+	order := buyAndPay(t, app, purchase{Address: odisha, Lines: []*gocommerce.Product{p}})
+	doc := taxDocOf(t, app, order.ID)
+	last := doc.Lines[len(doc.Lines)-1]
+	if last.Kind != LineCharge || last.TotalMinor != 6000 || last.CGSTMinor+last.SGSTMinor+last.IGSTMinor != 0 {
+		t.Errorf("last line = %+v, want an untaxed 6000 cash on delivery charge", last)
+	}
+	if doc.Totals.TotalMinor != order.Total.AmountMinor {
+		t.Errorf("invoice total %d, order total %d", doc.Totals.TotalMinor, order.Total.AmountMinor)
+	}
+}
+
 // A store outside India gets exactly the invoice it always did: the same
 // number, no tax document, and the same page from the same template.
 func TestANonIndianStoresInvoiceIsUnchanged(t *testing.T) {

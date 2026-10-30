@@ -37,12 +37,15 @@ const (
 	SupplyExport SupplyKind = "export" // outside India: IGST
 )
 
-// LineKind tells goods from the delivery charge.
+// LineKind tells goods from the delivery charge and the payment method's.
 type LineKind string
 
 const (
 	LineGoods   LineKind = "goods"
 	LineFreight LineKind = "freight"
+	// LineCharge is what the payment method added: cash on delivery's extra
+	// charge (D165). Untaxed, as freight is, because checkout taxes neither.
+	LineCharge LineKind = "charge"
 )
 
 // Address is a party's postal address as printed.
@@ -297,6 +300,12 @@ func buildTaxInvoice(in taxInput) (*TaxInvoice, error) {
 			GrossMinor: s, TaxableMinor: s, TotalMinor: s,
 		})
 		doc.Warnings = append(doc.Warnings, Warning{Code: "freight_untaxed"})
+	}
+	if f := o.PaymentFee.AmountMinor; f > 0 {
+		doc.Lines = append(doc.Lines, TaxLine{
+			N: len(doc.Lines) + 1, Kind: LineCharge, Description: "Cash on delivery charge", Qty: 1, Unit: "NOS",
+			GrossMinor: f, TaxableMinor: f, TotalMinor: f,
+		})
 	}
 
 	byRate := map[int]*RateRow{}
