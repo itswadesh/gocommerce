@@ -677,7 +677,7 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 	if err != nil {
 		return fail(err)
 	}
-	hs, err := normalizeHSCode(row.get("hs_code"))
+	hs, err := normalizeHSCode("hs_code", row.get("hs_code"))
 	if err != nil {
 		return fail(err)
 	}

@@ -19294,6 +19294,11 @@
             },
             "description": "Populated by the nested listing only. A flat listing omits it, so the same rows never appear twice in one response."
           },
+          "hsn_code": {
+            "type": "string",
+            "description": "The GST HSN code for products in this category, 4 to 10 digits, or empty. A GST tax invoice uses it for a line whose variant has no `hs_code` of its own, taken from the product's category or the nearest parent above it that has one.",
+            "example": "7113"
+          },
           "metadata": {
             "type": "object",
             "description": "The `attributes` key is the list of fields this category asks of a product, as `{key, label}`. A choice list written here is ignored on read — the dictionary at /api/admin/taxonomy-attributes is where a field's values live."
@@ -19488,6 +19493,11 @@
             "type": "integer",
             "description": "Order among siblings."
           },
+          "hsn_code": {
+            "type": "string",
+            "description": "4 to 10 digits; dots and spaces are dropped, so 6109.10 and 610910 are the same code. Empty clears it. A GST tax invoice uses it for a product in this category (or beneath it) whose variant has no `hs_code` of its own.",
+            "example": "7113"
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": true,
@@ -19556,6 +19566,11 @@
           "position": {
             "type": "integer",
             "description": "Order among siblings."
+          },
+          "hsn_code": {
+            "type": "string",
+            "description": "4 to 10 digits; dots and spaces are dropped, so 6109.10 and 610910 are the same code. Empty clears it. A GST tax invoice uses it for a product in this category (or beneath it) whose variant has no `hs_code` of its own.",
+            "example": "7113"
           },
           "metadata": {
             "type": "object",

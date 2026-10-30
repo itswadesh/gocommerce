@@ -1297,3 +1297,30 @@ func TestChildCountTravelsInEveryListing(t *testing.T) {
 		}
 	}
 }
+
+// A category's HSN code is held to a variant's rule: separators dropped, 4 to
+// 10 digits, and empty clears it.
+func TestACategoryCarriesAnHSNCode(t *testing.T) {
+	app := categoriesApp(t)
+	ctx := context.Background()
+	svc := app.Categories()
+
+	c := newCategory(t, app, CategoryInput{Title: "Jewellery", HSNCode: "7113.19"})
+	if c.HSNCode != "711319" {
+		t.Errorf("created hsn_code = %q, want 711319", c.HSNCode)
+	}
+	for _, bad := range []string{"71", "71A3"} {
+		if _, err := svc.Update(ctx, c.ID, CategoryPatch{HSNCode: &bad}); !errors.Is(err, ErrValidation) ||
+			!strings.Contains(err.Error(), "hsn_code") {
+			t.Errorf("hsn_code %q: err = %v, want a validation error naming hsn_code", bad, err)
+		}
+	}
+	empty := ""
+	got, err := svc.Update(ctx, c.ID, CategoryPatch{HSNCode: &empty})
+	if err != nil || got.HSNCode != "" {
+		t.Fatalf("clear: %+v, %v", got, err)
+	}
+	if again, err := svc.Get(ctx, c.ID); err != nil || again.HSNCode != "" {
+		t.Errorf("read back after clearing = %+v, %v", again, err)
+	}
+}

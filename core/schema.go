@@ -109,8 +109,17 @@ func coreMigrations() []Migration {
 		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
 		{ID: "0092_order_payment_fee", SQL: migration0092OrderPaymentFee},
 		{ID: "0093_discount_prepaid_only", SQL: migration0093DiscountPrepaidOnly},
+		{ID: "0095_category_hsn", SQL: migration0095CategoryHSN},
 	}
 }
+
+// M95 — a category's HSN code, which a GST invoice uses for a product under it
+// whose variant has none of its own (D169), so a store can classify once per
+// category. Same check as a variant's hs_code (M88).
+const migration0095CategoryHSN = `
+ALTER TABLE categories ADD COLUMN hsn_code text NOT NULL DEFAULT ''
+    CHECK (hsn_code = '' OR hsn_code ~ '^[0-9]{4,10}$');
+`
 
 // M93 — a discount that only an order paid up front gets: a code refused on
 // cash on delivery. Off on every existing rule, which is how they behaved.
