@@ -288,8 +288,9 @@ func TestTheRegistryDescribesEverySection(t *testing.T) {
 		Themes   []Theme       `json:"themes"`
 	}
 	gctest.DecodeData(t, rec, &reg)
-	// Every type but the newsletter sign-up, whose plugin this store lacks.
-	if len(reg.Sections) != len(Sections)-1 || len(reg.Themes) == 0 {
+	// Every type but the newsletter sign-up and Google reviews, whose plugins
+	// this store lacks.
+	if len(reg.Sections) != len(Sections)-2 || len(reg.Themes) == 0 {
 		t.Fatalf("registry = %+v", reg)
 	}
 	// The starter is a valid page: what the editor opens with can be saved.

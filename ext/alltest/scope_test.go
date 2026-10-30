@@ -27,6 +27,7 @@ import (
 	shipstation "github.com/itswadesh/gocommerce/ext/fulfill-shipstation"
 	usps "github.com/itswadesh/gocommerce/ext/fulfill-usps"
 	veeqo "github.com/itswadesh/gocommerce/ext/fulfill-veeqo"
+	googlereviews "github.com/itswadesh/gocommerce/ext/google-reviews"
 	identity "github.com/itswadesh/gocommerce/ext/identity"
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
 	shopify "github.com/itswadesh/gocommerce/ext/import-shopify"
@@ -68,6 +69,7 @@ func everyModule() []gocommerce.Module {
 	// b2b needs the identity module it signs buyers in through, listed first.
 	accounts := identity.New(identity.Config{})
 	gateway := aigateway.New(aigateway.Config{})
+	productFeeds, productReviews := feeds.New(feeds.Config{}), reviews.New(reviews.Config{})
 	return []gocommerce.Module{
 		gateway,
 		photoproducts.New(photoproducts.Config{Gateway: gateway}),
@@ -81,7 +83,7 @@ func everyModule() []gocommerce.Module {
 		showcases.New(showcases.Config{}),
 		banners.New(banners.Config{}),
 		layouts.New(layouts.Config{}),
-		feeds.New(feeds.Config{}),
+		productFeeds,
 		delhivery.New(delhivery.Config{}),
 		easyship.New(easyship.Config{}),
 		indiapost.New(indiapost.Config{}),
@@ -116,7 +118,8 @@ func everyModule() []gocommerce.Module {
 		razorpay.New(razorpay.Config{}),
 		revenuecat.New(revenuecat.Config{}),
 		stripe.New(stripe.Config{}),
-		reviews.New(reviews.Config{}),
+		productReviews,
+		googlereviews.New(googlereviews.Config{Feeds: productFeeds, Reviews: productReviews}),
 		meilisearch.New(meilisearch.Config{}),
 		sitemaps.New(sitemaps.Config{}),
 		telegramalerts.New(telegramalerts.Config{}),

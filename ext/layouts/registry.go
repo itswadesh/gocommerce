@@ -239,6 +239,16 @@ var Sections = []SectionType{
 			{Key: "success_text", Label: "After signing up", Kind: KindText, MaxLen: maxShort, Help: "Empty says the address was added."},
 		},
 	},
+	// The store's rating and reviews from Google, read live by the storefront
+	// through ext/google-reviews, which has the place, the key and Google's
+	// rules; the section only says where they go.
+	{
+		Type: "google-reviews", Label: "Google reviews", Icon: "ri-google-line", Requires: "google-reviews", Pages: []string{"home"},
+		Description: "Your Google rating and latest Google reviews, with Google's attribution and a link to all of them on Google Maps. Shows nothing until Google reviews is set up under Plugins.",
+		Fields: []Field{
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort, Help: "Empty says \"Reviews on Google\"."},
+		},
+	},
 	{
 		Type: "faq", Label: "Questions and answers", Icon: "ri-question-answer-line",
 		Description: "Questions a shopper opens one at a time to read the answer.",

@@ -22,6 +22,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"tidio": true, "tawk-to": true, "whatsapp-chat": true,
 		// Marketing
 		"trustpilot": true, "klaviyo": true, "indexnow": true, "product-feeds": true, "recent-purchase-popup": true,
+		"google-reviews": true,
 		// Search
 		"meilisearch": true,
 		// Other

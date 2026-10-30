@@ -49,6 +49,7 @@ services:
       - -gateways
       - -carriers
       - -feeds
+      - -google-reviews
       - -sitemaps
       - -b2b
       - -recovery
