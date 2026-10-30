@@ -35,6 +35,10 @@ const (
 	// sensor is 16320 pixels) and any print file a setup may ask for. The
 	// rows a picture is read and written through grow with its width alone.
 	maxUploadSide = 16384
+	// maxScans is the most scans Skia, which decodes JPEGs for Chrome and
+	// Android, reads (SkJpegDecoderMgr.cpp); libjpeg writes 6 to 18. The
+	// decoder passes over every block of the picture once a scan.
+	maxScans      = 99
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
@@ -95,6 +99,8 @@ var (
 		Message: "send a JPEG or a PNG; the editor converts other photos before uploading them"}
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
+	errTooManyScans = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "too_many_scans",
+		Message: "this photo is saved in more passes than a camera or photo editor writes; save it again as an ordinary JPEG"}
 	errTooSlow = &gocommerce.APIError{Status: http.StatusBadRequest, Code: "upload_too_slow",
 		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
@@ -354,7 +360,10 @@ func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, er
 	}
 	orientation := 1
 	if mime == "image/jpeg" {
-		_, orientation, _ = jpegHeader(body)
+		var f jpegHead
+		if f, orientation, _ = jpegHeader(body); f.scans > f.scanLimit() {
+			return "", bounds, errTooManyScans
+		}
 	}
 	if cost, advice := decodeCost(body, mime, cfg, orientation); cost > decodeBudget {
 		return "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
@@ -510,12 +519,26 @@ type jpegHead struct {
 	progressive   bool
 	width, height int
 	components    []sampling
+	scans         int
 }
 
-// jpegHeader walks a JPEG's markers up to its first scan the way image/jpeg's
-// decoder does (Go 1.27, reader.go decoder.decode): a byte before a marker
-// that is not 0xFF, a 0xFF fill byte, "\xff\x00" and a restart marker are
-// skipped without a length, and every other segment by its length.
+// scanLimit is the most scans the decoder may read. A sequential JPEG has a
+// scan for each component at most, as libjpeg's encoder insists (jcmaster.c
+// validate_script), and image/jpeg decodes each of its scans whole.
+func (f jpegHead) scanLimit() int {
+	if f.progressive {
+		return maxScans
+	}
+	return len(f.components)
+}
+
+// jpegHeader walks a JPEG's markers the way image/jpeg's decoder does (Go
+// 1.27, reader.go decoder.decode): a byte before a marker that is not 0xFF, a
+// 0xFF fill byte, "\xff\x00" and a restart marker are skipped without a
+// length, and every other segment by its length. The data of a scan is such
+// bytes, so the walk goes on to the end, counting the scans, and stops where
+// the decoder would fail. The frame and orientation are those before the
+// first scan, and ok says there was one.
 func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 	orientation = 1
 	exif := false
@@ -524,13 +547,13 @@ func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 	}
 	for i := 2; ; {
 		if i+2 > len(b) {
-			return f, orientation, false
+			return f, orientation, f.scans > 0
 		}
 		prev, marker := b[i], b[i+1]
 		i += 2
 		for prev != jpegMarker {
 			if i >= len(b) {
-				return f, orientation, false
+				return f, orientation, f.scans > 0
 			}
 			prev, marker = marker, b[i]
 			i++
@@ -540,45 +563,48 @@ func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 		}
 		for marker == jpegMarker {
 			if i >= len(b) {
-				return f, orientation, false
+				return f, orientation, f.scans > 0
 			}
 			marker = b[i]
 			i++
 		}
 		if marker == jpegEnd {
-			return f, orientation, false
+			return f, orientation, f.scans > 0
 		}
 		if jpegRestart0 <= marker && marker <= jpegRestart7 {
 			continue
 		}
 		if i+2 > len(b) {
-			return f, orientation, false
+			return f, orientation, f.scans > 0
 		}
 		n := int(binary.BigEndian.Uint16(b[i:])) - 2
 		i += 2
 		if n < 0 || i+n > len(b) {
-			return f, orientation, false
+			return f, orientation, f.scans > 0
 		}
 		seg := b[i : i+n]
 		i += n
 		switch {
 		case marker == jpegBaseline || marker == jpegExtended || marker == jpegProgressive:
 			if f.components != nil {
-				return f, orientation, false
+				return f, orientation, f.scans > 0
 			}
 			if f, ok = jpegFrame(marker, seg); !ok {
 				return f, orientation, false
 			}
 		case marker == jpegScan:
-			return f, orientation, f.components != nil
+			if f.components == nil {
+				return f, orientation, false
+			}
+			f.scans++
 		case marker == jpegApp1:
-			if !exif && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
+			if !exif && f.scans == 0 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
 				exif, orientation = true, tiffOrientation(seg[6:])
 			}
 		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
 			jpegApp0 <= marker && marker <= jpegApp15 || marker == jpegComment:
 		default:
-			return f, orientation, false
+			return f, orientation, f.scans > 0
 		}
 	}
 }
