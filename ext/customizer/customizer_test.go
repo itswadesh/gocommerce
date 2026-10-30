@@ -108,8 +108,7 @@ type pngHeader struct {
 	depth, colour byte
 	interlaced    bool
 	transparent   bool
-	// pixels fills the picture; without them it is refused once it is read.
-	pixels bool
+	pixels        bool
 }
 
 func pngBomb(p pngHeader) []byte {
@@ -592,8 +591,6 @@ func TestAPictureIsReckonedAsTheDecoderReadsIt(t *testing.T) {
 	}
 }
 
-// A picture one pixel high is read and written again through rows as wide as
-// itself: a 0.19 MB PNG of 33,000,000 × 1 took 1197 MiB.
 func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	for name, p := range map[string]pngHeader{
@@ -613,8 +610,6 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
-// jpegSpec is a JPEG made to order, whose scans of zeros decode: a frame, its
-// scans, and whatever comes before the frame.
 type jpegSpec struct {
 	w, h      int
 	sof       byte
@@ -688,9 +683,10 @@ func jpegOf(s jpegSpec) []byte {
 	return append(b, 0xFF, jpegEnd)
 }
 
-// withinItsReckoning fails when writing b again allocates more than
-// decodeCost reckoned for it beside the body, past what the decoders and
-// encoders keep whatever the picture: buffers, tables, a turned photo's row.
+// codecSlack is what the decoders and encoders keep whatever the picture:
+// buffers, tables, a turned photo's row.
+const codecSlack = 128 << 10
+
 func withinItsReckoning(t *testing.T, b []byte) {
 	t.Helper()
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
@@ -707,7 +703,7 @@ func withinItsReckoning(t *testing.T, b []byte) {
 	runtime.ReadMemStats(&before)
 	_, _, err = redraw(b, io.Discard)
 	runtime.ReadMemStats(&after)
-	if got, want := int64(after.TotalAlloc-before.TotalAlloc), cost-int64(len(b)); err == nil && got > want+128<<10 {
+	if got, want := int64(after.TotalAlloc-before.TotalAlloc), cost-int64(len(b)); err == nil && got > want+codecSlack {
 		t.Fatalf("writing a %d × %d %s again allocated %d bytes, reckoned at %d", cfg.Width, cfg.Height, mime, got, want)
 	}
 }
@@ -793,9 +789,6 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	}
 }
 
-// A body that keeps coming is read however slowly it comes, up to
-// uploadWithin; one that stops for uploadIdle, or takes longer in all, is
-// let go with an answer the shopper can act on.
 func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	uploadIdle, uploadWithin = 500*time.Millisecond, 3*time.Second
@@ -859,9 +852,6 @@ func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	}
 }
 
-// Each upload waiting for its turn keeps its file on disk, so the waiting
-// are bounded in number and in time, and one past either bound is told to
-// come back.
 func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	spool := t.TempDir()
@@ -916,9 +906,6 @@ func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	}
 }
 
-// The server's WriteTimeout runs from when the request arrived. An upload
-// that waits for its turn past it is still told it was kept, and one that is
-// not kept is told so rather than cut off.
 func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	srv := h.server(0, time.Second)
@@ -976,8 +963,6 @@ func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
 	}
 }
 
-// An engine killed while it read uploads leaves their files in the temporary
-// directory; the next one removes those an hour old, and nothing else.
 func TestStartRemovesTheFilesAStoppedEngineLeft(t *testing.T) {
 	h := newHarness(t, Config{})
 	spool := t.TempDir()

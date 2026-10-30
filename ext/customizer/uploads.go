@@ -32,18 +32,15 @@ const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
 	// maxUploadSide is wider than any camera's photo (a 200-megapixel phone
-	// sensor is 16320 pixels) and any print file a setup may ask for. A
-	// wider picture is a strip, whose decoder and encoder rows each cost
-	// about what its whole picture does.
+	// sensor is 16320 pixels) and any print file a setup may ask for. The
+	// rows a picture is read and written through grow with its width alone.
 	maxUploadSide = 16384
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
 	// decodeQueue is how many uploads may wait for a turn to decode, each
 	// keeping its file on disk while it does.
-	decodeQueue = 8
-	// keepWithin is the decode and the store once an upload's turn comes,
-	// and answerWithin the writing of its answer after them.
+	decodeQueue  = 8
 	keepWithin   = 30 * time.Second
 	answerWithin = 10 * time.Second
 	// pngWriterState is what png.Encode's compress/flate writer holds
@@ -53,13 +50,11 @@ const (
 )
 
 var (
-	// uploadIdle is how long a body may go without a byte, and uploadWithin
-	// how long it may take in all: the largest file arrives within it at
-	// 0.7 Mbit/s.
+	// uploadWithin lets the largest file arrive at 0.7 Mbit/s.
 	uploadIdle   = 15 * time.Second
 	uploadWithin = 3 * time.Minute
-	// decodeWait is how long an upload may wait for its turn: eight waiting
-	// ahead of it at the second or two a large photo takes, and then some.
+	// decodeWait is eight uploads ahead at the second or two a large photo
+	// takes, and then some.
 	decodeWait = 30 * time.Second
 )
 
@@ -114,10 +109,6 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !m.allow(w, r, m.uploads, "uploads") {
 		return
 	}
-	// The read deadline moves on while the body arrives. It comes off once
-	// the body is in, as a read timing out later cancels the request waiting
-	// to be decoded, and stays on a body that failed, which the server drains
-	// before answering.
 	rc := http.NewResponseController(w)
 	body := &arriving{ReadCloser: r.Body, rc: rc, by: time.Now().Add(uploadWithin)}
 	if err := body.extend(); err != nil && !errors.Is(err, http.ErrNotSupported) {
@@ -126,15 +117,17 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = body
 	file, err := receive(w, r)
-	// The server's WriteTimeout runs from when the request arrived, so the
-	// answer gets a deadline of its own once the body is in. The upload is
-	// kept only while that deadline leaves time to say so.
+	// The server's WriteTimeout runs from when the request arrived. The
+	// upload is kept only while this deadline leaves time to say so.
 	keepBy := time.Now().Add(decodeWait + keepWithin)
 	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// A read timing out from here would cancel the request waiting to be
+	// decoded. On a body that failed the deadline stays, as the server drains
+	// the rest under it before answering.
 	_ = rc.SetReadDeadline(time.Time{})
 	defer discard(file)
 	ctx, cancel := context.WithDeadline(r.Context(), keepBy)
@@ -156,13 +149,13 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 func busy(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "10")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(errBusy.Status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": errBusy})
 }
 
-// arriving is a request body whose read deadline moves on with each read
-// that brings bytes, to uploadIdle past the last of them and never past by:
-// a slow connection gets its file in, and one that has stopped is let go.
+// arriving moves the read deadline on with each read that brings bytes, so a
+// slow connection gets its file in and one that has stopped is let go.
 type arriving struct {
 	io.ReadCloser
 	rc *http.ResponseController
@@ -307,8 +300,6 @@ func (m *Module) rewriteInTurn(ctx context.Context, file *os.File) (int64, strin
 	return rewrite(file)
 }
 
-// awaitTurn takes a turn to decode, or answers errBusy when decodeQueue
-// uploads are waiting already or no turn comes within decodeWait.
 func (m *Module) awaitTurn(ctx context.Context) error {
 	select {
 	case m.waiting <- struct{}{}:
@@ -348,8 +339,6 @@ func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, er
 	return size, mime, bounds, nil
 }
 
-// redraw decodes body, once decodeCost says it fits the budget, and writes
-// the picture again to out.
 func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, err error) {
 	mime = http.DetectContentType(body)
 	if mime != "image/jpeg" && mime != "image/png" {
