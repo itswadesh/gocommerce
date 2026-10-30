@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -671,6 +672,45 @@ func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 	again, _ := h.app.Cart().Create(h.ctx, "")
 	if rec := h.addDesign(again.Token, c.variant, first.ID, 1); rec.Code != http.StatusConflict {
 		t.Errorf("a design already ordered = %d %s, want 409", rec.Code, rec.Body)
+	}
+}
+
+// TestAddLineKeepsTheOriginalPriceSnapshot's rule, for a designed line: the
+// same design added again after the shop raised the price keeps the price
+// the shopper saw, and checkout stops to ask.
+func TestADesignAddedAgainKeepsItsPriceSnapshot(t *testing.T) {
+	h := newHarness(t, Config{})
+	c := h.phoneCase(h.ctx, "CASE-P")
+	h.save(h.ctx, c)
+	saved := h.saved("", c, h.upload("", jpegRedTop(20, 20)).ID)
+	cart, err := h.app.Cart().Create(h.ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := h.addDesign(cart.Token, c.variant, saved.ID, 1); rec.Code != http.StatusOK {
+		t.Fatalf("add a design = %d %s", rec.Code, rec.Body)
+	}
+	raised := int64(59900)
+	if _, err := h.app.Products().UpdateVariant(h.ctx, c.variant, gocommerce.VariantPatch{PriceMinor: &raised}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h.addDesign(cart.Token, c.variant, saved.ID, 1); rec.Code != http.StatusOK {
+		t.Fatalf("add it again = %d %s", rec.Code, rec.Body)
+	}
+	got, err := h.app.Cart().GetByToken(h.ctx, cart.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Lines) != 1 || got.Lines[0].Quantity != 2 || got.Lines[0].UnitPrice.AmountMinor != 49900 ||
+		got.Lines[0].CurrentPrice.AmountMinor != raised {
+		t.Fatalf("lines = %+v, want two at the 49900 first seen, beside the current 59900", got.Lines)
+	}
+	_, err = h.app.Order().Checkout(h.ctx, "cod", gocommerce.CheckoutInput{
+		CartID: cart.Token, Email: "p@example.com", Name: "P",
+		Address: gocommerce.Address{Line1: "1 Road", City: "Pune", State: "MH", PostalCode: "411001", Country: "IN"},
+	}, "")
+	if !errors.Is(err, gocommerce.ErrConflict) {
+		t.Errorf("checkout after the price moved = %v, want a conflict naming it", err)
 	}
 }
 

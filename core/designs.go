@@ -83,9 +83,11 @@ func (c *Carts) AddDesignLine(ctx context.Context, tok string, variantID int64, 
 			return Conflictf("that variant is not available")
 		}
 		var existing int
-		if err := tx.QueryRowContext(ctx,
-			`SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND design_id = $2), 0)`,
-			cartID, designID).Scan(&existing); err != nil {
+		var stored sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND design_id = $2), 0),
+			       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND design_id = $2)`,
+			cartID, designID).Scan(&existing, &stored); err != nil {
 			return err
 		}
 		if err := checkVariantStock(ctx, tx, cartID, variantID, qty, 0); err != nil {
@@ -94,6 +96,18 @@ func (c *Carts) AddDesignLine(ctx context.Context, tok string, variantID int64, 
 		price, err := c.lineBuyerPrice(ctx, tx, cartID, variantID, existing+qty)
 		if err != nil {
 			return err
+		}
+		// addOrdinaryTx's rule: adding more takes a new price only when the
+		// quantity moved it. A price the shop changed since stays the line's
+		// snapshot, for checkout to stop and ask about.
+		if existing > 0 && stored.Valid {
+			atOld, err := c.lineBuyerPrice(ctx, tx, cartID, variantID, existing)
+			if err != nil {
+				return err
+			}
+			if atOld != stored.Int64 {
+				price = stored.Int64
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO cart_line_items (cart_id, variant_id, quantity, unit_price_minor, design_id, design_preview_url)
