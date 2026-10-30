@@ -55,6 +55,7 @@
     import { copyText } from "$lib/clipboard.js";
     import { myStores } from "$lib/stores.svelte.js";
     import { orderTrackingURL } from "$lib/tracking.js";
+    import OrderLineDesign from "$lib/components/OrderLineDesign.svelte";
 
     const orderId = $derived(route.params.id);
     const readable = $derived(can("orders.read"));
@@ -1319,6 +1320,12 @@
                                                                 <div class="txt-hint txt-sm">
                                                                     product deleted
                                                                 </div>
+                                                            {/if}
+                                                            {#if line.metadata?.design}
+                                                                <OrderLineDesign
+                                                                    design={line.metadata.design}
+                                                                    title={line.title}
+                                                                />
                                                             {/if}
                                                             <!-- Which shelf the units came
                                                                  off, and therefore where a

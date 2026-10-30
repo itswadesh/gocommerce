@@ -50,6 +50,7 @@
     import ProductUpsells from "$lib/components/ProductUpsells.svelte";
     import ProductHighlights from "$lib/components/ProductHighlights.svelte";
     import ProductImprove from "$lib/components/ProductImprove.svelte";
+    import ProductCustomizer from "$lib/components/ProductCustomizer.svelte";
     import { hasModule } from "$lib/modules.svelte.js";
     import { MAX_BADGE, badgeOf, freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
@@ -71,6 +72,8 @@
        by the same Save after the product's fields. */
     let upsells = $state(null);
     let upsellsDirty = $state(false);
+    let customizer = $state(null);
+    let customizerDirty = $state(false);
     /* The matrix, so the page's Save can apply the option draft it holds. */
     let matrix = $state(null);
     let collections = $state([]);
@@ -917,6 +920,7 @@
         errors = {};
         discardCount++;
         upsells?.reset();
+        customizer?.reset();
     }
 
     function applyImprove(next, count) {
@@ -963,11 +967,9 @@
             toast.error("Some fields still need attention.");
             return;
         }
-        // Refused before anything is written, so a bad offer price never
-        // leaves the product saved and its add-ons not.
-        const upsellProblem = upsells?.invalid();
-        if (upsellProblem) {
-            toast.error(upsellProblem);
+        const cardProblem = upsells?.invalid() || customizer?.invalid();
+        if (cardProblem) {
+            toast.error(cardProblem);
             return;
         }
         const highlightProblem = [...form.highlights, form.free_gift].map((s) => lineProblem(s)).find(Boolean);
@@ -1168,6 +1170,7 @@
             }
 
             await upsells?.save();
+            await customizer?.save();
 
             product = await api.get(`/api/admin/products/${product.id}`);
             seed(product);
@@ -1360,7 +1363,7 @@
         <!-- Nothing to save without catalog.write, so no bar and no
              Ctrl+S: a save that can only be refused is worse than no save. -->
         <SaveBar
-            dirty={(dirty || axesDirty || upsellsDirty) && writable}
+            dirty={(dirty || axesDirty || upsellsDirty || customizerDirty) && writable}
             {saving}
             message="Unsaved changes"
             saveLabel="Save"
@@ -1824,6 +1827,14 @@
                         {currency}
                         disabled={!writable}
                     />
+
+                    {#if hasModule("customizer") && can("customizer.write")}
+                        <ProductCustomizer
+                            bind:this={customizer}
+                            bind:dirty={customizerDirty}
+                            productId={product.id}
+                        />
+                    {/if}
 
                 </div>
 
