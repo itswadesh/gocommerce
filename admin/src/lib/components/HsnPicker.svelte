@@ -1,6 +1,6 @@
 <script>
     /**
-     * An HSN/SAC code box that searches India's GST master as you type (D170).
+     * An HSN/SAC code box that searches India's GST master as you type (D171).
      *
      * The value is whatever is in the box, so a code the master does not list
      * — it trails the tariff — can still be typed and saved; the line under
@@ -17,7 +17,7 @@
     import { gst } from "$lib/api.js";
     import { rise } from "$lib/motion.js";
 
-    let { value = $bindable(""), id = undefined, placeholder = "6109.10 or “t-shirts”", disabled = false } = $props();
+    let { value = $bindable(""), id = undefined, placeholder = "6109.10 or “t-shirts”", disabled = false, ...rest } = $props();
 
     const listId = "hsn-" + Math.random().toString(36).slice(2, 10);
     let options = $state([]);
@@ -68,6 +68,7 @@
     autocomplete="off"
     list={listId}
     title={found ? describe(found) : undefined}
+    {...rest}
     bind:value
 />
 <datalist id={listId}>

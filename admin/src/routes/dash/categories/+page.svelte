@@ -14,6 +14,7 @@
      * safety story, so this page does not pre-empt it with a guess: it asks,
      * sends, and shows what came back.
      */
+    import HsnPicker from "$lib/components/HsnPicker.svelte";
     import { base } from "$app/paths";
     import { api, can, query, request } from "$lib/api.js";
     import { onNewShortcut } from "$lib/shortcuts.js";
@@ -1260,12 +1261,9 @@
 
         <div class="field m-t-sm" class:error={!!errors.hsn_code}>
             <label for="cat_hsn">HSN code</label>
-            <input
+            <HsnPicker
                 id="cat_hsn"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="7113"
+                placeholder="7113 or “jewellery”"
                 aria-describedby="cat_hsn_help"
                 aria-invalid={errors.hsn_code ? "true" : undefined}
                 bind:value={form.hsn_code}

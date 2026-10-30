@@ -437,7 +437,7 @@ type App struct {
 	// on the storefront (handleOpenOrder).
 	orderOpens *windowLimit
 	// storePasswordTries paces how many passwords one client tries on a
-	// closed store (handleStorePassword, D168).
+	// closed store (handleStorePassword, D169).
 	storePasswordTries *windowLimit
 	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
 	// the oldest store's); empty under `serve`.
