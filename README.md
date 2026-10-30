@@ -140,6 +140,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |
 | `klaviyo` | Orders and abandoned carts as Klaviyo events, under the metric names its flows know |
 | `feeds` | Google Merchant Center and Meta catalogue feeds, generated from the live catalogue |
+| `google-reviews` | The store's Google rating and latest Google reviews on the storefront, read live with Google's attribution and never stored; Google Customer Reviews' survey after checkout and its store widget; and a product ratings feed of the store's own verified reviews for Merchant Center |
 | `sitemaps` | The storefront's sitemap: products, collections and content pages |
 | `navigation` | The storefront's menus — trees of links to products, collections, categories and pages — edited from the panel |
 | `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel; with the AI gateway, a summary of what shoppers praise and complain about in a product's reviews, each theme citing its reviews |

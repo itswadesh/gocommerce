@@ -67,7 +67,7 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := m.items(r.Context(), s, requestBase(r))
+	items, err := m.items(r.Context(), s, requestBase(r), false)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
