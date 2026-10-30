@@ -109,6 +109,10 @@ var (
 		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
 		Message: "too many photos are being uploaded right now; try again in a few seconds"}
+	// errGone is 499, as nginx logs a request its client closed: nobody reads
+	// the answer, and the request log says what happened.
+	errGone = &gocommerce.APIError{Status: 499, Code: "client_closed_request",
+		Message: "the request was closed before the upload was kept"}
 )
 
 func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +156,9 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if r.Context().Err() != nil {
+			err = errGone
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}
