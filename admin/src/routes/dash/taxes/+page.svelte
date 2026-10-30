@@ -9,7 +9,7 @@
      * states also has to be able to read the table by place, by rate or by
      * name, and clearing the sort puts resolution order back.
      */
-    import { api, can } from "$lib/api.js";
+    import { api, can, gst } from "$lib/api.js";
     import { onNewShortcut } from "$lib/shortcuts.js";
     import { rowKey } from "$lib/rowkey.js";
     import { listState } from "$lib/liststate.svelte.js";
@@ -208,6 +208,30 @@
     $effect(() => {
         load();
         ensureSettings();
+    });
+
+    /*
+     * India's states as GST lists them (D172), fetched the first time the
+     * country is India. The value is the state's code, what a rate stores
+     * (D72); the label carries the GST code a GSTIN starts with. "Other
+     * Territory" has no code to match an address by, so it is left out. A
+     * rate saved before, under a spelling not on the list, stays choosable.
+     */
+    let indianStates = $state([]);
+    $effect(() => {
+        if (form.country !== "IN" || indianStates.length) return;
+        gst.states()
+            .then((r) => {
+                indianStates = (r?.data ?? [])
+                    .filter((st) => st.iso)
+                    .map((st) => ({ value: st.iso, label: `${st.name} (${st.code})` }));
+            })
+            .catch(() => {});
+    });
+    const stateOptions = $derived.by(() => {
+        const all = [{ value: "", label: "All states" }, ...indianStates];
+        const saved = form.state;
+        return !saved || indianStates.some((o) => o.value === saved) ? all : [...all, { value: saved, label: saved }];
     });
 
     async function load() {
@@ -863,20 +887,24 @@
             <div class="delimiter"></div>
             <div class="field">
                 <label for="t-state">State</label>
-                <input
-                    id="t-state"
-                    type="text"
-                    maxlength="60"
-                    bind:value={form.state}
-                    placeholder="KA"
-                    oninput={(e) => (form.state = e.currentTarget.value.toUpperCase())}
-                />
+                {#if form.country === "IN" && indianStates.length}
+                    <Select id="t-state" placeholder="All states" bind:value={form.state} options={stateOptions} />
+                {:else}
+                    <input
+                        id="t-state"
+                        type="text"
+                        maxlength="60"
+                        bind:value={form.state}
+                        placeholder="KA"
+                        oninput={(e) => (form.state = e.currentTarget.value.toUpperCase())}
+                    />
+                {/if}
             </div>
         </div>
         <div class="field-help">
             Leave the country on <em>Anywhere</em> for a rule that applies wherever you ship; a
-            state needs the country it is in. In the United States, Canada, Australia and India a
-            state can be typed as its code or its name — "Karnataka" is saved as KA — and an address
+            state needs the country it is in. For India, pick the state from the list. In the United
+            States, Canada and Australia a state can be typed as its code or its name — "Karnataka" is saved as KA — and an address
             spelling it either way pays this rate. Elsewhere, type it the way the checkout address
             carries it.
         </div>
