@@ -374,6 +374,15 @@ export function isChrome(key) {
     return key === "header" || key === "footer";
 }
 
+/**
+ * The section a page opens on: the header's or footer's one section, since
+ * there is nothing to choose between, and nothing on a page of many. Rights
+ * play no part: a role that may only look reads the same settings, disabled.
+ */
+export function arrivalSection(page, sections) {
+    return isChrome(page) && sections.length ? sections[0].id : null;
+}
+
 export function pageMeta(key) {
     return PAGES.find((p) => p.key === key);
 }
