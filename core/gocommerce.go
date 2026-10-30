@@ -436,6 +436,9 @@ type App struct {
 	// orderOpens paces how often one client tries an order number and contact
 	// on the storefront (handleOpenOrder).
 	orderOpens *windowLimit
+	// storePasswordTries paces how many passwords one client tries on a
+	// closed store (handleStorePassword, D168).
+	storePasswordTries *windowLimit
 	// defaultStore is Config.DefaultStore resolved to an id ("first" becomes
 	// the oldest store's); empty under `serve`.
 	defaultStore string
@@ -739,6 +742,7 @@ func (a *App) buildServices() {
 	a.stores = &Stores{app: a, db: a.db}
 	a.storeOpens = newWindowLimit(storeOpensPerDay, 24*time.Hour)
 	a.orderOpens = newWindowLimit(orderOpensPerWindow, time.Hour)
+	a.storePasswordTries = newWindowLimit(storePasswordTriesPerWindow, time.Hour)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
 	a.upsells = &Upsells{app: a}

@@ -30,10 +30,14 @@ var builtinPlugins = []PluginDef{
 		},
 	},
 	{
-		Key: "store-close", Home: homeStoreSettings, Title: "Store closed", Icon: "ri-door-closed-line", Category: "storefront",
-		Description: "Close the storefront with a message — a holiday, a stock-take, a relaunch — without touching the catalogue.",
+		Key: storeCloseKey, Home: homeStoreSettings, Title: "Store closed or password protected", Icon: "ri-door-closed-line", Category: "storefront",
+		Description: "Close the storefront with a message — a holiday, a stock-take, a launch — without touching the catalogue. With a password, visitors who know it still get in.",
 		Fields: []PluginField{
 			{Key: "message", Label: "Message", Kind: "textarea", Public: true, Required: true, Default: "We are closed for a short while. Back soon."},
+			// Public only as whether it is set; the engine checks it
+			// (POST /api/store/password, D168).
+			{Key: "password", Label: "Password", Kind: "secret", Public: true,
+				Help: "Leave empty to close the store to everyone. Set, the storefront asks for it and lets in whoever types it: share it with the people you want to see the store before it opens. Changing it signs them all out."},
 		},
 	},
 	{
