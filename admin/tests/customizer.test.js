@@ -110,6 +110,10 @@ test("each problem the engine would refuse is caught first, in words", () => {
         broken((f) => (f.print_size = { width_mm: 1000, height_mm: 5, dpi: 600 })),
         /23622 × 118 pixels, over 16384 pixels a side/,
     );
+    assert.match(
+        broken((f) => ((f.enabled = false), (f.print_size = { width_mm: 1000, height_mm: "", dpi: 600 }))),
+        /23622 × 0 pixels, over 16384 pixels a side/,
+    );
     assert.match(broken((f) => (f.print_size.width_mm = 100)), /different shape/);
     assert.match(broken((f) => (f.min_photo_px = 1.5)), /smallest photo/);
     assert.match(broken((f) => (f.tools.stickers = true)), /Choose a sticker/);
