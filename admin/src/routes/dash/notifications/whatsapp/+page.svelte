@@ -2,7 +2,7 @@
     /**
      * Setup WhatsApp: order updates, cash-on-delivery confirmations and basket
      * reminders from the store's own WhatsApp Business account, through Meta's
-     * Cloud API (ext/notify-whatsapp, D168).
+     * Cloud API (ext/notify-whatsapp, D169).
      *
      * Three parts, in the order an owner meets them. Connect: the account's
      * IDs and secrets, which are the plugin's settings (plugins.write, like
