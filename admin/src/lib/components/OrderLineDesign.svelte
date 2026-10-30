@@ -59,7 +59,9 @@
                     <i class="ri-download-2-line" aria-hidden="true"></i>
                     Download print file
                 </a>
-                {#if summary.print}<span class="txt-hint">, {summary.print}</span>{/if}
+                {#if summary.print}
+                    <span class="line-design-print txt-hint">{summary.print}</span>
+                {/if}
             </li>
             {#each design.photos ?? [] as photo, i (photo.upload_id)}
                 <li>
@@ -144,6 +146,9 @@
     }
     .line-design-links a:hover {
         opacity: 0.75;
+    }
+    .line-design-print {
+        display: block;
     }
     .line-design-dialog {
         max-width: min(92vw, 560px);
