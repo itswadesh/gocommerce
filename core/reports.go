@@ -67,6 +67,11 @@ var grainMinSpan = map[string]time.Duration{
 // moment the first parcel went out.
 var saleStatuses = []string{OrderConfirmed, OrderPartial, OrderShipped, OrderDelivered}
 
+// SaleStatuses is the order statuses the sales report counts as a sale, for a
+// module's report that must count the same orders. A copy, so no caller can
+// change what core counts.
+func SaleStatuses() []string { return append([]string(nil), saleStatuses...) }
+
 // ReportBound is an instant or a civil date. A date means nothing until a zone
 // is chosen, so it is resolved in the report's zone rather than in UTC — which
 // is why this is not parseDate's *time.Time.

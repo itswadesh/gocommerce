@@ -66,6 +66,8 @@ services:
       - -ai-gateway
       - -photo-products
       - -catalog-ai
+      # Ads intelligence: the ads report, ad spend and its AI summary.
+      - -ads
       - serve
     depends_on:
       postgres:

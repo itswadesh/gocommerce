@@ -236,6 +236,56 @@ login selects every table the store has, which is everything about that store.
   an operator can parameterise is one they can rewrite at call time, and the
   point of saving one is that what runs is what was reviewed.
 
+## Ads intelligence (`ext/ads`, D168)
+
+`-ads` adds the ads report: the sales above (the same `SaleStatuses()`),
+grouped by where the shopper came from, with gross profit and, against ad
+spend, ROAS and profit per unit of spend.
+
+```
+GET    /api/admin/x/ads/report?from=2026-10-01&to=2026-10-30&tz=Asia/Kolkata&touch=last
+GET    /api/admin/x/ads/orders?…&currency=INR&source=google&medium=cpc&campaign=Diwali
+GET    /api/admin/x/ads/spend?from=…&to=…
+POST   /api/admin/x/ads/spend          {"source": "google", "medium": "cpc", "campaign": "Diwali", "from": "2026-10-01", "to": "2026-10-07", "amount_minor": 700000}
+POST   /api/admin/x/ads/spend/import   {"format": "google" | "meta", "source": "google", "medium": "cpc", "csv": "…"}
+DELETE /api/admin/x/ads/spend/{id}
+GET    /api/admin/x/ads/summary        the latest AI summary, or null
+POST   /api/admin/x/ads/summary        {"from": …, "to": …, "tz": …, "touch": …}
+GET    /api/admin/x/ads/settings       {"weekly_summary": false}
+PUT    /api/admin/x/ads/settings
+```
+
+- **Where an order came from is `metadata.attribution`**, `{"first": touch,
+  "last": touch}`, which the connector adds at checkout from what the
+  storefront recorded on arrival: `utm_source`, `utm_medium`, `utm_campaign`,
+  `utm_content`, `utm_term`, the click IDs `gclid`, `gbraid`, `wbraid`,
+  `fbclid`, `ttclid`, `msclkid`, the referring domain as `referrer`, and `at`.
+  A tagged link is its UTM values; an untagged ad click is its platform
+  (`gclid` is google / cpc, `fbclid` facebook / social, since Meta adds it to
+  unpaid links too); otherwise the referrer, a search engine as organic; else
+  `(direct)`. No attribution is `(not recorded)`. Source and medium are
+  lower-cased.
+- **Gross profit** is net sales less the tax in them (in proportion to what was
+  kept) and less the variant's cost **now** for the units not returned: an
+  order line keeps no cost. A unit without a cost is counted in
+  `uncosted_units` and costs nothing, so such a row's profit is a ceiling.
+  Shipping charged stays in; what delivery cost the shop is not known.
+- **Spend** is one figure a day per source, medium, campaign and currency;
+  entering or importing a day again replaces it. A period is spread evenly over
+  its days. It meets orders on source, medium and campaign, ignoring case, in
+  the same currency, so the source and medium an import is given must be what
+  those ads put in their UTM parameters. Spend with no orders is its own row.
+- **Imports read columns by name.** Google Ads: a report downloaded with the
+  Day segment (Day, Campaign, Cost, Currency code when present; the title,
+  date-range and Total rows are skipped). Meta Ads Manager: Campaign name and
+  `Amount spent (XXX)` with Day, or Reporting starts and Reporting ends. A
+  missing column is refused by name.
+- **The summary** is the `ads.summarise` gateway task, sent the report's rows as
+  order lines with no shopper named. Every number in its answer must be one of
+  the figures; any other sends it to the strong model, and from there refuses
+  the run. It draws AI credit (D151). The weekly one is off until the shop
+  turns it on, and is claimed before the model is called.
+
 ## What these numbers do not measure
 
 - **Refund value is reported, never netted.** See above.

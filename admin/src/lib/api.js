@@ -564,6 +564,21 @@ export const layouts = {
     switchOn: () => api.patch("/api/admin/plugins/layouts", { enabled: true }),
 };
 
+/** ads is ext/ads: the ads report, ad spend, and the AI summary of them (D168). */
+const ADS = "/api/admin/x/ads";
+export const ads = {
+    report: (params) => api.get(`${ADS}/report` + query(params)),
+    orders: (params) => api.get(`${ADS}/orders` + query(params)),
+    spend: (params) => api.get(`${ADS}/spend` + query(params)),
+    addSpend: (body) => api.post(`${ADS}/spend`, body),
+    importSpend: (body) => api.post(`${ADS}/spend/import`, body),
+    deleteSpend: (id) => api.delete(`${ADS}/spend/${id}`),
+    summary: () => api.get(`${ADS}/summary`),
+    summarise: (body) => api.post(`${ADS}/summary`, body),
+    settings: () => api.get(`${ADS}/settings`),
+    saveSettings: (body) => api.put(`${ADS}/settings`, body),
+};
+
 export const recovery = {
     list: (params) => api.get(`${RECOVERY}/abandonments` + query(params)),
     summary: (params) => api.get(`${RECOVERY}/summary` + query(params)),

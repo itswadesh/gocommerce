@@ -57,6 +57,7 @@ const PROBES = {
     // The products page's "Create from photos", for the same reason.
     "photo-products": { path: "/api/admin/x/photo-products/status", right: "catalog.write" },
     "catalog-ai": { path: "/api/admin/x/catalog-ai/status", right: "catalog.write" },
+    ads: { path: "/api/admin/x/ads/settings", right: "ads.read" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
     // The module's own right, or the one it was lifted off (D65): in a binary
