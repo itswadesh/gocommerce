@@ -150,7 +150,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		if r.Context().Err() != nil {
+		if errors.Is(err, context.Canceled) {
 			err = errClientClosedRequest
 		}
 		gocommerce.RespondError(w, r, err)
