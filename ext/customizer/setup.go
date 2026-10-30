@@ -183,8 +183,8 @@ func (s Setup) check() error {
 	if p.DPI < minDPI || p.DPI > maxDPI {
 		return gocommerce.Validationf("the resolution must be between %d and %d dpi", minDPI, maxDPI)
 	}
-	if w, h := p.PrintPixels(); w*h > maxPrintPixels {
-		return gocommerce.Validationf("the print file would be %d × %d pixels, over %d megapixels; larger prints are not supported yet, so lower the resolution or the print size", w, h, maxPrintPixels/1_000_000)
+	if w, h := p.PrintPixels(); w*h > maxPrintPixels || max(w, h) > maxUploadSide {
+		return gocommerce.Validationf("the print file would be %d × %d pixels, and can be at most %g megapixels and %d pixels a side; larger prints are not supported yet, so lower the resolution or the print size", w, h, maxPrintPixels/1e6, maxUploadSide)
 	}
 	if p.WidthMM > 0 && p.HeightMM > 0 && s.PrintArea != nil {
 		want := p.WidthMM / p.HeightMM

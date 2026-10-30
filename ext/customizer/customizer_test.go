@@ -3,6 +3,7 @@ package customizer
 import (
 	"bufio"
 	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -103,6 +104,8 @@ type pngHeader struct {
 	depth, colour byte
 	interlaced    bool
 	transparent   bool
+	// pixels fills the picture; without them it is refused once it is read.
+	pixels bool
 }
 
 func pngBomb(p pngHeader) []byte {
@@ -119,10 +122,32 @@ func pngBomb(p pngHeader) []byte {
 		ihdr[12] = 1
 	}
 	chunk("IHDR", ihdr)
-	if p.transparent {
-		chunk("tRNS", make([]byte, map[byte]int{0: 2, 2: 6}[p.colour]))
+	if p.colour == 3 {
+		chunk("PLTE", []byte{10, 20, 30, 40, 50, 60})
 	}
-	chunk("IDAT", nil)
+	if p.transparent {
+		chunk("tRNS", make([]byte, map[byte]int{0: 2, 2: 6, 3: 1}[p.colour]))
+	}
+	var idat bytes.Buffer
+	if p.pixels {
+		bits := int(p.depth) * map[byte]int{0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[p.colour]
+		passes := [][4]int{{1, 1, 0, 0}}
+		if p.interlaced {
+			passes = [][4]int{{8, 8, 0, 0}, {8, 8, 4, 0}, {4, 8, 0, 4}, {4, 4, 2, 0}, {2, 4, 0, 2}, {2, 2, 1, 0}, {1, 2, 0, 1}}
+		}
+		row := bytes.Repeat([]byte{0x80}, 1+(bits*int(p.w)+7)/8)
+		row[0] = 0
+		z, _ := zlib.NewWriterLevel(&idat, zlib.BestSpeed)
+		for _, q := range passes {
+			w, h := (int(p.w)-q[2]+q[0]-1)/q[0], (int(p.h)-q[3]+q[1]-1)/q[1]
+			for range h * min(w, 1) {
+				_, _ = z.Write(row[:1+(bits*w+7)/8])
+			}
+		}
+		_ = z.Close()
+	}
+	chunk("IDAT", idat.Bytes())
+	chunk("IEND", nil)
 	return out
 }
 
@@ -427,7 +452,10 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 		{"dpi too high", func(s *SetupInput) { s.PrintSize.DPI = 601 }, "between 72 and 600 dpi"},
 		{"print file over 4 megapixels", func(s *SetupInput) {
 			s.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 520}
-		}, "1433 × 2866 pixels, over 4 megapixels"},
+		}, "1433 × 2866 pixels, and can be at most 4 megapixels and 16384 pixels a side"},
+		{"print file over 16384 pixels a side", func(s *SetupInput) {
+			s.PrintSize = &PrintSize{WidthMM: 1000, HeightMM: 5, DPI: 600}
+		}, "23622 × 118 pixels"},
 		{"unknown font", func(s *SetupInput) { s.Fonts = []string{"comic-sans"} }, "not a font"},
 		{"font twice", func(s *SetupInput) { s.Fonts = []string{"inter", "inter"} }, "chosen twice"},
 		{"words with no font", func(s *SetupInput) { s.Fonts = []string{} }, "choose a font"},
@@ -556,6 +584,27 @@ func TestAPictureIsReckonedAsTheDecoderReadsIt(t *testing.T) {
 	}
 	if rec := h.uploadRaw("", "file", pngBomb(pngHeader{w: 8000, h: 5000, depth: 8, interlaced: true})); rec.Code != http.StatusUnsupportedMediaType {
 		t.Errorf("interlaced grey, nothing transparent = %d %s, want it read, which finds no picture", rec.Code, rec.Body)
+	}
+}
+
+// A picture one pixel high is read and written again through rows as wide as
+// itself: a 0.19 MB PNG of 33,000,000 × 1 took 1197 MiB.
+func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	for name, p := range map[string]pngHeader{
+		"16-bit colour, 33,000,000 × 1":   {w: 33_000_000, h: 1, depth: 16, colour: 2},
+		"RGBA, 40,000,000 × 1":            {w: 40_000_000, h: 1, depth: 8, colour: 6},
+		"interlaced RGBA, 30,000,000 × 1": {w: 30_000_000, h: 1, depth: 8, colour: 6, interlaced: true},
+		"RGBA, 4,000,000 × 10":            {w: 4_000_000, h: 10, depth: 8, colour: 6},
+		"RGBA, 10 × 4,000,000":            {w: 10, h: 4_000_000, depth: 8, colour: 6},
+	} {
+		if rec := h.uploadRaw("", "file", pngBomb(p)); rec.Code != http.StatusUnprocessableEntity ||
+			!strings.Contains(errorCode(t, rec), "16384 pixels a side") {
+			t.Errorf("%s = %d %s, want 422: too wide", name, rec.Code, rec.Body)
+		}
+	}
+	if up := h.upload("", pngBomb(pngHeader{w: maxUploadSide, h: 2, depth: 16, colour: 6, pixels: true})); up.Width != maxUploadSide {
+		t.Errorf("a 16384 × 2 PNG = %+v, want it taken", up)
 	}
 }
 

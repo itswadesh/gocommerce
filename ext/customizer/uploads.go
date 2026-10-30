@@ -28,9 +28,14 @@ import (
 const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
-	uploadQuality   = 92
-	decodeBudget    = 256 << 20
-	decodeSlots     = 1
+	// maxUploadSide is wider than any camera's photo (a 200-megapixel phone
+	// sensor is 16320 pixels) and any print file a setup may ask for. A
+	// wider picture is a strip, whose decoder and encoder rows each cost
+	// about what its whole picture does.
+	maxUploadSide = 16384
+	uploadQuality = 92
+	decodeBudget  = 256 << 20
+	decodeSlots   = 1
 )
 
 var uploadDeadline = 15 * time.Second
@@ -71,7 +76,7 @@ var (
 	errNotAPicture = &gocommerce.APIError{Status: http.StatusUnsupportedMediaType, Code: "unsupported_image",
 		Message: "send a JPEG or a PNG; the editor converts other photos before uploading them"}
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
-		Message: fmt.Sprintf("a photo can be at most %d megapixels", maxUploadPixels/1_000_000)}
+		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
 )
 
 func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +222,8 @@ func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, er
 	if err != nil {
 		return 0, "", bounds, errNotAPicture
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxUploadSide || cfg.Height > maxUploadSide ||
+		int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
 		return 0, "", bounds, errTooManyPixels
 	}
 	orientation := 1
