@@ -16,8 +16,10 @@ var (
 	// A shopper's cart that does not exist, and one already turned into an
 	// order, each have a code of their own: both tell a storefront to start a
 	// fresh cart, which it should not have to read from the message's words.
-	ErrCartNotFound   = &APIError{Status: http.StatusNotFound, Code: "cart_not_found", Message: "cart not found"}
-	ErrCartCheckedOut = &APIError{Status: http.StatusConflict, Code: "cart_checked_out", Message: "this cart has already been checked out"}
+	// Each is still a not_found and a conflict to errors.Is, so a module that
+	// checked for those before the codes existed is answered as it was.
+	ErrCartNotFound   = &APIError{Status: http.StatusNotFound, Code: "cart_not_found", Message: "cart not found", kind: "not_found"}
+	ErrCartCheckedOut = &APIError{Status: http.StatusConflict, Code: "cart_checked_out", Message: "this cart has already been checked out", kind: "conflict"}
 	ErrStoreSuspended = &APIError{Status: http.StatusServiceUnavailable, Code: "store_unavailable",
 		Message: "this store is suspended"}
 	ErrNotAMember = &APIError{Status: http.StatusForbidden, Code: "not_a_member",

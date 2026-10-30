@@ -454,6 +454,22 @@ func TestAMissingCartHasItsOwnCode(t *testing.T) {
 	}
 }
 
+// A module that asked errors.Is(err, ErrConflict) or ErrNotFound of a cart
+// before the narrower codes existed gets the answer it got then: b2b's
+// checkout retry under its key relies on it. The other way does not hold:
+// a plain conflict is not a checked-out cart.
+func TestTheCartCodesAreStillTheirGeneralKind(t *testing.T) {
+	if !errors.Is(ErrCartNotFound, ErrNotFound) || !errors.Is(ErrCartCheckedOut, ErrConflict) {
+		t.Fatal("a cart code no longer matches its general kind")
+	}
+	if !errors.Is(ErrCartCheckedOut.WithDetails("x"), ErrConflict) {
+		t.Fatal("WithDetails dropped the general kind")
+	}
+	if errors.Is(Conflictf("something else"), ErrCartCheckedOut) || errors.Is(ErrCartNotFound, ErrConflict) {
+		t.Fatal("a general or unrelated error matched a cart code")
+	}
+}
+
 // Retention is the second bound, and it is clocked off abandoned_at so draining
 // a backlog cannot abandon and purge a row inside the same pass.
 func TestPurgeAbandonedRespectsRetention(t *testing.T) {
