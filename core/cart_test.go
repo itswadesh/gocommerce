@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -432,9 +433,24 @@ func TestConvertedCartStaysTerminal(t *testing.T) {
 			t.Errorf("%s on a converted cart was allowed", name)
 			continue
 		}
-		if !strings.Contains(err.Error(), "already been checked out") {
+		if !strings.Contains(err.Error(), "already been checked out") || !errors.Is(err, ErrCartCheckedOut) {
 			t.Errorf("%s refused with %q, want the checked-out conflict", name, err)
 		}
+	}
+}
+
+// A storefront starts a fresh cart on either of these, and reads which from
+// the code rather than the words.
+func TestAMissingCartHasItsOwnCode(t *testing.T) {
+	app := newTestApp(t)
+	product := simpleProduct(t, app, "GONE-1", 1000, 5)
+	rec := do(t, app, http.MethodGet, "/api/carts/no-such-cart")
+	if rec.Code != http.StatusNotFound || decodeError(t, rec).Code != "cart_not_found" {
+		t.Fatalf("GET an unknown cart = %d %s, want 404 cart_not_found", rec.Code, rec.Body)
+	}
+	_, err := app.Cart().AddLine(context.Background(), "no-such-cart", product.DefaultVariant().ID, 1)
+	if !errors.Is(err, ErrCartNotFound) {
+		t.Fatalf("add to an unknown cart = %v, want cart_not_found", err)
 	}
 }
 

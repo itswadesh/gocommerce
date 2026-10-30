@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 )
 
 // LineDesign is a design as a basket line and an order line keep it.
@@ -25,6 +26,41 @@ type LineDesign struct {
 // writes a core table and never does network I/O, for a checkout guard's
 // reasons (guards.go).
 type LineDesigner func(ctx context.Context, tx *sql.Tx, designID string, variantID int64) (*LineDesign, error)
+
+// DesignedProducts answers which of productIDs are sold only made to a
+// design, in the store ctx is bound to. tx is the caller's transaction, or nil
+// for a read outside one.
+type DesignedProducts func(ctx context.Context, tx *sql.Tx, productIDs []int64) (map[int64]bool, error)
+
+// ErrDesignRequired refuses a plain basket line for a product sold only made
+// to a design: the storefront opens the editor instead (D174). It is not
+// "this store does not take designs", which is a store without the module.
+var ErrDesignRequired = &APIError{Status: http.StatusConflict, Code: "design_required",
+	Message: "this product is made to your design; design it before adding it to the bag"}
+
+// RegisterDesignedProducts installs the answer to "which products need a
+// design", from the module that registered the line designer.
+func (a *App) RegisterDesignedProducts(fn DesignedProducts) {
+	switch {
+	case fn == nil:
+		a.regErrf("module %q: nil designed products", a.ownerName())
+	case a.designerOwner != a.ownerName():
+		a.regErrf("module %q: designed products come from the module with the line designer", a.ownerName())
+	default:
+		a.designed = fn
+	}
+}
+
+func (a *App) designedProducts(ctx context.Context, tx *sql.Tx, ids []int64) (map[int64]bool, error) {
+	if a.designed == nil || len(ids) == 0 {
+		return nil, nil
+	}
+	out, err := a.designed(ctx, tx, ids)
+	if err != nil {
+		return nil, Internalf(err, "designed products from module %q failed", a.designerOwner)
+	}
+	return out, nil
+}
 
 // RegisterLineDesigner installs the module that makes designs. A store has at
 // most one: two would each have to vouch for designs the other made.

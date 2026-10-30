@@ -12,7 +12,12 @@ import (
 var (
 	ErrStoreRequired = &APIError{Status: http.StatusBadRequest, Code: "store_required",
 		Message: "name the store: an x-litekart-store header, a ?store= parameter or the store's own host"}
-	ErrStoreNotFound  = &APIError{Status: http.StatusNotFound, Code: "store_not_found", Message: "no such store"}
+	ErrStoreNotFound = &APIError{Status: http.StatusNotFound, Code: "store_not_found", Message: "no such store"}
+	// A shopper's cart that does not exist, and one already turned into an
+	// order, each have a code of their own: both tell a storefront to start a
+	// fresh cart, which it should not have to read from the message's words.
+	ErrCartNotFound   = &APIError{Status: http.StatusNotFound, Code: "cart_not_found", Message: "cart not found"}
+	ErrCartCheckedOut = &APIError{Status: http.StatusConflict, Code: "cart_checked_out", Message: "this cart has already been checked out"}
 	ErrStoreSuspended = &APIError{Status: http.StatusServiceUnavailable, Code: "store_unavailable",
 		Message: "this store is suspended"}
 	ErrNotAMember = &APIError{Status: http.StatusForbidden, Code: "not_a_member",

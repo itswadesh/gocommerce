@@ -54,6 +54,10 @@ type Product struct {
 	// MediaCount is how many pictures the product has, for a listing that
 	// shows the lead one and wants to say there are more.
 	MediaCount int `json:"media_count,omitempty"`
+	// Designable is a product sold only made to a shopper's design (D174): a
+	// storefront opens the design editor for it and offers no quick add. Filled
+	// in on every read from the module that makes designs, never stored.
+	Designable bool `json:"designable,omitempty"`
 
 	// Media is the product's pictures and videos in order, and SoldAtLeast
 	// the sold count rounded down (D134). Both are on the public product only,
@@ -1551,6 +1555,14 @@ func (c *Catalog) loadProductChildren(ctx context.Context, products []*Product) 
 		p.Category = nil
 		p.ImageURL = ""
 		p.MediaCount = 0
+		p.Designable = false
+	}
+	designable, err := c.app.designedProducts(ctx, nil, ids)
+	if err != nil {
+		return err
+	}
+	for id := range designable {
+		byID[id].Designable = true
 	}
 
 	// The lead picture, for the whole page in one query. DISTINCT ON takes the

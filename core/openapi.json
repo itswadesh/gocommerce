@@ -17706,7 +17706,7 @@
             "properties": {
               "code": {
                 "type": "string",
-                "description": "A stable, machine-readable reason. Core answers with not_found, method_not_allowed, validation_failed, conflict, unauthorized, forbidden, not_ready, internal_error, too_many_attempts, invalid_credentials and demo_frozen, among others; a module adds its own — email_unverified from identity, credit_limit_exceeded or company_checkout_required from b2b. The set is open on purpose: branch on the codes you handle and fall back on the HTTP status for the rest.",
+                "description": "A stable, machine-readable reason. Core answers with not_found, method_not_allowed, validation_failed, conflict, unauthorized, forbidden, not_ready, internal_error, too_many_attempts, invalid_credentials and demo_frozen, among others; a shopper's cart answers cart_not_found (404) or cart_checked_out (409), on either of which a storefront starts a fresh cart, and design_required (409) refuses a plain line of a product sold only made to a design; a module adds its own — email_unverified from identity, credit_limit_exceeded or company_checkout_required from b2b. The set is open on purpose: branch on the codes you handle and fall back on the HTTP status for the rest.",
                 "example": "validation_failed"
               },
               "message": {
@@ -17982,6 +17982,10 @@
             "items": {
               "$ref": "#/components/schemas/ProductOption"
             }
+          },
+          "designable": {
+            "type": "boolean",
+            "description": "Sold only made to a shopper's design (the product customizer, D174): open the design editor and offer no quick add, since a plain basket line is refused with design_required. Absent means false."
           },
           "variants": {
             "type": "array",
