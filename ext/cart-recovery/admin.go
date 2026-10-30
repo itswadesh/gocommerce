@@ -1004,6 +1004,7 @@ var holdLabels = map[string]string{
 	holdSendFailed:         "sending kept failing",
 	holdSequenceDone:       "the sequence is finished",
 	holdNewerBasket:        "the same shopper has a newer basket, which carries the reminders",
+	holdNoWhatsApp:         "the shopper did not agree to reminders on WhatsApp",
 }
 
 func labelOf(kind string, d map[string]any, currency string) string {
@@ -1042,10 +1043,16 @@ func labelOf(kind string, d map[string]any, currency string) string {
 		if manual, _ := d["manual"].(bool); manual {
 			return "Recovery email sent by hand to " + str("to")
 		}
+		if str("channel") == gocommerce.ChannelWhatsApp {
+			return "Recovery WhatsApp #" + num("step") + " sent to " + str("to")
+		}
 		return "Recovery email #" + num("step") + " sent to " + str("to")
 	case "send_failed":
 		return "Recovery email #" + num("step") + " could not be sent: " + str("error")
 	case "skipped":
+		if str("reason") == holdNoWhatsApp {
+			return "Recovery WhatsApp #" + num("step") + " skipped: " + holdLabels[holdNoWhatsApp]
+		}
 		return "Recovery email #" + num("step") + " skipped: " + holdLabels[str("reason")]
 	case "link_copied":
 		return "Recovery link copied"
