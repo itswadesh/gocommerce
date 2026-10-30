@@ -70,7 +70,8 @@ transitions:
 | `EventOrderCreated` | `order.created` | `Orders.Checkout` phase A; also `Transfer.ImportOrders` when `POST /api/admin/import/orders?fire_events=true` |
 | `EventOrderPaid` | `order.paid` | `Payments.MarkPaid` |
 | `EventOrderShipped` | `order.shipped` | `Fulfillments.Create` |
-| `EventOrderDelivered` | `order.delivered` | `Orders.MarkDelivered` |
+| `EventOrderDelivered` | `order.delivered` | `Orders.MarkDelivered`; `Fulfillments.Track`, when a carrier reports the order's last parcel delivered |
+| `EventOrderShipmentUpdated` | `order.shipment_updated` | `Fulfillments.Track` — a carrier module reporting a parcel in transit, out for delivery, not delivered, returning, returned or lost. Once per change |
 | `EventOrderRefunded` | `order.refunded` | `Payments.Refund`, once per refund — from the settling transaction, so the ledger row and the announcement commit together. Also from `Payments.SettleRefund` when an operator records that a stranded refund did go out |
 | `EventOrderReturned` | `order.returned` | `Orders.Return` — goods came back off a shipped, partly shipped or delivered order. It moves no money, so it is not a refund and does not pretend to be one |
 | `EventOrderUnreturned` | `order.unreturned` | `Orders.WithdrawReturn`, when a return recorded in error is taken back and its units come off the shelf again |
