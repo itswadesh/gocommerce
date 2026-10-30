@@ -33,6 +33,8 @@
     import Select from "$lib/components/Select.svelte";
     import SortHeader from "$lib/components/SortHeader.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { reviewRows, ruleName, saveRequest } from "$lib/gstprefill.js";
+    import { rise } from "$lib/motion.js";
 
     let loading = $state(true);
     let rates = $state([]);
@@ -466,6 +468,64 @@
         list.set({ q: "" });
     }
 
+    // ------------------------------------------------------ GST schedule (D175)
+
+    /*
+     * India's rates come from the HSN codes the catalogue already carries:
+     * each category with a code, and each product whose variants carry a
+     * different one, looked up in CBIC's schedule. Nothing is written until
+     * rows are ticked and saved, through the same POST and PATCH the drawer
+     * uses, and a rule already on a target is edited only when its row is
+     * ticked.
+     */
+    let gstOpen = $state(false);
+    let gstLoading = $state(false);
+    let gstSaving = $state(false);
+    let gstRows = $state([]);
+    let gstUnmatched = $state([]);
+    let gstTicked = $state({});
+    const gstPicked = $derived(gstRows.filter((r) => gstTicked[r.key]));
+
+    async function openGST() {
+        open = false;
+        gstOpen = true;
+        gstLoading = true;
+        gstTicked = {};
+        try {
+            const res = await gst.rateTargets();
+            ({ rows: gstRows, unmatched: gstUnmatched } = reviewRows(res?.data ?? [], rates));
+        } catch (err) {
+            toast.error(err);
+            gstOpen = false;
+        } finally {
+            gstLoading = false;
+        }
+    }
+
+    /* The rows a person need not read: one rate, nothing conditional, and no
+       rule of their own already there. */
+    function tickPlain() {
+        for (const r of gstRows) if (!r.check.length && !r.existing) gstTicked[r.key] = true;
+    }
+
+    async function saveGST() {
+        gstSaving = true;
+        try {
+            await runBulk(
+                gstPicked,
+                (r) => {
+                    const q = saveRequest(r);
+                    return q.method === "PATCH" ? api.patch(q.path, q.body) : api.post(q.path, q.body);
+                },
+                { describe: "Saved", noun: "rate", label: (r) => ruleName(r) },
+            );
+            gstOpen = false;
+            await load();
+        } finally {
+            gstSaving = false;
+        }
+    }
+
     /** Where a rule applies, named rather than coded. */
     function where(r) {
         if (!r.country) return "Everywhere";
@@ -516,6 +576,17 @@
             </form>
 
             <div class="page-header-primary-btns">
+                {#if mayWrite && rates.some((r) => r.country === "IN")}
+                    <button
+                        type="button"
+                        class="btn secondary"
+                        aria-label="Fill from India's GST schedule"
+                        onclick={openGST}
+                    >
+                        <i class="ri-file-list-3-line" aria-hidden="true"></i>
+                        <span class="txt">GST schedule</span>
+                    </button>
+                {/if}
                 {#if mayWrite}
                     <!-- Named on the button itself: below 550px layout.css hides
                          the label beside an icon, and the button would be
@@ -734,6 +805,10 @@
                                                 <i class="ri-add-line" aria-hidden="true"></i>
                                                 <span class="txt">New rate</span>
                                             </button>
+                                            <button type="button" class="btn secondary" onclick={openGST}>
+                                                <i class="ri-file-list-3-line" aria-hidden="true"></i>
+                                                <span class="txt">Fill from India's GST schedule</span>
+                                            </button>
                                         {/if}
                                     </EmptyState>
                                 {/if}
@@ -908,6 +983,18 @@
             spelling it either way pays this rate. Elsewhere, type it the way the checkout address
             carries it.
         </div>
+        {#if form.country === "IN" && !editing && mayWrite}
+            <div class="alert info m-t-sm gst-offer" in:rise>
+                <div class="content">
+                    India's GST rates follow each product's HSN code. Propose a rule for every
+                    category and product from CBIC's rate schedule, and review them before
+                    anything is saved.
+                </div>
+                <button type="button" class="btn sm secondary" onclick={openGST}>
+                    <span class="txt">Fill from GST schedule</span>
+                </button>
+            </div>
+        {/if}
 
         {#if !form.product_id}
             <div class="field m-t-sm">
@@ -990,6 +1077,110 @@
     {/snippet}
 </Drawer>
 
+<Drawer open={gstOpen} size="md" title="Fill from India's GST schedule" onclose={() => (gstOpen = false)}>
+    <p class="txt-hint txt-sm">
+        Rates from CBIC's Notification 9/2025-Integrated Tax (Rate) as amended to 1 November 2026,
+        matched to the HSN code on each category, and on each product whose variants carry a
+        different one. The rate is the whole GST rate; the invoice splits it into CGST and SGST or
+        UTGST, or charges it as IGST. Compensation cess is not included. Rules apply in every state.
+    </p>
+
+    {#if gstLoading}
+        {#each Array(3) as _, i (i)}
+            <span class="skeleton-loader m-t-sm"></span>
+        {/each}
+    {:else}
+        {#if gstRows.length}
+            <div class="gst-tools m-t-sm">
+                <button type="button" class="btn sm secondary" onclick={tickPlain}>
+                    <span class="txt">Tick the rows with nothing to check</span>
+                </button>
+                <span class="txt-hint txt-sm">{gstPicked.length} of {gstRows.length} ticked</span>
+            </div>
+            <ul class="gst-review">
+                {#each gstRows as r (r.key)}
+                    {@const opt = r.options[r.choice]}
+                    <li class:ticked={gstTicked[r.key]} in:rise>
+                        <div class="field gst-tick">
+                            <input id="gst-{r.key}" type="checkbox" bind:checked={gstTicked[r.key]} />
+                            <label for="gst-{r.key}">
+                                <span class="txt-bold">{ruleName(r)}</span>
+                            </label>
+                        </div>
+                        <div class="gst-meta txt-sm">
+                            <span>{r.kind === "category" ? "Category" : "Product"}: {r.name}</span>
+                            <span class="txt-hint">HSN {r.codes.join(", ")} · India, all states</span>
+                            {#if r.check.length}
+                                <span class="label warning">check: {r.check.join("; ")}</span>
+                            {/if}
+                            {#if r.existing}
+                                <span class="txt-hint">
+                                    Replaces {r.existing.name} ({r.existing.rate_bp / 100}%) when ticked
+                                </span>
+                            {/if}
+                        </div>
+                        {#if r.options.length > 1}
+                            <div class="field m-t-5">
+                                <label for="gst-rate-{r.key}">Rate</label>
+                                <Select
+                                    id="gst-rate-{r.key}"
+                                    value={String(r.choice)}
+                                    onchange={(v) => (r.choice = Number(v))}
+                                    options={r.options.map((o, i) => ({
+                                        value: String(i),
+                                        label: `${o.rate_bp / 100}% · ${o.prefix}${o.conditional ? " (conditional)" : ""}`,
+                                    }))}
+                                />
+                            </div>
+                        {/if}
+                        <details class="txt-sm m-t-5">
+                            <summary>{opt.source}</summary>
+                            <p class="txt-hint">{opt.prefix}: {opt.description}</p>
+                        </details>
+                    </li>
+                {/each}
+            </ul>
+        {/if}
+
+        {#if gstUnmatched.length}
+            <h6 class="m-t-base">No rate found — set by hand</h6>
+            <ul class="gst-review unmatched">
+                {#each gstUnmatched as u (u.kind + u.id)}
+                    <li in:rise>
+                        <span class="txt-bold">{u.name}</span>
+                        <span class="txt-hint txt-sm">
+                            {u.kind === "category" ? "Category" : "Product"} · HSN {u.codes.join(", ")} · {u.reason}
+                        </span>
+                    </li>
+                {/each}
+            </ul>
+        {/if}
+
+        {#if !gstRows.length && !gstUnmatched.length}
+            <EmptyState
+                icon="ri-barcode-line"
+                title="No HSN codes yet"
+                text="Give a category an HSN code in Categories, or a variant its HS code, and the schedule can propose its rate."
+            />
+        {/if}
+    {/if}
+
+    {#snippet footer()}
+        <button type="button" class="btn transparent m-r-auto" onclick={() => (gstOpen = false)}>
+            <span class="txt">Cancel</span>
+        </button>
+        <button
+            type="button"
+            class="btn expanded"
+            class:loading={gstSaving}
+            disabled={gstSaving || !gstPicked.length}
+            onclick={saveGST}
+        >
+            <span class="txt">Save {gstPicked.length} {pluralize(gstPicked.length, "rate")}</span>
+        </button>
+    {/snippet}
+</Drawer>
+
 <Confirm
     bind:open={confirmOpen}
     title={confirmConfig.title}
@@ -1007,3 +1198,60 @@
     onclose={() => (historyOpen = false)}
 />
 {/if}
+
+<style>
+    .gst-offer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+    }
+    .gst-offer .content {
+        flex: 1 1 220px;
+    }
+    .gst-tools {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+    }
+    .gst-review {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+    }
+    .gst-review li {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        padding: 10px 12px;
+        border: 1px solid var(--surfaceAlt2Color);
+        border-radius: var(--borderRadius);
+        transition:
+            border-color 0.2s,
+            background-color 0.2s;
+    }
+    .gst-review li:hover {
+        border-color: var(--surfaceAlt4Color);
+    }
+    .gst-review li.ticked {
+        border-color: var(--primaryColor);
+        background: var(--surfaceAlt1Color);
+    }
+    .gst-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .gst-review details summary {
+        cursor: pointer;
+        overflow-wrap: anywhere;
+    }
+    .gst-review.unmatched li {
+        border-style: dashed;
+    }
+</style>

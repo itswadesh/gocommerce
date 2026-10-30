@@ -388,6 +388,9 @@ export const storeProfile = {
 export const gst = {
     states: () => api.get("/api/admin/gst-states"),
     hsn: (q, limit = 20) => api.get("/api/admin/hsn" + query({ q, limit })),
+    // The goods rate schedule (D175): what the catalogue's HSN codes are
+    // charged, for the taxes screen to propose rules from.
+    rateTargets: () => api.get("/api/admin/gst-rates/catalog"),
 };
 
 export const roles = {
