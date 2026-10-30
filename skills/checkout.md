@@ -234,7 +234,7 @@ reserved >= $3`, and `UNIQUE (scope, key)`. No fake reproduces any of it.
 - **Reading a designed line's design from the cart.** Checkout asks the
   module's `LineDesigner` again for every line with a `design_id`, before the
   order number is drawn, and stores what it returns on the order line as
-  `metadata.design` (D165). A design ordered elsewhere since it was added is
+  `metadata.design` (D174). A design ordered elsewhere since it was added is
   refused there, not after the order exists.
 - **Refusing a checkout from an event handler or a provider's `Initiate`.**
   Both run after the order committed, so a refusal there is a cancellation of
