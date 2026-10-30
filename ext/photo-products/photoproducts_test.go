@@ -501,7 +501,7 @@ func TestRoutesNameARightAndAreInTheContract(t *testing.T) {
 	gctest.AssertSpecCoversModuleRoutes(t, h.app, "photo-products")
 }
 
-// The free trial is ₹30 (D151, 2026-10-30), and it is enough to try photos:
+// The free trial is ₹200 (D151, 2026-10-30), and it is enough to try photos:
 // a three-photo batch on a fresh Indian store, nothing topped up, sorts and
 // describes every product. Each call holds what its own request could cost,
 // not the most any batch could, and never costs more than it held.
@@ -547,8 +547,8 @@ func TestAThreePhotoBatchRunsOnTheFreeTrial(t *testing.T) {
 				t.Errorf("item %q not described: %s", it.Draft.Title, it.Error)
 			}
 		}
-		if credit.FreeAllowanceMicroMinor != 3000*1_000_000 || credit.GrantedMicroMinor != 0 {
-			t.Errorf("credit %+v, want the ₹30 trial and nothing topped up", credit)
+		if credit.FreeAllowanceMicroMinor != 20000*1_000_000 || credit.GrantedMicroMinor != 0 {
+			t.Errorf("credit %+v, want the ₹200 trial and nothing topped up", credit)
 		}
 		if credit.ConsumedMicroMinor != b.CostMicroMinor || credit.ReservedMicroMinor != 0 {
 			t.Errorf("consumed %d, held %d; the batch cost %d", credit.ConsumedMicroMinor, credit.ReservedMicroMinor, b.CostMicroMinor)

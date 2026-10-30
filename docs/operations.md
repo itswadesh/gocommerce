@@ -307,15 +307,15 @@ call goes through the gateway, which records it and charges it (D107, D151).
   is assumed. One rate that does not read, such as `INR=88,50` with a decimal
   comma, drops them all, and the engine logs it. The rates are yours to keep
   current.
-- **Free trial.** A new store gets ₹30 of AI to try (D151, 2026-10-30).
+- **Free trial.** A new store gets ₹200 of AI to try (D151, 2026-10-30).
   `AI_FREE_TRIAL` sets it in whole minor units per currency, for example
-  `INR=3000,USD=50`. Empty is `INR=3000`. A store in a currency it does not
+  `INR=3000,USD=50`. Empty is `INR=20000`. A store in a currency it does not
   name gets the first amount's worth at `AI_PLATFORM_USD_RATES`, rounded down:
-  at `INR=88.50`, a dollar store gets 33 cents, not $30. A value that does not
+  at `INR=88.50`, a dollar store gets $2.25, not $200. A value that does not
   read is logged and the default is used. A store keeps the trial it started
-  with when you change this. On upgrade, a store still on the old placeholder
-  (500 minor units, never set by hand) is raised to the new trial, and never
-  lowered: a dollar store keeps its $5.
+  with when you change this. On upgrade, a store whose trial nobody set by hand
+  (the old placeholder of 500 minor units, or the earlier ₹30) is raised to
+  the new trial, and never lowered: a dollar store keeps its $5.
 - **Credit.** A store starts with the free trial and runs on what you top up
   (D151). Credit is what the platform's key spends, so only the install's admin
   token grants it. No store's staff can, not even its owner. Top up a store by
@@ -338,7 +338,7 @@ call goes through the gateway, which records it and charges it (D107, D151).
   Claude Sonnet 5.5, a "Create from photos" sorting call holds ₹2.23 for 3
   photos, ₹3.69 for 6 and ₹10.52 for 20, and each product's listing call
   holds about ₹3.40 with one photo, up to ₹5.17 with six. Three listings are
-  written at a time, so the ₹30 trial covers a small batch.
+  written at a time, so the ₹200 trial covers a few batches.
 - **When Anthropic refuses.** If Anthropic refuses a platform call, for a rate
   limit, a spent balance or a bad key, the store sees only the status and the
   kind of failure. The engine logs Anthropic's own words as `ai call on the

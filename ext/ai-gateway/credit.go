@@ -15,9 +15,10 @@ import (
 )
 
 // DefaultFreeTrial is the free AI trial a store gets before an operator tops
-// it up, in minor units per currency: ₹30, the owner's figure (D151,
-// 2026-10-30). Config.FreeTrial (AI_FREE_TRIAL) replaces it.
-const DefaultFreeTrial = "INR=3000"
+// it up, in minor units per currency: ₹200, the owner's figure (D151,
+// 2026-10-30, raised from ₹30 the same day). Config.FreeTrial (AI_FREE_TRIAL)
+// replaces it.
+const DefaultFreeTrial = "INR=20000"
 
 // trialAmount is one currency's free trial, in its minor units.
 type trialAmount struct {
@@ -64,7 +65,7 @@ func readFreeTrial(cfg Config, log *slog.Logger) []trialAmount {
 
 // freeTrialMinor is the trial for a store in currency: the amount named for
 // that currency, or else the first amount named converted at the platform's
-// rates and rounded down, so ₹30 is ₹30's worth everywhere rather than 3,000
+// rates and rounded down, so ₹200 is ₹200's worth everywhere rather than 20,000
 // of any currency's minor units. Zero when neither is possible; such a store
 // has no rate, and so no platform AI to try.
 func freeTrialMinor(trial []trialAmount, p *platform, currency string) int64 {
@@ -105,54 +106,59 @@ func (m *Module) freeTrialMicro(ctx context.Context) int64 {
 // the owner set one: 500 minor units of any currency.
 const placeholderTrialMicro = 500 * microPerMinor
 
-// raisePlaceholderTrials gives the stores still on the placeholder trial the
-// install's real one (D151, 2026-10-30), store by store because row security
-// shows a statement one store's rows. Migrations run before Register, so the
-// trial and the rates are read here from the same Config. A store whose trial
-// an operator set is left as set, and no trial is lowered: a dollar store's $5
-// stays $5 rather than shrinking to ₹30's worth.
-func (m *Module) raisePlaceholderTrials(ctx context.Context, tx *sql.Tx) error {
-	quiet := slog.New(slog.DiscardHandler)
-	trial, p := readFreeTrial(m.cfg, quiet), newPlatform(m.cfg, quiet)
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
-	if err != nil {
-		return err
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, id := range ids {
-		bound := gocommerce.WithStore(ctx, id)
-		var currency string
-		err := tx.QueryRowContext(bound, `
-			SELECT currency FROM ai_credits
-			 WHERE free_allowance_micro = $1
-			   AND NOT EXISTS (SELECT 1 FROM ai_credit_ledger WHERE kind = 'free_allowance')`,
-			placeholderTrialMicro).Scan(&currency)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+// raiseTrials gives stores whose trial nobody set by hand the install's
+// current one (D151, 2026-10-30), store by store because row security shows a
+// statement one store's rows. Migrations run before Register, so the trial and
+// the rates are read here from the same Config. With onlyPlaceholder it raises
+// only the old placeholder trial, which is what 0007 shipped as. A trial an
+// operator set is left as set, and no trial is lowered: a dollar store's $5
+// stays $5 rather than shrinking to ₹200's worth.
+func (m *Module) raiseTrials(onlyPlaceholder bool) func(context.Context, *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		quiet := slog.New(slog.DiscardHandler)
+		trial, p := readFreeTrial(m.cfg, quiet), newPlatform(m.cfg, quiet)
+		rows, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
 		if err != nil {
 			return err
 		}
-		if v := freeTrialMinor(trial, p, currency) * microPerMinor; v > placeholderTrialMicro {
-			if _, err := tx.ExecContext(bound, `
-				UPDATE ai_credits SET free_allowance_micro = $1, updated_at = now()`, v); err != nil {
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
 				return err
 			}
+			ids = append(ids, id)
 		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			bound := gocommerce.WithStore(ctx, id)
+			var currency string
+			var current int64
+			err := tx.QueryRowContext(bound, `
+				SELECT currency, free_allowance_micro FROM ai_credits
+				 WHERE NOT EXISTS (SELECT 1 FROM ai_credit_ledger WHERE kind = 'free_allowance')`).Scan(&currency, &current)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if onlyPlaceholder && current != placeholderTrialMicro {
+				continue
+			}
+			if v := freeTrialMinor(trial, p, currency) * microPerMinor; v > current {
+				if _, err := tx.ExecContext(bound, `
+					UPDATE ai_credits SET free_allowance_micro = $1, updated_at = now()`, v); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
-	return nil
 }
 
 // ensureCredit makes sure ctx's store has a credit row, seeded with the free
