@@ -184,6 +184,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 		}},
 	})
 	app.RegisterLineDesigner(m.lineDesign)
+	app.RegisterDesignedProducts(m.designedProducts)
 
 	app.HandleFunc("GET /x/customizer/products/{product_id}", m.handlePublicSetup)
 	app.HandleFunc("POST /x/customizer/uploads", m.handleUpload)
@@ -195,6 +196,42 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	app.OnStart(m.start)
 	return nil
+}
+
+// designedProducts is which of ids have their customizer switched on, in a
+// store with the plugin on: the products a storefront opens the editor for
+// and a plain basket line refuses. tx is nil for a read outside one.
+func (m *Module) designedProducts(ctx context.Context, tx *sql.Tx, ids []int64) (map[int64]bool, error) {
+	var on bool
+	var err error
+	if tx != nil {
+		on, err = m.app.Plugins().EnabledTx(ctx, tx, pluginKey)
+	} else {
+		on, err = m.app.Plugins().Enabled(ctx, pluginKey)
+	}
+	if err != nil || !on {
+		return nil, err
+	}
+	const q = `SELECT product_id FROM customizer_products WHERE enabled AND product_id = ANY($1::bigint[])`
+	var rows *sql.Rows
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, q, ids)
+	} else {
+		rows, err = m.db.QueryContext(ctx, q, ids)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 func (m *Module) enabled(ctx context.Context) bool {

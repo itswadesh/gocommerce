@@ -223,7 +223,7 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 		&meta, &cart.CreatedAt, &cart.UpdatedAt, &cart.ExpiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, NotFoundf("cart not found")
+			return nil, ErrCartNotFound
 		}
 		return nil, err
 	}
@@ -542,14 +542,15 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 }
 
 func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID int64, qty int) error {
-	var base int64
+	var base, productID int64
 	var active, tracks, oversell bool
 	var available int
 	err := tx.QueryRowContext(ctx, `
 		SELECT price_minor, active, track_inventory, continue_selling,
-		       coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0)
+		       coalesce((SELECT sum(on_hand - reserved) FROM variant_stock WHERE variant_id = $1), 0),
+		       product_id
 		FROM variants WHERE id = $1`, variantID,
-	).Scan(&base, &active, &tracks, &oversell, &available)
+	).Scan(&base, &active, &tracks, &oversell, &available, &productID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NotFoundf("variant %d does not exist", variantID)
 	}
@@ -558,6 +559,18 @@ func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID
 	}
 	if !active {
 		return Conflictf("that variant is not available")
+	}
+	// A product sold only made to a design cannot go in plain: a quick add
+	// would buy a blank case (D174). An operator placing an order by hand is
+	// trusted to have the design some other way.
+	if !byOperator(ctx) {
+		designed, err := c.app.designedProducts(ctx, tx, []int64{productID})
+		if err != nil {
+			return err
+		}
+		if designed[productID] {
+			return ErrDesignRequired
+		}
 	}
 
 	var existing, others int
@@ -922,7 +935,7 @@ func (c *Carts) openCartID(ctx context.Context, tx *sql.Tx, tok string) (int64, 
 	err := tx.QueryRowContext(ctx,
 		`SELECT id, status FROM carts WHERE token = $1 FOR UPDATE`, tok).Scan(&id, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, NotFoundf("cart not found")
+		return 0, ErrCartNotFound
 	}
 	if err != nil {
 		return 0, err
@@ -940,7 +953,7 @@ func (c *Carts) openCartID(ctx context.Context, tx *sql.Tx, tok string) (int64, 
 		// one: a future fourth status must arrive refused, not allowed. Only
 		// 'converted' can reach here, which makes this message true for the
 		// first time.
-		return 0, Conflictf("this cart has already been checked out")
+		return 0, ErrCartCheckedOut
 	}
 	return id, nil
 }

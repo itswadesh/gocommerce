@@ -501,6 +501,7 @@ type App struct {
 
 	designer      LineDesigner
 	designerOwner string
+	designed      DesignedProducts
 
 	routes  []Route
 	onStart []hook

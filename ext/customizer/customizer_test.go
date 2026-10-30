@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -769,13 +770,8 @@ func (h *harness) addDesign(cart string, variant int64, design string, qty int) 
 func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 	h := newHarness(t, Config{})
 	c := h.phoneCase(h.ctx, "CASE-C")
-	h.save(h.ctx, c)
-	other := h.phoneCase(h.ctx, "CASE-C2")
-	h.save(h.ctx, other)
-	photo := h.upload("", withExif(jpegRedTop(60, 30), 1, ""))
-	first := h.saved("", c, photo.ID)
-	second := h.saved("", c, photo.ID)
-
+	// The plain case went in before its customizer was switched on; once
+	// it is on, a plain line is refused (TestAPlainLineOfADesignedProductIsRefused).
 	cart, err := h.app.Cart().Create(h.ctx, "")
 	if err != nil {
 		t.Fatal(err)
@@ -783,6 +779,12 @@ func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 	if _, err := h.app.Cart().AddLine(h.ctx, cart.Token, c.variant, 1); err != nil {
 		t.Fatal(err)
 	}
+	h.save(h.ctx, c)
+	other := h.phoneCase(h.ctx, "CASE-C2")
+	h.save(h.ctx, other)
+	photo := h.upload("", withExif(jpegRedTop(60, 30), 1, ""))
+	first := h.saved("", c, photo.ID)
+	second := h.saved("", c, photo.ID)
 	for _, d := range []string{first.ID, second.ID, first.ID} {
 		if rec := h.addDesign(cart.Token, c.variant, d, 1); rec.Code != http.StatusOK {
 			t.Fatalf("add a design = %d %s", rec.Code, rec.Body)
@@ -1063,5 +1065,78 @@ func TestOrientationReadsAndTurns(t *testing.T) {
 	}
 	if _, nope, _ := jpegHeader([]byte("nope")); nope != 1 {
 		t.Error("something that is not a JPEG should read as stored")
+	}
+}
+
+// A product with its customizer on says so on its payload, so a storefront
+// opens the editor and offers no quick add; a plain product does not, and
+// neither does any product once the plugin is off.
+func TestAProductSaysItIsDesignable(t *testing.T) {
+	h := newHarness(t, Config{})
+	c := h.phoneCase(h.ctx, "CASE-D")
+	h.save(h.ctx, c)
+	plain := h.phoneCase(h.ctx, "CASE-P")
+
+	designable := func(id int64) bool {
+		t.Helper()
+		var p struct {
+			Designable bool `json:"designable"`
+		}
+		rec := h.do(http.MethodGet, "/api/products/"+strconv.FormatInt(id, 10), "", "", nil, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET product = %d %s", rec.Code, rec.Body)
+		}
+		var env struct {
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p.Designable
+	}
+	if !designable(c.product.ID) || designable(plain.product.ID) {
+		t.Fatalf("designable = %v / %v, want the set-up case only", designable(c.product.ID), designable(plain.product.ID))
+	}
+	list, _, err := h.app.Products().ListProducts(h.ctx, gocommerce.ProductQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range list {
+		if p.Designable != (p.ID == c.product.ID) {
+			t.Errorf("listed %s designable = %v", p.Slug, p.Designable)
+		}
+	}
+
+	off := false
+	if _, err := h.app.Plugins().Update(h.ctx, pluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
+	if designable(c.product.ID) {
+		t.Error("with the plugin off the case still says it is designable")
+	}
+}
+
+// A quick add of a product sold only to a design is refused with its own
+// code, so the storefront can say "design this one first".
+func TestAPlainLineOfADesignedProductIsRefused(t *testing.T) {
+	h := newHarness(t, Config{})
+	c := h.phoneCase(h.ctx, "CASE-R")
+	h.save(h.ctx, c)
+	cart, err := h.app.Cart().Create(h.ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := h.send(http.MethodPost, "/api/carts/"+cart.Token+"/line-items", "",
+		map[string]any{"variant_id": c.variant, "quantity": 1})
+	if rec.Code != http.StatusConflict || !strings.HasPrefix(errorCode(t, rec), "design_required: ") {
+		t.Fatalf("plain add = %d %s, want 409 design_required", rec.Code, rec.Body)
+	}
+	photo := h.upload("", withExif(jpegRedTop(60, 30), 1, ""))
+	d := h.saved("", c, photo.ID)
+	if rec := h.addDesign(cart.Token, c.variant, d.ID, 1); rec.Code != http.StatusOK {
+		t.Fatalf("the designed add = %d %s", rec.Code, rec.Body)
 	}
 }

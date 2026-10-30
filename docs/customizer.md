@@ -12,8 +12,11 @@ the editor only once its own Customizer card is switched on.
 
 ## The flow
 
-1. `GET /x/customizer/products/{product_id}` reads the product's setup. 404
-   means the product cannot be designed: draw the ordinary product page.
+1. A product sold only made to a design says `"designable": true` on its
+   payload, in a listing and on its own. Offer no quick add for it, and ask
+   for its setup only then: `GET /x/customizer/products/{product_id}` reads
+   it. 404 means the product cannot be designed after all: draw the ordinary
+   product page.
 2. Before the shopper chooses a photo, show `consent`.
 3. Each photo goes to `POST /x/customizer/uploads`. Keep the `upload_id`.
 4. When the shopper adds to bag, render two pictures in the browser and upload
@@ -159,6 +162,14 @@ line carries `design_id` and `design_preview_url`.
 | 404 | No such design in this store |
 | 400 | The design was made for another variant |
 | 409 | The design is on an order already (save it again to order it again), the product is no longer made to a design, or the store takes no designs |
+
+A line without `design_id` for a product that is `designable` is refused with
+409 and the code `design_required`, its own so the storefront can say
+"design this one first" and open the editor. A line that went in before the
+product's customizer was switched on stays, and checks out as it is.
+
+Two answers about the basket itself tell a storefront to start a fresh one,
+each with its own code: `cart_not_found` (404) and `cart_checked_out` (409).
 
 Checkout asks the same questions again and refuses the same way before the
 order exists. Each designed order line keeps `metadata.design`:

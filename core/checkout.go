@@ -656,7 +656,7 @@ func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string, ttl time.D
 		`SELECT id, status, currency, discount_code FROM carts WHERE token = $1 FOR UPDATE`, tok).
 		Scan(&id, &status, &currency, &discountCode)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, "", "", NotFoundf("cart not found")
+		return 0, "", "", ErrCartNotFound
 	}
 	if err != nil {
 		return 0, "", "", err
@@ -675,7 +675,7 @@ func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string, ttl time.D
 	default:
 		// An allowlist with a refusing default, as openCartID keeps: only
 		// 'converted' reaches here.
-		return 0, "", "", Conflictf("this cart has already been checked out")
+		return 0, "", "", ErrCartCheckedOut
 	}
 	return id, currency, discountCode, nil
 }
