@@ -547,6 +547,7 @@ const invoiceHTML = `<!doctype html>
   <tfoot>
     <tr><td colspan="3" class="num">Subtotal</td><td class="num">{{.Order.Subtotal.Currency}} {{.Order.Subtotal.AmountMinor}}</td></tr>
     {{if .Order.Shipping.AmountMinor}}<tr><td colspan="3" class="num">Shipping</td><td class="num">{{.Order.Shipping.Currency}} {{.Order.Shipping.AmountMinor}}</td></tr>{{end}}
+    {{if .Order.PaymentFee.AmountMinor}}<tr><td colspan="3" class="num">Cash on delivery charge</td><td class="num">{{.Order.PaymentFee.Currency}} {{.Order.PaymentFee.AmountMinor}}</td></tr>{{end}}
     {{if .Order.Discount.AmountMinor}}<tr><td colspan="3" class="num">Discount</td><td class="num">-{{.Order.Discount.Currency}} {{.Order.Discount.AmountMinor}}</td></tr>{{end}}
     <tr><td colspan="3" class="num">Total</td><td class="num">{{.Order.Total.Currency}} {{.Order.Total.AmountMinor}}</td></tr>
   </tfoot>
