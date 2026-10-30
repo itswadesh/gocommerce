@@ -1,6 +1,7 @@
 package customizer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -13,6 +14,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -192,13 +194,30 @@ func (h *harness) send(method, target, store string, v any) *httptest.ResponseRe
 	return h.do(method, target, store, "application/json", body, "")
 }
 
-func (h *harness) uploadRaw(store, field string, file []byte) *httptest.ResponseRecorder {
+func form(field string, file []byte) ([]byte, string) {
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)
 	part, _ := w.CreateFormFile(field, "photo")
 	_, _ = part.Write(file)
 	_ = w.Close()
-	return h.do(http.MethodPost, "/x/customizer/uploads", store, w.FormDataContentType(), b.Bytes(), "")
+	return b.Bytes(), w.FormDataContentType()
+}
+
+func (h *harness) uploadRaw(store, field string, file []byte) *httptest.ResponseRecorder {
+	body, contentType := form(field, file)
+	return h.do(http.MethodPost, "/x/customizer/uploads", store, contentType, body, "")
+}
+
+func (h *harness) server(readTimeout time.Duration) *httptest.Server {
+	inner := h.app.Handler()
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "example.com"
+		inner.ServeHTTP(w, r)
+	}))
+	srv.Config.ReadTimeout = readTimeout
+	srv.Start()
+	h.t.Cleanup(srv.Close)
+	return srv
 }
 
 func (h *harness) upload(store string, file []byte) Upload {
@@ -477,6 +496,69 @@ func TestUploadsAreRewrittenAndLimited(t *testing.T) {
 	tooBig := append(jpegRedTop(10, 10), make([]byte, maxUploadBytes)...)
 	if rec := big.uploadRaw("", "file", tooBig); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("a file over 15 MB = %d %s, want 413", rec.Code, rec.Body)
+	}
+}
+
+func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	uploadDeadline = 500 * time.Millisecond
+	t.Cleanup(func() { uploadDeadline = 15 * time.Second })
+	srv := h.server(0)
+	body, contentType := form("file", jpegRedTop(400, 300))
+
+	stalled := make([]net.Conn, 5)
+	for i := range stalled {
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+			contentType, len(body))
+		_, _ = c.Write(body[:len(body)/2])
+		stalled[i] = c
+	}
+	time.Sleep(200 * time.Millisecond)
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+	resp, err := client.Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("an upload beside five stalled ones: %v; want it taken at once", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("an upload beside five stalled ones = %d, want 201", resp.StatusCode)
+	}
+	for i, c := range stalled {
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Errorf("stalled upload %d was left open: %v", i, err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("stalled upload %d = %d, want 400", i, resp.StatusCode)
+		}
+	}
+}
+
+func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	srv := h.server(300 * time.Millisecond)
+	body, contentType := form("file", jpegRedTop(40, 30))
+	h.mod.decodes <- struct{}{}
+	go func() {
+		time.Sleep(time.Second)
+		<-h.mod.decodes
+	}()
+	resp, err := srv.Client().Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("an upload that waited a second to be decoded = %d, want 201", resp.StatusCode)
 	}
 }
 

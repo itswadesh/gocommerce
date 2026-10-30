@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -27,18 +28,11 @@ const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
 	uploadQuality   = 92
-	// decodeBudget is the most memory one picture may take to read, turn and
-	// write again, as decodeCost reckons it from the file's header, and one
-	// picture is decoded at a time. A 12-megapixel phone photo passes in any
-	// common encoding: the dearest, a progressive JPEG with full-resolution
-	// colour held on its side, comes to 232 MB.
-	decodeBudget = 256 << 20
-	// bodySlots is how many uploads are held in memory at once, each up to
-	// maxUploadBytes; the rest wait with their bodies unread. Reading one is
-	// bounded by the server's ReadTimeout (15 s, core/gocommerce.go), which
-	// covers the whole request, so a slow body holds a slot no longer.
-	bodySlots = 4
+	decodeBudget    = 256 << 20
+	decodeSlots     = 1
 )
+
+var uploadDeadline = 15 * time.Second
 
 // The JPEG and EXIF markers jpegSegments walks.
 const (
@@ -79,18 +73,23 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !m.allow(w, r, m.uploads, "uploads") {
 		return
 	}
-	select {
-	case m.bodies <- struct{}{}:
-		defer func() { <-m.bodies }()
-	case <-r.Context().Done():
+	// receive reads the body to its end under the deadline. The deadline
+	// comes off once the body is in, as a read timing out later cancels the
+	// request waiting to be decoded, and stays on a body that failed, which
+	// the server drains before answering.
+	rc := http.NewResponseController(w)
+	if err := rc.SetReadDeadline(time.Now().Add(uploadDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "time the upload"))
 		return
 	}
-	body, err := readFilePart(w, r)
+	file, err := receive(w, r)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	up, err := m.Store(r.Context(), body)
+	_ = rc.SetReadDeadline(time.Time{})
+	defer discard(file)
+	up, err := m.keep(r.Context(), file)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -98,7 +97,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusCreated, up)
 }
 
-func readFilePart(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<20)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -116,20 +115,38 @@ func readFilePart(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 			part.Close()
 			continue
 		}
-		return readPart(part)
+		f, err := spool(part)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			discard(f)
+			return nil, tooBigOr(err, gocommerce.Validationf("the upload could not be read"))
+		}
+		return f, nil
 	}
 }
 
-func readPart(part *multipart.Part) ([]byte, error) {
+func spool(part *multipart.Part) (*os.File, error) {
 	defer part.Close()
-	body, err := io.ReadAll(io.LimitReader(part, maxUploadBytes+1))
+	f, err := os.CreateTemp("", "customizer-upload-*")
 	if err != nil {
+		return nil, gocommerce.Internalf(err, "hold the upload")
+	}
+	n, err := io.Copy(f, io.LimitReader(part, maxUploadBytes+1))
+	if err != nil || n > maxUploadBytes {
+		discard(f)
+		if err == nil {
+			return nil, errTooBig
+		}
 		return nil, tooBigOr(err, gocommerce.Validationf("the upload could not be read"))
 	}
-	if len(body) > maxUploadBytes {
-		return nil, errTooBig
-	}
-	return body, nil
+	return f, nil
+}
+
+func discard(f *os.File) {
+	_ = f.Close()
+	_ = os.Remove(f.Name())
 }
 
 func tooBigOr(err error, otherwise error) error {
@@ -140,78 +157,91 @@ func tooBigOr(err error, otherwise error) error {
 	return otherwise
 }
 
-// Store decodes a photo, turns it the way its camera said it was held, and
-// writes it again, which leaves behind every byte that was not the picture:
-// EXIF and its GPS position, comments, and anything appended to the file.
-// Only JPEG and PNG are taken, because those are what the standard library
-// decodes (rule 1); the storefront's editor converts a WebP or HEIC photo in
-// the browser before sending it.
-func (m *Module) Store(ctx context.Context, body []byte) (*Upload, error) {
+func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 	store := m.app.MediaStore()
 	if store == nil {
 		return nil, errNoUploads
 	}
-	kind := http.DetectContentType(body)
-	if kind != "image/jpeg" && kind != "image/png" {
-		return nil, errNotAPicture
-	}
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(body))
-	if err != nil {
-		return nil, errNotAPicture
-	}
-	pixels := int64(cfg.Width) * int64(cfg.Height)
-	if cfg.Width <= 0 || cfg.Height <= 0 || pixels > maxUploadPixels {
-		return nil, errTooManyPixels
-	}
-	orientation := 1
-	if kind == "image/jpeg" {
-		orientation = jpegOrientation(body)
-	}
-	if perPixel, advice := decodeCost(body, kind, orientation); float64(pixels)*perPixel > decodeBudget {
-		return nil, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
-	}
-
 	select {
 	case m.decodes <- struct{}{}:
-		defer func() { <-m.decodes }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	img, _, err := image.Decode(bytes.NewReader(body))
+	size, mime, bounds, err := rewrite(file)
+	<-m.decodes
 	if err != nil {
-		return nil, errNotAPicture
+		return nil, err
 	}
-	var out bytes.Buffer
-	ext, mime := ".png", "image/png"
-	if kind == "image/jpeg" {
-		img = orient(img, orientation)
-		ext, mime = ".jpg", "image/jpeg"
-		err = jpeg.Encode(&out, img, &jpeg.Options{Quality: uploadQuality})
-	} else {
-		err = png.Encode(&out, img)
-	}
-	if err != nil {
-		return nil, gocommerce.Internalf(err, "encode the photo")
-	}
-	b := img.Bounds()
 
 	id, err := randomID()
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "name the upload")
 	}
-	size := int64(out.Len())
-	key, url, err := store.Put(ctx, "upload"+ext, mime, &out)
+	ext := ".png"
+	if mime == "image/jpeg" {
+		ext = ".jpg"
+	}
+	key, url, err := store.Put(ctx, "upload"+ext, mime, io.NewSectionReader(file, 0, size))
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "store the upload")
 	}
 	if _, err := m.db.ExecContext(ctx, `
 		INSERT INTO customizer_uploads (id, storage_key, url, mime, width, height, size_bytes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		id, key, url, mime, b.Dx(), b.Dy(), size); err != nil {
+		id, key, url, mime, bounds.Dx(), bounds.Dy(), size); err != nil {
 		_ = store.Delete(ctx, key)
 		return nil, gocommerce.Internalf(err, "record the upload")
 	}
-	return &Upload{ID: id, URL: url, Width: b.Dx(), Height: b.Dy()}, nil
+	return &Upload{ID: id, URL: url, Width: bounds.Dx(), Height: bounds.Dy()}, nil
+}
+
+func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, err error) {
+	body, err := os.ReadFile(file.Name())
+	if err != nil {
+		return 0, "", bounds, gocommerce.Internalf(err, "read the upload back")
+	}
+	mime = http.DetectContentType(body)
+	if mime != "image/jpeg" && mime != "image/png" {
+		return 0, "", bounds, errNotAPicture
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(body))
+	if err != nil {
+		return 0, "", bounds, errNotAPicture
+	}
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if cfg.Width <= 0 || cfg.Height <= 0 || pixels > maxUploadPixels {
+		return 0, "", bounds, errTooManyPixels
+	}
+	orientation := 1
+	if mime == "image/jpeg" {
+		orientation = jpegOrientation(body)
+	}
+	if perPixel, advice := decodeCost(body, mime, orientation); float64(pixels)*perPixel > decodeBudget {
+		return 0, "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(body))
+	if err != nil {
+		return 0, "", bounds, errNotAPicture
+	}
+	if mime == "image/jpeg" {
+		img = orient(img, orientation)
+	}
+	if _, err = file.Seek(0, io.SeekStart); err == nil {
+		err = file.Truncate(0)
+	}
+	if err == nil && mime == "image/jpeg" {
+		err = jpeg.Encode(file, img, &jpeg.Options{Quality: uploadQuality})
+	} else if err == nil {
+		err = png.Encode(file, img)
+	}
+	if err == nil {
+		size, err = file.Seek(0, io.SeekCurrent)
+	}
+	if err != nil {
+		return 0, "", bounds, gocommerce.Internalf(err, "write the photo again")
+	}
+	return size, mime, img.Bounds(), nil
 }
 
 func randomID() (string, error) {

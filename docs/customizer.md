@@ -76,6 +76,7 @@ design and adds that; remove the old line.
 |---|---|
 | Types | JPEG and PNG. WebP, HEIC and the rest answer 415: draw them into a canvas and send a JPEG (a photo) or a PNG (anything with transparency) |
 | Size | 15 MB at most (413) and 40 megapixels at most (422). A picture that would take more than 256 MB to decode and turn is refused too (422), with what to do in the message: a 16-bit PNG that large is to be saved as an 8-bit one, a progressive JPEG as an ordinary one. Any 12-megapixel phone photo is well inside it |
+| Time | The file must arrive within 15 seconds of the request reaching the engine, or the answer is 400 |
 | What is kept | The picture, decoded and written again: EXIF and its GPS position are dropped, and a JPEG is first turned the way its camera was held, so `width` and `height` are the picture as it is seen |
 | Where | The store's media storage under a random name, not the media library |
 | Limit | 30 an hour per address (429, with `Retry-After`) |
