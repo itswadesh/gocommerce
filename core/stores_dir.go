@@ -156,7 +156,7 @@ func (s *Stores) Active(ctx context.Context) ([]Store, error) {
 	return s.list(ctx, `WHERE status = 'active'`)
 }
 
-// list is the stores where picks, oldest first.
+// list lists the stores the where clause selects, oldest first.
 func (s *Stores) list(ctx context.Context, where string) ([]Store, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+storeColumns+` FROM stores `+where+` ORDER BY created_at, id`)
