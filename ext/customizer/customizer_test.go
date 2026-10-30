@@ -915,6 +915,25 @@ func FuzzAMutatedJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
 	f.Fuzz(withinItsReckoning)
 }
 
+func FuzzAJPEGTheWalkTakesDecodesQuickly(f *testing.F) {
+	for _, s := range [][2][]byte{
+		{nil, nil}, {{0xFF, 0xFF}, nil}, {{0xFF, 0x00}, nil}, {{0x00}, {0xFF, 0x00}}, {nil, {0xFF, 0xFF, 0x00}},
+	} {
+		f.Add(s[0], s[1])
+	}
+	f.Fuzz(func(t *testing.T, between, resync []byte) {
+		b := scanBomb(512, 512, 50_000, between, resync)
+		if head, _ := jpegHeader(b); head.passes > head.passLimit() {
+			return
+		}
+		start := time.Now()
+		_, _ = jpeg.Decode(bytes.NewReader(b))
+		if took := time.Since(start); took > time.Second {
+			t.Fatalf("the walk let through %d bytes of 50,000 scans that image/jpeg decoded for %v", len(b), took)
+		}
+	})
+}
+
 func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
 	for _, p := range []pngHeader{
 		{w: maxUploadSide, h: 1, depth: 16, colour: 2},
