@@ -14,8 +14,9 @@ import (
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
-// The free trial in micro-minor, as a fresh store gets it.
-const freeTrialMicro = DefaultFreeTrialMinor * microPerMinor
+// The free trial in micro-minor, as a fresh dollar store on platformConfig's
+// install gets it.
+const freeTrialMicro = 500 * microPerMinor
 
 func mustCredit(t *testing.T, m *Module, ctx context.Context) *Credit {
 	t.Helper()
@@ -29,7 +30,7 @@ func mustCredit(t *testing.T, m *Module, ctx context.Context) *Credit {
 // A store nobody has touched has its whole free trial to spend, and no row is
 // written until it first spends: reading credit does not create one.
 func TestFreshStoreHasItsFreeTrial(t *testing.T) {
-	app, m, _ := newGateway(t, reply(http.StatusOK, "{}"))
+	app, m, _ := newGatewayWith(t, platformConfig(), reply(http.StatusOK, "{}"))
 	ctx := context.Background()
 	configure(t, app, ctx, nil)
 
@@ -212,8 +213,9 @@ func TestADeterministicAnswerDrawsNoCredit(t *testing.T) {
 // never goes negative, nothing stays held, and the runs that could not reserve
 // stopped before calling.
 func TestConcurrentRunsCannotOverspendCredit(t *testing.T) {
-	// Each ceiling is 1,000,000 micro; each real call costs 300,000. A free
-	// trial of 3 minor units (3,000,000 micro) reserves three ceilings at once.
+	// Each ceiling is about 590,000 micro (smallCeiling); each real call
+	// costs 300,000. A free trial of 3 minor units (3,000,000 micro) reserves
+	// five ceilings at once.
 	var calls atomic.Int32
 	app, m, _ := newGatewayWith(t, platformConfig(), func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -266,7 +268,7 @@ func TestConcurrentRunsCannotOverspendCredit(t *testing.T) {
 // token grants it or sets a free trial: no store's staff, its owner included,
 // can give their store the platform's money. A grant is recorded.
 func TestOnlyTheInstallGrantsCredit(t *testing.T) {
-	app, m, _ := newGateway(t, reply(http.StatusOK, "{}"))
+	app, m, _ := newGatewayWith(t, platformConfig(), reply(http.StatusOK, "{}"))
 	ctx := context.Background()
 
 	// An owner holds every right of the store, and may read the balance, but

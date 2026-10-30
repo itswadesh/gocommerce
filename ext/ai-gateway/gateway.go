@@ -113,11 +113,12 @@ type Config struct {
 	// PollInterval is how often the runner looks for due jobs. Defaults to
 	// five seconds.
 	PollInterval time.Duration
-	// FreeTrialMinor is the AI credit a store gets to try AI before an
-	// operator tops it up, in minor units of the store's currency. Zero or
-	// less uses DefaultFreeTrialMinor. This is the platform operator's knob;
-	// the figure shipped is a placeholder (see DefaultFreeTrialMinor).
-	FreeTrialMinor int64
+	// FreeTrial is the AI credit a store gets to try AI before an operator
+	// tops it up (AI_FREE_TRIAL): whole minor units per currency, as
+	// "INR=3000,USD=50". A currency it does not name gets the first amount
+	// converted at PlatformUSDRates. Empty is DefaultFreeTrial, ₹30. A store
+	// keeps the trial it started with when this changes.
+	FreeTrial string
 
 	// PlatformAnthropicKey is the install's own Anthropic key
 	// (ANTHROPIC_API_KEY). A store that has entered no key of its own makes
@@ -150,6 +151,8 @@ type Module struct {
 	client *http.Client
 	// platform is the install's own key, models and prices; nil without a key.
 	platform *platform
+	// trial is the install's free AI trial per currency.
+	trial []trialAmount
 
 	mu      sync.RWMutex
 	tasks   map[string]*Task
@@ -190,6 +193,15 @@ func (m *Module) Register(app *gocommerce.App) error {
 		}
 	}
 	m.platform = newPlatform(m.cfg, m.log)
+	m.trial = readFreeTrial(m.cfg, m.log)
+	if m.platform != nil {
+		for _, c := range slices.Sorted(maps.Keys(m.platform.rates)) {
+			named := slices.ContainsFunc(m.trial, func(a trialAmount) bool { return a.currency == c })
+			if !named && freeTrialMinor(m.trial, m.platform, c) == 0 {
+				m.log.Warn("ai gateway: stores in this currency get no free AI trial; name it in AI_FREE_TRIAL, or give the first currency there a rate", "currency", c)
+			}
+		}
+	}
 
 	m.registerRights(app)
 	m.registerPlugin(app)
@@ -684,5 +696,6 @@ ALTER TABLE ai_executions ADD CONSTRAINT ai_executions_outcome_check
                        'policy_blocked', 'credit_exhausted'));`,
 		},
 		gocommerce.ScopeMigration("0006_credits_scope", "ai_credits", "ai_credit_ledger"),
+		{ID: "0007_free_trial", Run: m.raisePlaceholderTrials},
 	}
 }

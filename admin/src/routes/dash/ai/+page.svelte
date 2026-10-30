@@ -329,7 +329,10 @@
                         <dl class="ai-credit-figures">
                             <div>
                                 <dt>Free trial left</dt>
-                                <dd>{formatMicro(credit.free_remaining_micro_minor, currency)}</dd>
+                                <dd>
+                                    {formatMicro(credit.free_remaining_micro_minor, credit.currency)}
+                                    <span class="ai-tile-of">of {formatMicro(credit.free_allowance_micro_minor, credit.currency)}</span>
+                                </dd>
                             </div>
                             <div>
                                 <dt>Topped-up balance</dt>

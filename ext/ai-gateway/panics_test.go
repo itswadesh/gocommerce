@@ -71,8 +71,7 @@ func TestAPanickingTransportFailsTheJobAndSettles(t *testing.T) {
 	if j.Status != JobFailed || !strings.Contains(j.LastError, "the transport fell over") || j.ExecutionID == nil {
 		t.Fatalf("job = %+v, want failed with the panic as its reason and a record", j)
 	}
-	// The small model's ceiling: 4000 in at 125, 1000 out at 500.
-	const ceiling = 4000*125 + 1000*500
+	ceiling := smallCeiling(t)
 	e := mustExecution(t, m, ctx, *j.ExecutionID)
 	if e.Outcome != OutcomeProviderError || e.CostMicroMinor != ceiling {
 		t.Errorf("record = %s at %d, want provider_error charged at the ceiling %d", e.Outcome, e.CostMicroMinor, ceiling)
