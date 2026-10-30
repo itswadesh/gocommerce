@@ -783,21 +783,71 @@ func withinItsReckoning(t *testing.T, b []byte) {
 	}
 }
 
+// FuzzAJPEGAllocatesNoMoreThanItIsReckoned fuzzes a picture's shape and
+// writes scan data to fit it, as a mutated byte only ever breaks a picture's
+// data and the fuzzer then never reaches one large enough to be wrong about.
+// The bytes before the frame stay free, where a gadget hides a frame from
+// the walk.
 func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
-	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x22, 0x12}, adobe: -1, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11}, adobe: -1}))
-		f.Add(jpegOf(jpegSpec{w: 96, h: 16, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, ids: []byte("RGB")}))
+	type shape struct {
+		w, h                    uint16
+		progressive, split, rgb bool
+		sampling                []byte
+		adobe                   int8
+		orientation             uint8
+		beforeSOF               []byte
 	}
-	f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: jpegBaseline, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, beforeSOF: []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF}}))
-	f.Add(withExif(jpegRedTop(24, 16), 6, ""))
-	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
-	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
-	f.Fuzz(func(t *testing.T, b []byte) { withinItsReckoning(t, b) })
+	for _, progressive := range []bool{false, true} {
+		for _, s := range []shape{
+			{w: 128, h: 96, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 128, h: 96, split: true, sampling: []byte{0x22, 0x11, 0x11}, adobe: -1},
+			{w: 128, h: 96, split: true, sampling: []byte{0x11, 0x22, 0x12}, adobe: -1},
+			{w: 128, h: 96, sampling: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0},
+			{w: 128, h: 96, split: true, sampling: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2},
+			{w: 128, h: 96, sampling: []byte{0x11}, adobe: -1},
+			{w: 96, h: 16, rgb: true, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 24, h: 16, sampling: []byte{0x22, 0x11, 0x11}, adobe: -1, orientation: 6},
+			{w: 1024, h: 768, rgb: true, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 1024, h: 768, split: true, sampling: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, orientation: 8},
+		} {
+			f.Add(s.w, s.h, progressive, s.split, s.rgb, s.sampling, s.adobe, s.orientation, s.beforeSOF)
+		}
+	}
+	f.Add(uint16(128), uint16(96), false, false, false, []byte{0x11, 0x11, 0x11}, int8(-1), uint8(1), []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF})
+	f.Add(uint16(16), uint16(16), true, false, false, []byte{0x11, 0x11, 0x11}, int8(-1), uint8(1), []byte{0})
+	f.Fuzz(func(t *testing.T, w, h uint16, progressive, split, rgb bool, sampling []byte, adobe int8, orientation uint8, beforeSOF []byte) {
+		if w == 0 || h == 0 || int(w)*int(h) > 1<<20 {
+			return
+		}
+		s := jpegSpec{w: int(w), h: int(h), sof: jpegBaseline, split: split, adobe: int(adobe) % 3, beforeSOF: beforeSOF}
+		if progressive {
+			s.sof = jpegProgressive
+		}
+		if adobe < 0 {
+			s.adobe = -1
+		}
+		factor := func(x byte) byte {
+			if x == 1 || x == 2 || x == 4 {
+				return x
+			}
+			return []byte{1, 2, 4}[x%3]
+		}
+		for c := range []int{1, 1, 3, 3, 4}[min(len(sampling), 4)] {
+			hv := byte(0x11)
+			if c < len(sampling) {
+				hv = factor(sampling[c]>>4)<<4 | factor(sampling[c]&15)
+			}
+			s.hv = append(s.hv, hv)
+		}
+		if rgb && len(s.hv) == 3 {
+			s.ids = []byte("RGB")
+		}
+		b := jpegOf(s)
+		if orientation >= 2 && orientation <= 8 {
+			b = withExif(b, uint16(orientation), "")
+		}
+		withinItsReckoning(t, b)
+	})
 }
 
 func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
