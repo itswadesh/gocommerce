@@ -133,10 +133,12 @@ export function formProblem(f) {
     const dpi = Number(size.dpi);
     if (!Number.isInteger(dpi) || dpi < MIN_DPI || dpi > MAX_DPI) return `The resolution must be ${MIN_DPI} to ${MAX_DPI} dpi.`;
     const px = printPixels(size);
+    const side = (v) => round(((Number(v) || 0) / 25.4) * dpi);
+    const [w, h] = [side(size.width_mm), side(size.height_mm)];
     const tooLarge = (limit) =>
-        `The print file would be ${px.width} × ${px.height} pixels, over ${limit}. Larger prints are not supported yet, so lower the resolution or the print size.`;
-    if (px && px.width * px.height > MAX_PRINT_PIXELS) return tooLarge(`${MAX_PRINT_PIXELS / 1e6} megapixels`);
-    if (px && Math.max(px.width, px.height) > MAX_PRINT_SIDE) return tooLarge(`${MAX_PRINT_SIDE} pixels a side`);
+        `The print file would be ${w} × ${h} pixels, over ${limit}. Larger prints are not supported yet, so lower the resolution or the print size.`;
+    if (w * h > MAX_PRINT_PIXELS) return tooLarge(`${MAX_PRINT_PIXELS / 1e6} megapixels`);
+    if (Math.max(w, h) > MAX_PRINT_SIDE) return tooLarge(`${MAX_PRINT_SIDE} pixels a side`);
     const min = Number(f.min_photo_px);
     if (!Number.isInteger(min) || min < 0 || min > MAX_MIN_PHOTO) return `The smallest photo must be 0 to ${MAX_MIN_PHOTO} pixels.`;
     const gap = aspectGap(f.print_area, size);
