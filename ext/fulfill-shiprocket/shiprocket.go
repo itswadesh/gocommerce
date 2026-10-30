@@ -58,6 +58,12 @@ type Config struct {
 	DefaultLengthCm  float64
 	DefaultBreadthCm float64
 	DefaultHeightCm  float64
+	// WebhookToken is what Shiprocket sends in x-api-key with each tracking
+	// update: the store's id, a dot and a secret. The panel generates it.
+	WebhookToken string `plugin:"webhook_token"`
+	// PollEvery is how often every parcel still on its way is asked about,
+	// for the updates a webhook did not bring. Thirty minutes by default.
+	PollEvery time.Duration
 	// BaseURL overrides the endpoint, for tests. It is the install's and never
 	// a store setting: a store's saved password is sent wherever it points, so
 	// whoever may change it must already be trusted with every password.
@@ -139,6 +145,9 @@ func (m *Module) finish(c *Config) {
 	if c.DefaultLengthCm <= 0 {
 		c.DefaultLengthCm, c.DefaultBreadthCm, c.DefaultHeightCm = 15, 15, 10
 	}
+	if c.PollEvery <= 0 {
+		c.PollEvery = 30 * time.Minute
+	}
 }
 
 // Name implements gocommerce.Module.
@@ -156,13 +165,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: PluginKey, Title: "Shiprocket", Icon: "ri-truck-line", Category: "shipping", DefaultEnabled: inCode,
 		Home:        "/dash/shipping-settings/providers",
-		Description: "Books shipments and waybills through Shiprocket, India's aggregator: one login across its couriers, with their rates, labels and pickups.",
+		Description: "Books shipments and waybills through Shiprocket, India's aggregator: one login across its couriers, with their rates, labels, pickups and tracking.",
 		Docs:        "https://apidocs.shiprocket.in/",
 		Fields: []gocommerce.PluginField{
 			{Key: "email", Label: "API user email", Kind: "text", Required: !inCode, Help: "The API user's login (Settings › API in Shiprocket), not the account owner's."},
 			{Key: "password", Label: "API user password", Kind: "secret", Required: !inCode},
 			{Key: "pickup_location", Label: "Pickup location", Kind: "text", Required: !inCode, Help: "The pickup address nickname registered in Shiprocket. Test the connection to choose from the account's own."},
 			{Key: "default_weight_kg", Label: "Default weight (kg)", Kind: "number", Help: "Per unit, for a variant with no weight recorded.", Default: 0.5},
+			{Key: "webhook_token", Label: "Tracking token", Kind: "secret", Help: "Made with Generate under Tracking updates below, and pasted into Shiprocket as the webhook's security token."},
 		},
 	})
 	m.finish(&m.cfg)
@@ -174,6 +184,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	app.RegisterFulfillment(m)
 	m.routes(app)
+	app.OnStart(m.startPolling)
 	return nil
 }
 

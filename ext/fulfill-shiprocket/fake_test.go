@@ -57,6 +57,12 @@ type fakeOrder struct {
 	CourierID      int
 	Cancelled      bool
 	Pickup         bool
+	Return         bool
+	// Status is what tracking answers: Shiprocket's shipment status code
+	// and its activities, newest first.
+	Status     int
+	Activities []map[string]any
+	NDRActions []map[string]any
 }
 
 func newFake(t *testing.T) *fakeShiprocket {
@@ -166,7 +172,7 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 			"recommended_courier_company_id": 43,
 		}})
 
-	case path == "/v1/external/orders/create/adhoc":
+	case path == "/v1/external/orders/create/adhoc", path == "/v1/external/orders/create/return":
 		channel := fmt.Sprint(body["order_id"])
 		if _, taken := a.orders[channel]; taken {
 			writeJSON(w, 422, map[string]any{"message": "Oops! Invalid Data.",
@@ -174,7 +180,8 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.nextID++
-		o := &fakeOrder{ID: f.nextID, ShipmentID: f.nextID + 500000, Channel: channel, Payload: body}
+		o := &fakeOrder{ID: f.nextID, ShipmentID: f.nextID + 500000, Channel: channel, Payload: body,
+			Return: path == "/v1/external/orders/create/return"}
 		a.orders[channel] = o
 		if f.cancelledOnCreate {
 			f.cancelledOnCreate = false
@@ -220,6 +227,11 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		if o.AWB != "" {
 			writeJSON(w, 400, map[string]any{"message": "AWB is already assigned", "status_code": 400})
+			return
+		}
+		// Documented as required for a return's waybill.
+		if o.Return && body["is_return"] != float64(1) {
+			writeJSON(w, 422, map[string]any{"message": "The is return field is required.", "status_code": 422})
 			return
 		}
 		a.awbs++
@@ -292,9 +304,71 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 
+	case path == "/v1/external/courier/track/awbs":
+		out := map[string]any{}
+		for _, v := range body["awbs"].([]any) {
+			o := a.byAWB(fmt.Sprint(v))
+			if o == nil {
+				continue
+			}
+			out[o.AWB] = map[string]any{"tracking_data": map[string]any{
+				"track_status": 1, "shipment_status": o.Status,
+				"shipment_track":            []any{map[string]any{"awb_code": o.AWB, "current_status": ""}},
+				"shipment_track_activities": o.Activities, "etd": "2026-11-03 18:00:00",
+			}}
+		}
+		writeJSON(w, 200, out)
+
+	case strings.HasPrefix(path, "/v1/external/ndr/") && strings.HasSuffix(path, "/action"):
+		o := a.byAWB(strings.TrimSuffix(strings.TrimPrefix(path, "/v1/external/ndr/"), "/action"))
+		if o == nil || body["action"] == nil || body["comments"] == nil {
+			writeJSON(w, 422, map[string]any{"message": "Invalid data", "status_code": 422})
+			return
+		}
+		o.NDRActions = append(o.NDRActions, body)
+		writeJSON(w, 202, map[string]any{"status": "Data Updated Sucessfully"})
+
+	case strings.HasPrefix(path, "/v1/external/ndr/"):
+		o := a.byAWB(strings.TrimPrefix(path, "/v1/external/ndr/"))
+		if o == nil {
+			writeJSON(w, 404, map[string]any{"message": "No NDR found", "status_code": 404})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"data": []any{map[string]any{
+			"awb_code": o.AWB, "status": "UNDELIVERED", "reason": "Customer not available", "attempts": 1,
+			"ndr_raised_at": "2026-11-02 18:10:00",
+			"history": []any{map[string]any{"ndr_reason": "Customer not available", "ndr_attempt": 1,
+				"ndr_raised_at": "2026-11-02 18:10:00", "comment": ""}},
+		}}})
+
 	default:
 		writeJSON(w, 404, map[string]any{"message": "404 Not Found", "status_code": 404})
 	}
+}
+
+func (a *fakeAccount) byAWB(awb string) *fakeOrder {
+	for _, o := range a.orders {
+		if o.AWB != "" && o.AWB == awb {
+			return o
+		}
+	}
+	return nil
+}
+
+// track sets what tracking answers for a waybill.
+func (f *fakeShiprocket) track(email, awb string, status int, activity string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	o := f.accounts[email].byAWB(awb)
+	o.Status = status
+	o.Activities = append([]map[string]any{{"date": "2026-11-02 10:00:00", "status": "X", "activity": activity,
+		"location": "Mumbai", "sr-status": fmt.Sprint(status), "sr-status-label": activity}}, o.Activities...)
+}
+
+func (f *fakeShiprocket) ndrActions(email, awb string) []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.accounts[email].byAWB(awb).NDRActions
 }
 
 func (a *fakeAccount) byShipment(id int64) *fakeOrder {
