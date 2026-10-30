@@ -432,7 +432,10 @@ answers: try again, or send it back. On the order, a parcel delivered is
 delivered (the order with its last parcel, which sends the delivered email),
 and in transit, out for delivery, a failed attempt, returning and returned
 are `order.shipment_updated` events for webhooks; a status Shiprocket's docs do
-not list is logged and kept as in transit.
+not list is logged and kept as in transit. **Reverse pickup** on the card books
+a Shiprocket return order for items that went out, from the customer's address
+to the pickup location, with a waybill and tracking of its own; it changes
+nothing on the order, and what arrives is recorded with the order's Return.
 
 The password is sealed with the other secrets (see Secrets at rest) and never
 shown again; the login token Shiprocket gives for it is kept in memory only.

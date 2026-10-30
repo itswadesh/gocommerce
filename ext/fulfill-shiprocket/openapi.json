@@ -689,6 +689,107 @@
           }
         }
       }
+    },
+    "/api/admin/x/fulfill-shiprocket/orders/{id}/returns": {
+      "post": {
+        "tags": [
+          "admin:fulfill-shiprocket"
+        ],
+        "summary": "Book a reverse pickup",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "description": "Needs orders.fulfill. Creates a Shiprocket return order collecting `lines` from the order's address and bringing them to the store's pickup location, and assigns its waybill (the courier named, or Shiprocket's default). Each line names an order line and between 1 and what shipped of it. `reason` is one of Shiprocket's documented return reasons. It changes nothing on the order: what came back is recorded with the order's own return when it arrives, and its tracking never moves the order. A retry resumes the same return order; the same items asked for again while a pickup for them is live are a 409. 422 when Shiprocket refuses.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "lines"
+                ],
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "order_line_id": {
+                          "type": "integer"
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "One of Shiprocket's return_reason values, such as \"Size not as expected\"."
+                  },
+                  "courier_id": {
+                    "type": "integer"
+                  },
+                  "weight_kg": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reverse pickup, booked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ShiprocketShipment"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "Shiprocket refused, or could not be reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -884,6 +985,10 @@
           "etd": {
             "type": "string",
             "description": "Shiprocket's estimated delivery, as it wrote it."
+          },
+          "return": {
+            "type": "boolean",
+            "description": "A reverse pickup, coming back from the customer."
           }
         }
       },
