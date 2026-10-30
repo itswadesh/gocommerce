@@ -16850,6 +16850,147 @@
           }
         }
       }
+    },
+    "/api/admin/gst-states": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "List India's GST state codes",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every state and union territory as GST numbers it, in code order — the table a GSTIN's first two digits are checked against, compiled into the binary (D170). For an Indian address's state picker and anywhere a place of supply is chosen.",
+        "responses": {
+          "200": {
+            "description": "The whole list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GSTState"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/hsn": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Search the HSN/SAC master",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "India's HSN (goods) and SAC (services) codes from the GST portal's master, embedded in the binary and read-only (D170). `?q=` of digits is a code prefix, dots and spaces ignored (`6109.10`); anything else is words that must all appear in the description or its heading. Results are in code order and page like any listing; no `q` is an empty page.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A code prefix, e.g. `7113`, or words, e.g. `cotton t-shirts`."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          },
+          {
+            "$ref": "#/components/parameters/PageNumber"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/HSNCode"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/hsn/{code}": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Look up one HSN or SAC code",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "One code from the master, typed with or without dots. A code the master does not list is a 404; a store may still use it on a product, since the master trails the tariff.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HSNCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -23407,6 +23548,51 @@
           "created": {
             "type": "integer",
             "description": "Categories written, missing ancestors included; 0 when it was already active."
+          }
+        }
+      },
+      "GSTState": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The two-digit GST state code, the first two characters of a GSTIN.",
+            "example": "23"
+          },
+          "iso": {
+            "type": "string",
+            "description": "The ISO 3166-2 subdivision code without the IN- prefix; empty for Other Territory.",
+            "example": "MP"
+          },
+          "name": {
+            "type": "string",
+            "example": "Madhya Pradesh"
+          },
+          "ut": {
+            "type": "boolean",
+            "description": "A union territory without a legislature, where UTGST takes the place of SGST."
+          }
+        }
+      },
+      "HSNCode": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "2 (chapter), 4 (heading), 6 (subheading) or 8 (tariff item) digits.",
+            "example": "7113"
+          },
+          "description": {
+            "type": "string",
+            "description": "The GST portal's own words."
+          },
+          "heading": {
+            "type": "string",
+            "description": "The four-digit heading's description, for a longer code."
+          },
+          "service": {
+            "type": "boolean",
+            "description": "A SAC (services) code rather than an HSN one."
           }
         }
       }
