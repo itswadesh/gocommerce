@@ -78,7 +78,7 @@ transitions:
 | `EventOrderEdited` | `order.edited` | `Orders.EditLines`, with a `change` block in the payload; `Orders.Update`, without one, unless the save touched nothing but the operator's note |
 | `EventOrderUnpaid` | `order.unpaid` | `Payments.MarkUnpaid`, when a payment recorded in error is taken back |
 | `EventOrderUndelivered` | `order.undelivered` | `Orders.MarkUndelivered`, when a delivery recorded in error is taken back |
-| `EventOrderUnshipped` | `order.unshipped` | `Fulfillments.Delete`, when a shipment recorded in error is removed |
+| `EventOrderUnshipped` | `order.unshipped` | `Fulfillments.Delete`, when a shipment recorded in error is removed; `Fulfillments.Cancel`, when a booked parcel is called off and stays on the order marked cancelled, with the reason |
 
 The other families:
 
