@@ -31,6 +31,11 @@ type APIError struct {
 	Details any    `json:"details,omitempty"`
 
 	wrapped error
+	// kind is the general code a specific one narrows, such as not_found
+	// for cart_not_found: a client reads Code, and Go code that asks
+	// errors.Is(err, ErrNotFound) keeps the answer it had before the
+	// narrower code existed.
+	kind string
 }
 
 func (e *APIError) Error() string {
@@ -43,10 +48,11 @@ func (e *APIError) Error() string {
 func (e *APIError) Unwrap() error { return e.wrapped }
 
 // Is compares by code, so errors.Is(err, gocommerce.ErrNotFound) works
-// regardless of the message a particular call site chose.
+// regardless of the message a particular call site chose. A narrower code
+// also matches the general one it narrows (kind).
 func (e *APIError) Is(target error) bool {
 	var t *APIError
-	return errors.As(target, &t) && t.Code == e.Code
+	return errors.As(target, &t) && (t.Code == e.Code || (e.kind != "" && t.Code == e.kind))
 }
 
 // Sentinel errors for errors.Is comparison.
