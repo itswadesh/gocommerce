@@ -542,23 +542,30 @@ func (f jpegHead) scanLimit() int {
 // 1.27, reader.go decoder.decode): a byte before a marker that is not 0xFF, a
 // 0xFF fill byte, "\xff\x00" and a restart marker are skipped without a
 // length, and every other segment by its length. The data of a scan is such
-// bytes, so the walk goes on to the end, counting the scans, and stops where
-// the decoder would fail.
+// bytes, so the walk goes on to the end, counting the scans. Where it stops
+// short of the end, every "ÿÚ" after counts as a scan too: in a scan
+// with restarts, the decoder's findRST (scan.go) skips bytes the walk takes
+// for a marker, and reads on.
 func jpegHeader(b []byte) (f jpegHead, orientation int) {
 	orientation = 1
 	exif := false
 	if len(b) < 2 || b[0] != jpegMarker || b[1] != jpegStart {
 		return f, orientation
 	}
-	for i := 2; ; {
+	at := 2
+	stop := func() (jpegHead, int) {
+		f.scans += bytes.Count(b[at:], []byte{jpegMarker, jpegScan})
+		return f, orientation
+	}
+	for i := 2; ; at = i {
 		if i+2 > len(b) {
-			return f, orientation
+			return stop()
 		}
 		prev, marker := b[i], b[i+1]
 		i += 2
 		for prev != jpegMarker {
 			if i >= len(b) {
-				return f, orientation
+				return stop()
 			}
 			prev, marker = marker, b[i]
 			i++
@@ -568,7 +575,7 @@ func jpegHeader(b []byte) (f jpegHead, orientation int) {
 		}
 		for marker == jpegMarker {
 			if i >= len(b) {
-				return f, orientation
+				return stop()
 			}
 			marker = b[i]
 			i++
@@ -580,27 +587,27 @@ func jpegHeader(b []byte) (f jpegHead, orientation int) {
 			continue
 		}
 		if i+2 > len(b) {
-			return f, orientation
+			return stop()
 		}
 		n := int(binary.BigEndian.Uint16(b[i:])) - 2
 		i += 2
 		if n < 0 || i+n > len(b) {
-			return f, orientation
+			return stop()
 		}
 		seg := b[i : i+n]
 		i += n
 		switch {
 		case marker == jpegBaseline || marker == jpegExtended || marker == jpegProgressive:
 			if f.components != nil {
-				return f, orientation
+				return stop()
 			}
 			var ok bool
 			if f, ok = jpegFrame(marker, seg); !ok {
-				return f, orientation
+				return stop()
 			}
 		case marker == jpegScan:
 			if f.components == nil {
-				return f, orientation
+				return stop()
 			}
 			f.scans++
 		case marker == jpegApp1:
@@ -610,7 +617,7 @@ func jpegHeader(b []byte) (f jpegHead, orientation int) {
 		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
 			jpegApp0 <= marker && marker <= jpegApp15 || marker == jpegComment:
 		default:
-			return f, orientation
+			return stop()
 		}
 	}
 }
