@@ -13005,8 +13005,7 @@ html .tw\:rounded-2xl {
     min-width: 0;
     overflow-wrap: anywhere;
 }
-.sr-return-line input,
-.sr-return select {
+.sr-return-line input {
     width: 100%;
     min-width: 0;
     height: 32px;
@@ -13017,8 +13016,7 @@ html .tw\:rounded-2xl {
     color: inherit;
     font: inherit;
 }
-.sr-return-line input:focus-visible,
-.sr-return select:focus-visible {
+.sr-return-line input:focus-visible {
     outline: 2px solid var(--markColor);
     outline-offset: 1px;
 }
