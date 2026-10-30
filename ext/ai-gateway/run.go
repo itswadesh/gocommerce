@@ -1,6 +1,7 @@
 package aigateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,6 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif" // registered so imageTokens can read their sizes
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"regexp"
 	"runtime/debug"
@@ -526,18 +531,33 @@ func estimateTokens(req Request) int {
 	for _, msg := range req.Messages {
 		count(msg.Text)
 	}
+	for _, d := range req.Documents {
+		count(d.Caption)
+	}
 	n := ascii/3 + (wide*3+1)/2 + requestOverhead
 	for _, d := range req.Documents {
 		switch {
 		case d.MediaType == "application/pdf":
 			n += max(1, pdfPages(d.Bytes)) * tokensPerPage
 		case strings.HasPrefix(d.MediaType, "image/"):
-			n += TokensPerImage
+			n += imageTokens(d.Bytes)
 		default:
 			n += len(d.Bytes) / 3
 		}
 	}
 	return n
+}
+
+// imageTokens is what a picture can cost: a token per 750 pixels, which is
+// what a model that keeps a large picture's full size charges, and never less
+// than TokensPerImage. A picture whose size does not read (WebP, which the
+// standard library cannot decode) counts the floor.
+func imageTokens(b []byte) int {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil {
+		return TokensPerImage
+	}
+	return max(TokensPerImage, (cfg.Width*cfg.Height+749)/750)
 }
 
 // pdfPageRE finds a page object, not the page tree (/Pages).
