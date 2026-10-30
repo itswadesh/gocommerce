@@ -13066,3 +13066,229 @@ html .tw\:rounded-2xl {
         transition: none;
     }
 }
+
+/* ------------------------------------------------------------ ads report
+   Ads performance (ext/ads, D168). Reuses the recovery report's cards, tiles
+   and segmented switches; what follows is only the table's open rows, the
+   summary's points beside their figures, and the spend forms. */
+@media (min-width: 601px) {
+    .ads-table td,
+    .ads-table th {
+        white-space: nowrap;
+    }
+}
+.ads-row-btn {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 180ms ease-out,
+        transform 150ms ease-out;
+}
+.ads-row-btn:hover {
+    background: var(--surfaceAlt1Color);
+}
+.ads-row-btn:active {
+    transform: scale(0.98);
+}
+.ads-row-btn:focus-visible {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 1px;
+}
+.ads-chevron {
+    transition: transform 200ms ease-out;
+}
+.ads-row.is-open .ads-chevron {
+    transform: rotate(90deg);
+}
+.ads-where {
+    display: block;
+    font-weight: 600;
+}
+.ads-campaign {
+    display: block;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    white-space: normal;
+}
+.ads-row.is-open > td {
+    background: var(--surfaceAlt1Color);
+}
+.ads-drill > td {
+    background: var(--surfaceAlt1Color);
+    white-space: normal;
+}
+.ads-orders {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ads-orders > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+.ads-orders > li:last-child {
+    border-bottom: 0;
+}
+.ads-order-link {
+    font-weight: 600;
+    transition: opacity 150ms ease-out;
+}
+.ads-order-link:hover {
+    opacity: 0.75;
+}
+.ads-loss {
+    color: var(--dangerColor);
+}
+.ads-warn {
+    color: var(--warningColor);
+}
+.ads-press {
+    transition:
+        transform 150ms ease-out,
+        opacity 150ms ease-out;
+}
+.ads-press:active {
+    transform: scale(0.97);
+}
+.ads-headline {
+    margin: 8px 0 2px;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+.ads-points {
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+.ads-point {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 18rem);
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+}
+.ads-point p {
+    margin: 6px 0 0;
+}
+.ads-kind {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    background: var(--surfaceAlt1Color);
+}
+.ads-kind.is-working {
+    color: var(--successColor);
+}
+.ads-kind.is-wasting {
+    color: var(--dangerColor);
+}
+.ads-kind.is-watch {
+    color: var(--warningColor);
+}
+.ads-figures {
+    margin: 0;
+    display: grid;
+    gap: 2px;
+    font-size: var(--smFontSize);
+}
+.ads-figures > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+.ads-figures dt {
+    color: var(--surfaceTxtHintColor);
+}
+.ads-figures dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+.ads-problem {
+    margin: 8px 0;
+    padding: 12px;
+    border: 1px solid var(--warningColor);
+    border-radius: var(--borderRadius);
+}
+.ads-problem p {
+    margin: 4px 0 8px;
+}
+.ads-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    cursor: pointer;
+}
+.ads-forms {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+.ads-form {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+}
+.ads-form-title {
+    margin: 0;
+    font-size: var(--baseFontSize, 14px);
+    font-weight: 600;
+}
+.ads-form .btn {
+    justify-self: start;
+}
+.ads-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 8px;
+}
+.ads-grid .field {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+}
+.ads-grid input {
+    width: 100%;
+    min-width: 0;
+}
+@media (max-width: 640px) {
+    .ads-point {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ads-row-btn,
+    .ads-chevron,
+    .ads-press,
+    .ads-order-link {
+        transition: none;
+    }
+    .ads-row-btn:active,
+    .ads-press:active {
+        transform: none;
+    }
+}

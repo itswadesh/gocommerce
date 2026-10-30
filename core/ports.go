@@ -250,6 +250,12 @@ type Shipment struct {
 const (
 	ChannelEmail = "email"
 	ChannelSMS   = "sms"
+	// ChannelWhatsApp is addressed to a phone, like SMS, but a store's
+	// WhatsApp module owns whether a message may go at all: the shopper's
+	// consent and the Meta-approved template both live there (D169). Core
+	// offers an order's messages on it only when a backend says it carries
+	// them, so a store without one sees no rows for it.
+	ChannelWhatsApp = "whatsapp"
 )
 
 // Notifier delivers a message on one channel. Templates belong to the notifier
@@ -375,10 +381,10 @@ func (a *App) RegisterFulfillment(f FulfillmentProvider) {
 // notifier.
 func (a *App) RegisterNotifier(channel string, n Notifier) {
 	switch channel {
-	case ChannelEmail, ChannelSMS:
+	case ChannelEmail, ChannelSMS, ChannelWhatsApp:
 	default:
-		a.regErrf("module %q: unknown notification channel %q (want %q or %q)",
-			a.ownerName(), channel, ChannelEmail, ChannelSMS)
+		a.regErrf("module %q: unknown notification channel %q (want %q, %q or %q)",
+			a.ownerName(), channel, ChannelEmail, ChannelSMS, ChannelWhatsApp)
 		return
 	}
 	a.notifier.add(channel, n, a.ownerName())
@@ -395,6 +401,15 @@ func (a *App) RegisterNotifyTemplate(t NotifyTemplate) {
 	if err := a.notifyTemplates.register(t); err != nil {
 		a.regErrf("module %q: notification template: %v", a.ownerName(), err)
 	}
+}
+
+// Carries is whether a backend that delivers would take this message: on a
+// channel with a scoped backend, such as WhatsApp's, that is a question about
+// the one message (its recipient's consent, a template for its event) rather
+// than about the channel. A caller that would rather skip than send into a
+// log asks first.
+func (a *App) Carries(ctx context.Context, n Notification) bool {
+	return a.notifier.carries(ctx, n)
 }
 
 // Notify delivers one notification on one channel, to every backend registered
@@ -430,10 +445,10 @@ func (a *App) Notify(ctx context.Context, n Notification) error {
 // fill in.
 func (a *App) addressed(ctx context.Context, n Notification) (Notification, error) {
 	switch n.Channel {
-	case ChannelEmail, ChannelSMS:
+	case ChannelEmail, ChannelSMS, ChannelWhatsApp:
 	default:
-		return n, Validationf("unknown notification channel %q (want %q or %q)",
-			n.Channel, ChannelEmail, ChannelSMS)
+		return n, Validationf("unknown notification channel %q (want %q, %q or %q)",
+			n.Channel, ChannelEmail, ChannelSMS, ChannelWhatsApp)
 	}
 	if strings.TrimSpace(n.To) == "" {
 		return n, Validationf("a notification needs a recipient")

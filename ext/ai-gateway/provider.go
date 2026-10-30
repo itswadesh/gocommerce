@@ -43,7 +43,10 @@ type Request struct {
 	// documents leave.
 	Documents []Document
 	// Schema is the JSON Schema the answer must satisfy.
-	Schema    json.RawMessage
+	Schema json.RawMessage
+	// MaxTokens is the most output the provider may return, and what the call
+	// holds credit for. Build may set it below the task's MaxOutputTokens for a
+	// smaller request; zero, or anything above, is the task's.
 	MaxTokens int
 }
 

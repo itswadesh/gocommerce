@@ -76,6 +76,9 @@ var (
 type rendered struct {
 	req     Request
 	dropped []string
+	// tokens is the request's estimated input, which errs large: with
+	// req.MaxTokens it prices what the call holds.
+	tokens int
 }
 
 // policyError is a request the policy stopped, as against one that was
@@ -101,6 +104,10 @@ func render(req Request, task *Task, p Policy) (rendered, error) {
 		Schema:    task.Schema,
 		MaxTokens: task.MaxOutputTokens,
 	}}
+	// A task may ask for less output for a smaller request, never more.
+	if req.MaxTokens > 0 && req.MaxTokens < task.MaxOutputTokens {
+		out.req.MaxTokens = req.MaxTokens
+	}
 	if len(req.Documents) > 0 {
 		if !p.Documents {
 			return out, &policyError{fmt.Sprintf("the request carries %d document(s), and this store does not let documents leave it", len(req.Documents))}

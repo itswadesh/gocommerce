@@ -83,7 +83,7 @@ func newSummaries(t *testing.T) (*gocommerce.App, *aigateway.Module, *claude) {
 	// store's own prices below, for a USD store.
 	gw := aigateway.New(aigateway.Config{Client: client, CallTimeout: 2 * time.Second, PollInterval: time.Hour,
 		PlatformAnthropicKey: "sk-ant-platform", PlatformSmallModel: smallModel, PlatformStrongModel: strongModel,
-		PlatformSmallPrices: "1,5,1,1", PlatformStrongPrices: "3,15,3,3"})
+		PlatformSmallPrices: "1,5,1,1", PlatformStrongPrices: "3,15,3,3", FreeTrial: "USD=500"})
 	app := gctest.New(t, gw, New(Config{Gateway: gw}))
 	return app, gw, c
 }

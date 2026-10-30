@@ -33,8 +33,10 @@ type Task struct {
 	// additionalProperties, items and enum constrain, with description and
 	// title as notes: a length or range bound is checked in Check.
 	Schema json.RawMessage
-	// MaxInputTokens refuses a request built larger than this, unsent. With
-	// MaxOutputTokens it is also the ceiling reserved against the cap.
+	// MaxInputTokens refuses a request built larger than this, unsent.
+	// MaxOutputTokens is the most output any request may ask for; Build may
+	// ask for less in Request.MaxTokens. A call holds what its own request
+	// could cost, its estimated input and its MaxTokens, not these bounds.
 	MaxInputTokens  int
 	MaxOutputTokens int
 	// Ladder is the models to try, in order: TierSmall, then TierStrong.
@@ -104,7 +106,7 @@ func (m *Module) RegisterTask(t Task) error {
 			return fmt.Errorf("ai task %s: a task that calls a model needs Build", t.Name)
 		}
 		if t.MaxInputTokens <= 0 || t.MaxOutputTokens <= 0 {
-			return fmt.Errorf("ai task %s: MaxInputTokens and MaxOutputTokens set the ceiling the cap is held to, and both are needed", t.Name)
+			return fmt.Errorf("ai task %s: MaxInputTokens and MaxOutputTokens bound what a request may hold, and both are needed", t.Name)
 		}
 		if slices.Contains(t.Ladder, TierSmall) && t.MaxInputTokens > maxSmallPrompt {
 			return fmt.Errorf("ai task %s: a prompt for the small model stays within %d tokens", t.Name, maxSmallPrompt)

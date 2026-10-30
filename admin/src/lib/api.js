@@ -506,6 +506,23 @@ export const telegram = {
 };
 
 /**
+ * whatsapp is ext/notify-whatsapp (D169): the store's WhatsApp Business
+ * account, which approved template each moment sends, and how it went. The
+ * account's IDs and secrets are the plugin's settings, like every credential.
+ */
+const WHATSAPP = "/api/admin/x/notify-whatsapp";
+export const whatsapp = {
+    plugin: () => api.get("/api/admin/plugins/whatsapp-cloud"),
+    savePlugin: (body) => api.patch("/api/admin/plugins/whatsapp-cloud", body),
+    status: () => api.get(`${WHATSAPP}/status`),
+    templates: () => api.get(`${WHATSAPP}/templates`),
+    mapSlot: (slot, body) => api.put(`${WHATSAPP}/slots/${encodeURIComponent(slot)}`, body),
+    unmapSlot: (slot) => api.delete(`${WHATSAPP}/slots/${encodeURIComponent(slot)}`),
+    suggest: (slot) => api.post(`${WHATSAPP}/slots/${encodeURIComponent(slot)}/suggest`, {}),
+    messages: (params) => api.get(`${WHATSAPP}/messages` + query(params)),
+};
+
+/**
  * recovery is ext/cart-recovery: baskets left behind, what was sent about
  * them, and the automation that sends it.
  *
@@ -562,6 +579,21 @@ export const layouts = {
     cancelSchedule: (page) => api.delete(`/api/admin/x/layouts/${page}/schedule`),
     plugin: () => api.get("/api/admin/plugins/layouts"),
     switchOn: () => api.patch("/api/admin/plugins/layouts", { enabled: true }),
+};
+
+/** ads is ext/ads: the ads report, ad spend, and the AI summary of them (D168). */
+const ADS = "/api/admin/x/ads";
+export const ads = {
+    report: (params) => api.get(`${ADS}/report` + query(params)),
+    orders: (params) => api.get(`${ADS}/orders` + query(params)),
+    spend: (params) => api.get(`${ADS}/spend` + query(params)),
+    addSpend: (body) => api.post(`${ADS}/spend`, body),
+    importSpend: (body) => api.post(`${ADS}/spend/import`, body),
+    deleteSpend: (id) => api.delete(`${ADS}/spend/${id}`),
+    summary: () => api.get(`${ADS}/summary`),
+    summarise: (body) => api.post(`${ADS}/summary`, body),
+    settings: () => api.get(`${ADS}/settings`),
+    saveSettings: (body) => api.put(`${ADS}/settings`, body),
 };
 
 export const recovery = {

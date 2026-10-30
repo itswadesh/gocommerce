@@ -5,26 +5,154 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
+	"math/big"
+	"strconv"
+	"strings"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
-// DefaultFreeTrialMinor is the free AI trial a store gets before an operator
-// tops it up: minor units of the store's currency, so 500 is 5.00 in a
-// two-decimal currency. It is a placeholder, not a decision about money: the
-// platform operator sets the real figure through Config.FreeTrialMinor, or per
-// store on the AI usage screen.
-const DefaultFreeTrialMinor = 500
+// DefaultFreeTrial is the free AI trial a store gets before an operator tops
+// it up, in minor units per currency: ₹30, the owner's figure (D151,
+// 2026-10-30). Config.FreeTrial (AI_FREE_TRIAL) replaces it.
+const DefaultFreeTrial = "INR=3000"
 
-// freeTrialMicro is the configured free trial in micro-minor, the unit the
-// gateway records cost in.
-func (m *Module) freeTrialMicro() int64 {
-	v := m.cfg.FreeTrialMinor
-	if v <= 0 {
-		v = DefaultFreeTrialMinor
+// trialAmount is one currency's free trial, in its minor units.
+type trialAmount struct {
+	currency string
+	minor    int64
+}
+
+// parseFreeTrial reads "INR=3000,USD=50": whole minor units per currency.
+func parseFreeTrial(text string) ([]trialAmount, error) {
+	var out []trialAmount
+	for _, pair := range strings.Split(text, ",") {
+		if strings.TrimSpace(pair) == "" {
+			continue
+		}
+		code, value, _ := strings.Cut(pair, "=")
+		code = strings.ToUpper(strings.TrimSpace(code))
+		minor, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if len(code) != 3 || err != nil || minor < 0 || minor > maxGrantMinor {
+			return nil, fmt.Errorf("%q is not a currency and a whole number of its minor units", strings.TrimSpace(pair))
+		}
+		out = append(out, trialAmount{code, minor})
 	}
-	return v * microPerMinor
+	if len(out) == 0 {
+		return nil, errors.New("no amount given")
+	}
+	return out, nil
+}
+
+// readFreeTrial is the install's free trial: AI_FREE_TRIAL, or the default
+// when it is empty or does not read. Falling back to the owner's figure
+// rather than to nothing keeps a typo from taking every new store's trial.
+func readFreeTrial(cfg Config, log *slog.Logger) []trialAmount {
+	text := strings.TrimSpace(cfg.FreeTrial)
+	if text != "" {
+		trial, err := parseFreeTrial(text)
+		if err == nil {
+			return trial
+		}
+		log.Error("ai gateway: the free AI trial does not read, so the default is used", "free_trial", text, "default", DefaultFreeTrial, "error", err)
+	}
+	trial, _ := parseFreeTrial(DefaultFreeTrial)
+	return trial
+}
+
+// freeTrialMinor is the trial for a store in currency: the amount named for
+// that currency, or else the first amount named converted at the platform's
+// rates and rounded down, so ₹30 is ₹30's worth everywhere rather than 3,000
+// of any currency's minor units. Zero when neither is possible; such a store
+// has no rate, and so no platform AI to try.
+func freeTrialMinor(trial []trialAmount, p *platform, currency string) int64 {
+	for _, a := range trial {
+		if a.currency == currency {
+			return a.minor
+		}
+	}
+	if p == nil || len(trial) == 0 {
+		return 0
+	}
+	from := trial[0]
+	fromRate, ok1 := p.rates[from.currency]
+	toRate, ok2 := p.rates[currency]
+	if !ok1 || !ok2 {
+		return 0
+	}
+	// minor × (to per dollar) × 10^to exponent ÷ ((from per dollar) × 10^from exponent)
+	r := new(big.Rat).SetInt64(from.minor)
+	r.Mul(r, toRate).Mul(r, new(big.Rat).SetInt(pow10(gocommerce.CurrencyExponent(currency))))
+	r.Quo(r, fromRate).Quo(r, new(big.Rat).SetInt(pow10(gocommerce.CurrencyExponent(from.currency))))
+	q := new(big.Int).Quo(r.Num(), r.Denom())
+	if !q.IsInt64() || q.Int64() > maxGrantMinor {
+		return 0
+	}
+	return q.Int64()
+}
+
+func pow10(n int) *big.Int { return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(n)), nil) }
+
+// freeTrialMicro is ctx's store's free trial in micro-minor, the unit the
+// gateway records cost in.
+func (m *Module) freeTrialMicro(ctx context.Context) int64 {
+	return freeTrialMinor(m.trial, m.platform, m.app.Currency(ctx)) * microPerMinor
+}
+
+// placeholderTrialMicro is the free trial every store was seeded with before
+// the owner set one: 500 minor units of any currency.
+const placeholderTrialMicro = 500 * microPerMinor
+
+// raisePlaceholderTrials gives the stores still on the placeholder trial the
+// install's real one (D151, 2026-10-30), store by store because row security
+// shows a statement one store's rows. Migrations run before Register, so the
+// trial and the rates are read here from the same Config. A store whose trial
+// an operator set is left as set, and no trial is lowered: a dollar store's $5
+// stays $5 rather than shrinking to ₹30's worth.
+func (m *Module) raisePlaceholderTrials(ctx context.Context, tx *sql.Tx) error {
+	quiet := slog.New(slog.DiscardHandler)
+	trial, p := readFreeTrial(m.cfg, quiet), newPlatform(m.cfg, quiet)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM stores`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		bound := gocommerce.WithStore(ctx, id)
+		var currency string
+		err := tx.QueryRowContext(bound, `
+			SELECT currency FROM ai_credits
+			 WHERE free_allowance_micro = $1
+			   AND NOT EXISTS (SELECT 1 FROM ai_credit_ledger WHERE kind = 'free_allowance')`,
+			placeholderTrialMicro).Scan(&currency)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if v := freeTrialMinor(trial, p, currency) * microPerMinor; v > placeholderTrialMicro {
+			if _, err := tx.ExecContext(bound, `
+				UPDATE ai_credits SET free_allowance_micro = $1, updated_at = now()`, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // ensureCredit makes sure ctx's store has a credit row, seeded with the free
@@ -36,7 +164,7 @@ func (m *Module) ensureCredit(ctx context.Context) error {
 		INSERT INTO ai_credits (free_allowance_micro, granted_micro, consumed_micro, reserved_micro, currency)
 		VALUES ($1, 0, 0, 0, $2)
 		ON CONFLICT (store_id) DO NOTHING`,
-		m.freeTrialMicro(), m.app.Currency(ctx))
+		m.freeTrialMicro(ctx), m.app.Currency(ctx))
 	return err
 }
 
@@ -112,7 +240,7 @@ type Credit struct {
 // Credit is ctx's store's AI credit. A store with no row yet has its full,
 // unspent free trial.
 func (m *Module) Credit(ctx context.Context) (*Credit, error) {
-	c := &Credit{Currency: m.app.Currency(ctx), FreeAllowanceMicroMinor: m.freeTrialMicro()}
+	c := &Credit{Currency: m.app.Currency(ctx), FreeAllowanceMicroMinor: m.freeTrialMicro(ctx)}
 	err := m.db.QueryRowContext(ctx, `
 		SELECT free_allowance_micro, granted_micro, consumed_micro, reserved_micro
 		FROM ai_credits`).Scan(&c.FreeAllowanceMicroMinor, &c.GrantedMicroMinor, &c.ConsumedMicroMinor, &c.ReservedMicroMinor)

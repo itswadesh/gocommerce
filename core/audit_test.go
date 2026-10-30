@@ -1107,6 +1107,9 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 	if _, err := app.Ship().Create(ctx, order.ID, "", ShipRequest{Tracking: "TRACK-VOCAB"}); err != nil {
 		t.Fatalf("ship: %v", err)
 	}
+	if err := app.Order().RecordMessage(ctx, order.ID, "Order confirmation delivered on WhatsApp"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := app.Order().MarkDelivered(ctx, order.ID); err != nil {
 		t.Fatalf("deliver: %v", err)
 	}

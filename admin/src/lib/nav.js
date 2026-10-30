@@ -200,6 +200,13 @@ export const NAV = [
         children: [
             { href: "/dash/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
             { href: "/dash/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
+            {
+                href: "/dash/notifications/whatsapp",
+                label: "Setup WhatsApp",
+                right: "notifications.read",
+                module: "notify-whatsapp",
+                keywords: "whatsapp meta cloud api templates cod confirmation opt-in",
+            },
             // The owner's own alerts rather than the shoppers' messages, but
             // found where somebody looks for "what the store sends".
             {
@@ -253,6 +260,17 @@ export const NAV = [
         right: "reports.read",
         accent: "rose",
         keywords: "sql custom query saved analytics",
+        children: [
+            { href: "/dash/reports", label: "Saved reports", exact: true, right: "reports.read", keywords: "sql custom query saved" },
+            // ext/ads (D168): which campaigns bring orders, and whether they pay.
+            {
+                href: "/dash/reports/ads",
+                label: "Ads performance",
+                right: "ads.read",
+                module: "ads",
+                keywords: "ads campaigns utm google meta facebook roas poas spend profit attribution marketing",
+            },
+        ],
     },
     // What the store is doing in the background: imports in progress, events
     // waiting to go out, deliveries that failed. One screen, because "is it

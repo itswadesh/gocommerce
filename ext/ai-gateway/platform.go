@@ -137,7 +137,7 @@ func (p *platform) prices(currency string) (out map[Tier]prices, ok bool) {
 	if !ok {
 		return nil, false
 	}
-	scale := new(big.Rat).Mul(rate, new(big.Rat).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(gocommerce.CurrencyExponent(currency))), nil)))
+	scale := new(big.Rat).Mul(rate, new(big.Rat).SetInt(pow10(gocommerce.CurrencyExponent(currency))))
 	out = map[Tier]prices{}
 	for tier, usd := range p.usd {
 		var v [4]int64

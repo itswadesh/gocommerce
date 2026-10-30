@@ -38,10 +38,12 @@ type Step struct {
 	Template    string `json:"template"`
 }
 
-// Action is something a step can do. Only email is available: a basket carries
-// an address and no phone number, so an SMS step would be a step that can
-// never send. The others are listed so the screen is built around a list of
-// actions rather than around email, and says why each is not there yet.
+// Action is something a step can do. Email, and WhatsApp: a basket carries a
+// number only when the shopper gave one and agreed to reminders on WhatsApp,
+// so a WhatsApp step goes to the baskets whose shoppers said yes and is
+// skipped for the rest (D169). SMS is not there: nobody agreed to a text. The
+// others are listed so the screen is built around a list of actions rather
+// than around email, and says why each is not there yet.
 type Action struct {
 	Key       string `json:"key"`
 	Label     string `json:"label"`
@@ -49,12 +51,15 @@ type Action struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-const actionEmail = "send_email"
+const (
+	actionEmail    = "send_email"
+	actionWhatsApp = "send_whatsapp"
+)
 
 var actions = []Action{
 	{Key: actionEmail, Label: "Send email", Available: true},
 	{Key: "send_sms", Label: "Send SMS", Reason: "A basket carries no phone number"},
-	{Key: "send_whatsapp", Label: "Send WhatsApp", Reason: "A basket carries no phone number"},
+	{Key: actionWhatsApp, Label: "Send WhatsApp", Available: true},
 	{Key: "create_discount", Label: "Create discount", Reason: "Not built yet"},
 	{Key: "notify_staff", Label: "Notify staff", Reason: "Not built yet"},
 }
@@ -126,7 +131,7 @@ func validate(s *Settings) error {
 			if st.WaitMinutes < 1 || st.WaitMinutes > maxWaitMin {
 				return gocommerce.Validationf("%s step %d: wait_minutes must be between 1 and %d", side.name, i+1, maxWaitMin)
 			}
-			if st.Action != actionEmail {
+			if st.Action != actionEmail && st.Action != actionWhatsApp {
 				return gocommerce.Validationf("%s step %d: %q is not an action a recovery step can take yet", side.name, i+1, st.Action)
 			}
 			if !slices.Contains(templateEvents, st.Template) {

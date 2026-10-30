@@ -281,6 +281,14 @@ const MODULE_RIGHTS = {
         label: "Let an agent act",
         scope: "The dispatch endpoint — the whole domain-tool surface",
     },
+    "ads.read": {
+        label: "See the ads report",
+        scope: "Orders, sales, profit after product cost and ad spend by source, medium and campaign, and the AI summary",
+    },
+    "ads.write": {
+        label: "Enter ad spend",
+        scope: "Entering and importing ad spend, asking for an AI summary (which draws AI credit) and the weekly summary",
+    },
     "ai.read": {
         label: "See AI usage",
         scope: "Model calls and what they cost against the monthly cap, and the AI job queue",
@@ -372,6 +380,7 @@ export const RESOURCE_LABELS = {
     quotes: "Quotes",
     leads: "Dealer leads",
     abandonment: "Abandoned checkouts",
+    ads: "Ads",
     ai: "AI",
 };
 
@@ -437,7 +446,7 @@ export const RIGHT_SECTIONS = [
     { section: "Discounts", resources: ["discounts"] },
     { section: "Notifications", resources: ["notifications"] },
     { section: "Content", resources: ["media", "pages", "banners", "menus", "faq", "showcases"] },
-    { section: "Reports", resources: ["reports"] },
+    { section: "Reports", resources: ["reports", "ads"] },
     { section: "Plugins", resources: ["plugins"] },
     // The big one, and honestly so: Settings is where a store is configured,
     // and eight of these are things only an owner would ordinarily touch.
