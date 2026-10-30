@@ -548,9 +548,10 @@ func (f jpegHead) passLimit() int {
 	return len(f.components)
 }
 
-// scanPasses is a scan's work for image/jpeg in first scans: its refine walks
-// every coefficient a refinement covers, in every block, even inside an
-// end-of-band run. Over all 63 that takes 4.3 first scans' time, and over n
+// scanPasses is a scan's work for image/jpeg in first AC scans. A DC scan
+// decodes a coefficient in every block, 1.6 first scans' time. Its refine
+// walks every coefficient a refinement covers, in every block, even inside an
+// end-of-band run: over all 63 that takes 4.3 first scans' time, and over n
 // about 1 + n/18.
 func scanPasses(progressive bool, sos []byte) int {
 	if !progressive || len(sos) == 0 || len(sos) < 4+2*int(sos[0]) {
@@ -558,7 +559,10 @@ func scanPasses(progressive bool, sos []byte) int {
 	}
 	n := int(sos[0])
 	from, to, refining := int(sos[1+2*n]), int(sos[2+2*n]), sos[3+2*n]>>4 != 0
-	if !refining || from == 0 || to < from {
+	switch {
+	case from == 0:
+		return 2
+	case !refining || to < from:
 		return 1
 	}
 	return 1 + (to-from+18)/18

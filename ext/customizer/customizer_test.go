@@ -1301,7 +1301,7 @@ func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
 func TestAnUploadThatFailsAfterItsShopperLeftKeepsItsCause(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	srv := h.server(0, 0)
-	truncated := scanBomb(16384, 2441, 99, nil, nil)
+	truncated := scanBomb(16384, 2441, 98, nil, nil)
 	body, contentType := form("file", truncated[:len(truncated)-2])
 	c, err := net.Dial("tcp", srv.Listener.Addr().String())
 	if err != nil {
