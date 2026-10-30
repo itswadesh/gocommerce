@@ -125,8 +125,10 @@ func TestGoogleAdsExportIsMappedByItsColumnNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A day of nothing is kept, so it can replace one imported before.
 	want := []dayRow{
 		{"2026-10-01", "Diwali Sale", "INR", 123450},
+		{"2026-10-02", "Diwali Sale", "INR", 0},
 		{"2026-10-02", "Brand", "INR", 500},
 	}
 	if len(rows) != len(want) {
@@ -161,7 +163,7 @@ func TestMetaAdsExportIsMappedByItsColumnNames(t *testing.T) {
 		"Retarget,2026-10-01,500,900,400.5,2026-10-01,2026-10-01\n" +
 		"Retarget,2026-10-02,500,900,0,2026-10-02,2026-10-02\n"
 	rows, err := parseSpend("meta", daily, "USD")
-	if err != nil || len(rows) != 1 || rows[0] != (dayRow{"2026-10-01", "Retarget", "INR", 40050}) {
+	if err != nil || len(rows) != 2 || rows[0] != (dayRow{"2026-10-01", "Retarget", "INR", 40050}) || rows[1].Amount != 0 {
 		t.Errorf("daily = %+v, %v", rows, err)
 	}
 
@@ -231,5 +233,51 @@ func TestASummaryMayOnlyUseTheFiguresItWasGiven(t *testing.T) {
 		if _, err := checkSummary(ctx, []byte(bad)); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+}
+
+func TestReviewedEdgesOfTheMoney(t *testing.T) {
+	// Refunded in full with nothing back: the goods are still the shop's loss.
+	if got := (orderFact{Total: 1000, Tax: 100, Refunded: 1000, Cost: 400}).profit(); got != -400 {
+		t.Errorf("refunded, goods not back: profit = %d, want -400", got)
+	}
+	// A decimal comma, as European account languages write it.
+	for in, want := range map[string]int64{"1.234,56": 123456, "1234,5": 123450, "12,34": 1234, "1,234": 123400} {
+		if got, err := parseAmount(in, 2); err != nil || got != want {
+			t.Errorf("%q = %d, %v; want %d", in, got, err, want)
+		}
+	}
+}
+
+func TestReviewedEdgesOfTheImports(t *testing.T) {
+	// A campaign whose name begins "Total" is a campaign; a day spent nothing
+	// is kept, so a re-download can lower a day to zero.
+	csv := "Campaign,Day,Cost\nTotalcare,2026-10-01,5.00\nBrand,2026-10-01,--\nTotal: Account,,5.00\n"
+	rows, err := parseSpend("google", csv, "INR")
+	if err != nil || len(rows) != 2 || rows[0].Campaign != "Totalcare" || rows[1].Amount != 0 {
+		t.Errorf("rows %+v, %v", rows, err)
+	}
+	// Tab-separated, with more commas than tabs in the title and amounts.
+	tsv := "Campaign report\n\"October 1, 2026 - October 2, 2026\"\nDay\tCampaign\tCost\n\"Oct 1, 2026\"\tBrand\t1,234.50\n"
+	rows, err = parseSpend("google", tsv, "INR")
+	if err != nil || len(rows) != 1 || rows[0].Amount != 123450 {
+		t.Errorf("narrow tsv = %+v, %v", rows, err)
+	}
+}
+
+func TestASummaryMayNotMakeUpRatios(t *testing.T) {
+	in := summaryInput{From: "2026-10-01", To: "2026-10-30", Figures: []figure{
+		{Row: 1, Campaign: "A", Orders: 6, Spend: "₹100.00", ROAS: "1.56"},
+		{Row: 2, Campaign: "B", Orders: 2, Spend: "₹50.00", ROAS: "none"},
+		{Row: 3, Campaign: "C", Orders: 0, Spend: "₹10.00", ROAS: "0.00"},
+	}}
+	ctx := withAllowed(context.Background(), in)
+	for _, bad := range []string{"A brought 3x the orders of B.", "A did 2% better."} {
+		if _, err := checkSummary(ctx, []byte(`{"headline":"`+bad+`","points":[]}`)); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	if _, err := checkSummary(ctx, []byte(`{"headline":"A returned 1.56x its spend of ₹100.00 in 6 orders.","points":[]}`)); err != nil {
+		t.Errorf("a ROAS as given was refused: %v", err)
 	}
 }

@@ -296,7 +296,7 @@ const (
 	nbsp = string(rune(0xA0))
 )
 
-var amountJunk = strings.NewReplacer(",", "", " ", "", "₹", "", "$", "", "€", "", "£", "", nbsp, "")
+var amountJunk = strings.NewReplacer(" ", "", "₹", "", "$", "", "€", "", "£", "", nbsp, "")
 
 // parseAmount reads a decimal amount into minor units without a float,
 // rounding half up past the currency's decimals. Google writes "--" for
@@ -306,6 +306,13 @@ func parseAmount(s string, exp int) (int64, error) {
 	if s == "" || s == "--" {
 		return 0, nil
 	}
+	// A comma after the last point, or a lone comma not followed by three
+	// digits, is a decimal comma: "1.234,56", "12,34".
+	if c := strings.LastIndex(s, ","); c >= 0 && (c > strings.LastIndex(s, ".") && strings.Contains(s, ".") ||
+		!strings.Contains(s, ".") && strings.Count(s, ",") == 1 && len(s)-c-1 != 3) {
+		s = strings.ReplaceAll(s[:c], ".", "") + "." + s[c+1:]
+	}
+	s = strings.ReplaceAll(s, ",", "")
 	whole, frac, _ := strings.Cut(s, ".")
 	if whole == "" {
 		whole = "0"
@@ -337,7 +344,7 @@ var spentRE = regexp.MustCompile(`(?i)^amount spent(?:\s*\(([a-z]{3})\))?$`)
 
 // parseSpend maps an ad platform's export onto days of spend by the columns'
 // names, never by their positions, and refuses a file that lacks one it
-// needs, naming it. Rows of nothing spent are left out.
+// needs, naming it. A day of nothing spent is kept, as a zero.
 //
 // Google Ads: a report downloaded with the Day segment. The download puts a
 // title and the date range above the column names and "Total:" rows below the
@@ -416,7 +423,7 @@ func parseSpend(format, text, fallbackCurrency string) ([]dayRow, error) {
 		}
 		name := clip(cell(campaign))
 		first := strings.TrimSpace(strings.Join(rec, ""))
-		if first == "" || strings.HasPrefix(strings.ToLower(cell(0)), "total") || strings.HasPrefix(strings.ToLower(name), "total:") {
+		if first == "" || strings.HasPrefix(strings.ToLower(cell(0)), "total:") || strings.HasPrefix(strings.ToLower(name), "total:") {
 			continue
 		}
 		currency := fileCurrency
@@ -433,10 +440,12 @@ func parseSpend(format, text, fallbackCurrency string) ([]dayRow, error) {
 		if err != nil {
 			return nil, gocommerce.Validationf("line %d: %v", line, err)
 		}
-		if minor == 0 {
-			continue
-		}
+		// A day of nothing is kept, so a report downloaded again can lower a
+		// day it once had spend for.
 		if name == "" {
+			if minor == 0 {
+				continue
+			}
 			return nil, gocommerce.Validationf("line %d has spend and no campaign", line)
 		}
 		var days []string
@@ -478,33 +487,47 @@ func merge(rows []dayRow) []dayRow {
 }
 
 // readRecords reads the file as CSV, or as tab-separated text when that is
-// what it is: Google's "Excel .csv" download is.
+// what it is: Google's "Excel .csv" download is. The separator is the one
+// that splits the column names into the most columns, since a title or an
+// amount above or among the data can carry commas of its own.
 func readRecords(text string) ([][]string, error) {
 	text = strings.TrimPrefix(text, bom)
 	if strings.TrimSpace(text) == "" {
 		return nil, gocommerce.Validationf("the file is empty")
 	}
-	firstLines := text
-	if len(firstLines) > 4096 {
-		firstLines = firstLines[:4096]
-	}
-	r := csv.NewReader(strings.NewReader(text))
-	if strings.Count(firstLines, "\t") > strings.Count(firstLines, ",") {
-		r.Comma = '\t'
-	}
-	r.FieldsPerRecord = -1
-	r.LazyQuotes = true
-	var out [][]string
-	for {
-		rec, err := r.Read()
-		if errors.Is(err, io.EOF) {
-			return out, nil
+	var best [][]string
+	var bestErr error
+	widest := 0
+	for _, sep := range []rune{',', '\t'} {
+		r := csv.NewReader(strings.NewReader(text))
+		r.Comma, r.FieldsPerRecord, r.LazyQuotes = sep, -1, true
+		var out [][]string
+		var err error
+		for {
+			rec, e := r.Read()
+			if errors.Is(e, io.EOF) {
+				break
+			}
+			if e != nil {
+				err = gocommerce.Validationf("the file could not be read as CSV: %v", e)
+				break
+			}
+			out = append(out, rec)
 		}
-		if err != nil {
-			return nil, gocommerce.Validationf("the file could not be read as CSV: %v", err)
+		w := 0
+		for _, rec := range out[:min(len(out), 5)] {
+			w = max(w, len(rec))
 		}
-		out = append(out, rec)
+		if err == nil && w > widest {
+			best, widest = out, w
+		} else if best == nil && err != nil {
+			bestErr = err
+		}
 	}
+	if best == nil {
+		return nil, bestErr
+	}
+	return best, nil
 }
 
 func preview(records [][]string) string {

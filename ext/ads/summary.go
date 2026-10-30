@@ -43,6 +43,7 @@ type figure struct {
 	POAS          string    `json:"profit_per_spend"`
 	CostPerOrder  string    `json:"cost_per_order"`
 	Products      []product `json:"products,omitempty"`
+	currency      string
 }
 
 type product struct {
@@ -112,6 +113,10 @@ type allowedKey struct{}
 
 var numberRE = regexp.MustCompile(`\d[\d,]*(?:\.\d+)?`)
 
+// madeRE finds a number given as a share or a multiple, which the figures
+// state only as ROAS and profit per spend, never as a percentage.
+var madeRE = regexp.MustCompile(`(\d[\d,]*(?:\.\d+)?)\s*(%|x\b|×|times\b)`)
+
 // canonical writes a number the way the check compares it: no grouping, no
 // trailing zeros after the point.
 func canonical(s string) string {
@@ -177,6 +182,13 @@ func checkSummary(ctx context.Context, raw json.RawMessage) (int, error) {
 		texts = append(texts, p.Text)
 	}
 	for _, t := range texts {
+		for _, m := range madeRE.FindAllStringSubmatch(t, -1) {
+			// A ratio the figures hold may be written with an x; a count
+			// made into a multiple ("3x the orders"), or any percentage, is new.
+			if m[2] == "%" || !strings.Contains(canonical(m[1]), ".") {
+				return 0, fmt.Errorf("%q is a share or multiple the figures do not hold", m[0])
+			}
+		}
 		for _, n := range numberRE.FindAllString(t, -1) {
 			if !a.numbers[canonical(n)] {
 				return 0, fmt.Errorf("%q is not a number in the figures; use only the figures as given", n)
@@ -239,19 +251,24 @@ func (m *Module) figures(ctx context.Context, rep *Report, orders []orderFact) (
 				Revenue: f(r.Revenue), Refunded: f(r.Refunded), Net: f(r.Net), GrossProfit: f(r.GrossProfit),
 				UncostedUnits: r.UncostedUnits, Returns: r.Returns, NewCustomers: r.NewCustomers,
 				Spend: dash(r.Spend), ROAS: times(r.ROAS), POAS: times(r.POAS), CostPerOrder: dash(r.CostPerOrder),
+				currency: c.Currency,
 			})
 		}
 	}
 	// The products each row sold, and whether they can still be bought: an
 	// ad that sends shoppers to an empty shelf is money spent on nothing.
-	ids := map[channel][]int64{}
+	type rowKey struct {
+		currency string
+		ch       channel
+	}
+	ids := map[rowKey][]int64{}
 	for _, o := range orders {
-		k := o.Attr.touch(rep.Touch).channel().key()
+		k := rowKey{o.Currency, o.Attr.touch(rep.Touch).channel().key()}
 		ids[k] = append(ids[k], o.ID)
 	}
 	for i := range out {
 		f := &out[i]
-		orderIDs := ids[channel{f.Source, f.Medium, f.Campaign}.key()]
+		orderIDs := ids[rowKey{f.currency, channel{f.Source, f.Medium, f.Campaign}.key()}]
 		if len(orderIDs) == 0 {
 			continue
 		}
@@ -395,7 +412,7 @@ func (m *Module) handleSummarise(w http.ResponseWriter, r *http.Request) {
 		TZ    string `json:"tz"`
 		Touch string `json:"touch"`
 	}
-	if r.ContentLength > 0 {
+	if r.Body != nil && r.Body != http.NoBody && r.ContentLength != 0 {
 		if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 			gocommerce.RespondError(w, r, err)
 			return
@@ -518,7 +535,8 @@ func (m *Module) weekly(ctx context.Context, now time.Time) error {
 	if err != nil {
 		// Kept as failed rather than retried: a store out of credit would
 		// otherwise be asked again every hour all week.
-		_, _ = m.app.DB().ExecContext(ctx, `UPDATE ads_summaries SET status = 'failed', error = $2 WHERE id = $1`, id, err.Error())
+		// Not on ctx: a shutdown mid-run would leave the week claimed and never made.
+		_, _ = m.app.DB().ExecContext(context.WithoutCancel(ctx), `UPDATE ads_summaries SET status = 'failed', error = $2 WHERE id = $1`, id, err.Error())
 		m.app.Log().Info("ads: the weekly summary was not made", "error", err)
 	}
 	return nil
