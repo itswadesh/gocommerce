@@ -14,6 +14,7 @@
     import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
+    import ShiprocketNDR from "$lib/components/ShiprocketNDR.svelte";
 
     let { order = null, onchanged } = $props();
 
@@ -69,6 +70,15 @@
         if (updated) onchanged?.();
     }
 
+    /* Shiprocket's failed-delivery codes: Undelivered, and an issue with the
+       recipient. Its docs list no others that an NDR answer applies to. */
+    const NDR_CODES = [21, 77];
+
+    async function refresh(row) {
+        await act(row, "track", "track", "Tracking refreshed");
+        onchanged?.();
+    }
+
     const docs = [
         { kind: "label", label: "Label", icon: "ri-printer-line" },
         { kind: "manifest", label: "Manifest", icon: "ri-file-list-3-line" },
@@ -88,6 +98,9 @@
                             <span class="txt-code txt-sm">{row.awb}</span>
                         {/if}
                         <span class="txt-hint txt-sm">Shiprocket order {row.channel_order_id}</span>
+                        {#if row.status && !row.cancelled_at}
+                            <span class="label sr-status" class:label-warning={NDR_CODES.includes(row.status_code)}>{row.status}</span>
+                        {/if}
                         {#if row.cancelled_at}
                             <span class="label">Cancelled</span>
                         {:else if !row.fulfillment_id}
@@ -105,7 +118,32 @@
                             {:else}
                                 Booking did not finish: no waybill yet. Ship the order again to carry on.
                             {/if}
+                            {#if row.etd && row.status_code !== 7}
+                                Shiprocket expects delivery by {row.etd}.
+                            {/if}
                         </div>
+                        {#if NDR_CODES.includes(row.status_code) && mayFulfill}
+                            <ShiprocketNDR {row} onanswered={(updated) => (rows = rows.map((r) => (r.id === updated.id ? updated : r)))} />
+                        {/if}
+                        {#if row.scans?.length}
+                            <details class="sr-scans">
+                                <summary class="txt-sm">
+                                    <i class="ri-arrow-right-s-line sr-scans-chevron" aria-hidden="true"></i>
+                                    Tracking: {row.scans.length} update{row.scans.length === 1 ? "" : "s"}, latest {row.scans[0].date}
+                                </summary>
+                                <ol class="sr-timeline">
+                                    {#each row.scans as s, i (i)}
+                                        <li class:latest={i === 0}>
+                                            <span class="sr-dot" aria-hidden="true"></span>
+                                            <div class="sr-scan-text">
+                                                <div>{s.activity || s["sr-status-label"]}</div>
+                                                <div class="txt-hint txt-sm">{s.date}{s.location ? ` · ${s.location}` : ""}</div>
+                                            </div>
+                                        </li>
+                                    {/each}
+                                </ol>
+                            </details>
+                        {/if}
                         {#if row.awb && mayFulfill}
                             <div class="sr-actions">
                                 {#each docs as d (d.kind)}
@@ -127,6 +165,16 @@
                                         </button>
                                     {/if}
                                 {/each}
+                                <button
+                                    type="button"
+                                    class="btn sm transparent secondary"
+                                    class:loading={working === `${row.id}:track`}
+                                    disabled={!!working}
+                                    onclick={() => refresh(row)}
+                                >
+                                    <i class="ri-refresh-line" aria-hidden="true"></i>
+                                    <span class="txt">Refresh tracking</span>
+                                </button>
                                 {#if !row.pickup_requested}
                                     <button
                                         type="button"

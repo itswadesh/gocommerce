@@ -9,6 +9,8 @@
      */
     import { tick } from "svelte";
     import { request } from "$lib/api.js";
+    import { copyText } from "$lib/clipboard.js";
+    import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
 
     let { form = $bindable({}) } = $props();
@@ -39,6 +41,32 @@
         // The answer lands under the fields, often below the drawer's fold.
         await tick();
         outcome?.scrollIntoView({ block: "nearest" });
+    }
+
+    /* Tracking updates. Shiprocket refuses a webhook address holding its own
+       name, "kartrocket", "sr" or "kr", so the engine serves a neutral path;
+       the host is this server's, which the warning below checks too. */
+    let hook = $state(null);
+    let making = $state(false);
+    const hookURL = $derived(hook ? location.origin + hook.path : "");
+    const refused = $derived(/shiprocket|kartrocket|sr|kr/i.test(hookURL));
+
+    async function makeToken() {
+        making = true;
+        try {
+            hook = await request("POST", "/api/admin/x/fulfill-shiprocket/webhook");
+            // Saved already; the mask keeps the drawer's Save from clearing it.
+            form.webhook_token = "••••••••";
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            making = false;
+        }
+    }
+
+    async function copy(text, what) {
+        if (await copyText(text)) toast.success(`${what} copied`);
+        else toast.error(`Select the ${what.toLowerCase()} and copy it by hand`);
     }
 </script>
 
@@ -80,4 +108,39 @@
             {/if}
         {/if}
     </div>
+
+    <h6 class="section-title m-t-base">Tracking updates</h6>
+    <div class="field-help m-b-sm">
+        Shiprocket tells this store when a parcel moves. In Shiprocket, Settings › API › Webhooks: add
+        the address below, switch it on, and paste the token as its security token. Until then the
+        store asks Shiprocket every half hour.
+    </div>
+    <button type="button" class="btn sm secondary" class:loading={making} disabled={making} onclick={makeToken}>
+        <i class="ri-key-2-line" aria-hidden="true"></i>
+        <span class="txt">{hook ? "Make another token" : "Generate token"}</span>
+    </button>
+    {#if hook}
+        <div class="sr-hook m-t-sm" in:rise>
+            <div class="sr-hook-row">
+                <span class="txt-hint txt-sm">Address</span>
+                <code class="sr-hook-value">{hookURL}</code>
+                <button type="button" class="btn circle sm transparent secondary" title="Copy the address" aria-label="Copy the address" onclick={() => copy(hookURL, "Address")}>
+                    <i class="ri-file-copy-line" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="sr-hook-row">
+                <span class="txt-hint txt-sm">Token</span>
+                <code class="sr-hook-value">{hook.token}</code>
+                <button type="button" class="btn circle sm transparent secondary" title="Copy the token" aria-label="Copy the token" onclick={() => copy(hook.token, "Token")}>
+                    <i class="ri-file-copy-line" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="field-help">Saved already. It is shown only now; a new one replaces it.</div>
+            {#if refused}
+                <div class="alert warning m-t-sm" role="status">
+                    <p>Shiprocket refuses addresses containing "sr", "kr" or its own name, and this server's address does. Open the panel at another address for this server, then generate again.</p>
+                </div>
+            {/if}
+        </div>
+    {/if}
 </div>
