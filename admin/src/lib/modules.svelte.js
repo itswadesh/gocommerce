@@ -69,6 +69,7 @@ const PROBES = {
     banners: { path: "/api/admin/x/banners", right: "banners.read" },
     layouts: { path: "/api/admin/x/layouts/sections", right: "layouts.read" },
     wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
+    customizer: { path: "/api/admin/x/customizer/fonts", right: "customizer.read" },
     // Three screens behind three unrelated rights, so any one of them is
     // reason to ask. The path is the companies list either way: an operator
     // holding only leads.read gets a 403 there, which still means installed.

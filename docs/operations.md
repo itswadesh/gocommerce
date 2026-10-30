@@ -213,6 +213,13 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 | `GOCOMMERCE_BRANDS` | Several brands on one install, each a name on its own admin domain with its own stores. A JSON array; see [Several brands](#several-brands). Unset, the install is one brand made of the two settings above. |
 | `GOCOMMERCE_SECRETS_KEY`, `GOCOMMERCE_SECRETS_KEY_PREVIOUS` | Seal the payment and provider keys, API key copies and webhook signing secrets the database holds. Empty by default, which stores them readable as before. See [Secrets at rest](#secrets-at-rest) before setting it. |
 
+The customizer's limits per address are listed too, for an install that
+runs `-customizer` ([the customizer](customizer.md#uploads)):
+
+| Variable | What it does |
+|---|---|
+| `GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR`, `GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR` | How many photos and designs one address may send in an hour, 30 each when unset. Raise them only where many real shoppers share one address, such as a mobile carrier's NAT; a proxy in front of the engine is listed in `GOCOMMERCE_TRUSTED_PROXIES` instead. Anything but a whole number above 0 stops the engine at start. |
+
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
 

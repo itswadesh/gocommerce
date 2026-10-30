@@ -499,6 +499,9 @@ type App struct {
 	// Checkout guards, in registration order (D67).
 	guards []guardEntry
 
+	designer      LineDesigner
+	designerOwner string
+
 	routes  []Route
 	onStart []hook
 	onStop  []hook

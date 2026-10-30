@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"strings"
 	"testing"
@@ -99,6 +100,15 @@ func TestAFeatureWithNoSwitchStaysOn(t *testing.T) {
 
 	if on, _ := app.Plugins().Enabled(ctx, "fake-pictures"); !on {
 		t.Fatalf("a feature with no switch reads as off")
+	}
+	if err := InTx(ctx, app.db, func(tx *sql.Tx) error {
+		on, err := app.Plugins().EnabledTx(ctx, tx, "fake-pictures")
+		if !on {
+			t.Errorf("read through a transaction, a feature on before anyone touched it reads as off")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 	off := false
 	if _, err := app.Plugins().Update(ctx, "fake-pictures", PluginPatch{Enabled: &off}); err == nil || !strings.Contains(err.Error(), "always on") {

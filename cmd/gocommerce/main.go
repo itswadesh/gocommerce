@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
+	"github.com/itswadesh/gocommerce/ext/customizer"
 	"github.com/itswadesh/gocommerce/ext/faq"
 	"github.com/itswadesh/gocommerce/ext/feeds"
 	delhivery "github.com/itswadesh/gocommerce/ext/fulfill-delhivery"
@@ -217,6 +219,11 @@ environment:
   GOCOMMERCE_TRAEFIK_CERT_RESOLVER
                     the ACME resolver that issues the certificates; defaults
                     to letsencrypt
+  GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR, GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR
+                    with -customizer, how many files and designs one address
+                    may send in an hour, 30 each when unset; raise them where
+                    many shoppers share one address. Anything but a whole
+                    number above 0 stops the start
 `)
 	}
 
@@ -264,6 +271,7 @@ environment:
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
+		withCustom   = fs.Bool("customizer", false, "install the customizer module idle: a shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; each store switches it on under Plugins and sets each product up on its page")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
 		withAI       = fs.Bool("ai-gateway", false, "install the AI gateway module: every model call recorded, held to a monthly cap and limited to the data the owner lets leave, and the queue where a person approves what an agent proposes; with ANTHROPIC_API_KEY every store runs on the platform's key, paid from its AI credit (AI_PLATFORM_* set the models, prices and rates), otherwise a store sets a key, a cap and prices under Settings › Plugins")
 		// A store is found by host as well as by header and cookie: a request
@@ -393,6 +401,13 @@ environment:
 	cfg.TrustedProxies = proxies
 	if len(languages) > 0 {
 		cfg.DefaultLanguage = languages[0]
+	}
+
+	// Read before any module is built, so a limit that does not read stops
+	// the start rather than leaving the default the operator meant to raise.
+	customizerLimits, err := customizerConfig()
+	if err != nil {
+		return err
 	}
 
 	// The reference binary installs no module by default — that is what
@@ -595,6 +610,9 @@ environment:
 		}
 		if *withWishlist {
 			modules = append(modules, wishlist.New(wishlist.Config{}))
+		}
+		if *withCustom {
+			modules = append(modules, customizer.New(customizerLimits))
 		}
 		if *withAmazon {
 			// With the gateway installed, ANTHROPIC_API_KEY is the platform's,
@@ -1152,6 +1170,27 @@ func envTrue(name string) bool {
 		return false
 	}
 	return true
+}
+
+// customizerConfig reads the customizer's hourly limits per address. Unset,
+// the module's own (30 each); otherwise a whole number above 0.
+func customizerConfig() (customizer.Config, error) {
+	var cfg customizer.Config
+	for name, limit := range map[string]*int{
+		"GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR": &cfg.UploadsPerHour,
+		"GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR": &cfg.DesignsPerHour,
+	} {
+		v := strings.TrimSpace(os.Getenv(name))
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return cfg, fmt.Errorf("%s is %q; it must be a whole number above 0", name, v)
+		}
+		*limit = n
+	}
+	return cfg, nil
 }
 
 // firstEnv is the first of these variables that is set. A module's own

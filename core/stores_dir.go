@@ -153,8 +153,13 @@ func (s *Stores) ByHost(ctx context.Context, host string) (*Store, error) {
 
 // Active lists the stores that are serving, oldest first.
 func (s *Stores) Active(ctx context.Context) ([]Store, error) {
+	return s.list(ctx, `WHERE status = 'active'`)
+}
+
+// list lists the stores the where clause selects, oldest first.
+func (s *Stores) list(ctx context.Context, where string) ([]Store, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+storeColumns+` FROM stores WHERE status = 'active' ORDER BY created_at, id`)
+		`SELECT `+storeColumns+` FROM stores `+where+` ORDER BY created_at, id`)
 	if err != nil {
 		return nil, Internalf(err, "list stores")
 	}
