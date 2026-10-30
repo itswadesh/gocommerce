@@ -8,6 +8,7 @@
      * is changed and left alone for a moment — the engine keeps answers for
      * ten minutes too, so typing a weight is not a call to Shiprocket per key.
      */
+    import { untrack } from "svelte";
     import { request, query } from "$lib/api.js";
     import { formatMoney } from "$lib/format.js";
     import { rise } from "$lib/motion.js";
@@ -51,7 +52,9 @@
         const kg = Number(weight) > 0 ? weight : "";
         if (!id) return;
         clearTimeout(timer);
-        timer = setTimeout(() => load(id, kg), quote ? 400 : 0);
+        // Read without tracking: every answer replaces quote, and an effect
+        // that depended on it would ask again the moment it was answered.
+        timer = setTimeout(() => load(id, kg), untrack(() => quote) ? 400 : 0);
         return () => clearTimeout(timer);
     });
 
