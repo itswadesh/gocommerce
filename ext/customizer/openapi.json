@@ -26,7 +26,8 @@
           "415": {"description": "Not a JPEG or a PNG.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "422": {"description": "Over 40 megapixels or 16384 pixels a side, or more than 256 MB to decode: a 16-bit PNG or a progressive JPEG that large; the message says how to save it instead.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "429": {"$ref": "#/components/responses/RateLimited"},
-          "501": {"description": "The install has no media storage to keep uploads in (`media_store_unconfigured`).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+          "501": {"description": "The install has no media storage to keep uploads in (`media_store_unconfigured`).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "503": {"description": "`busy`: eight uploads are already waiting to be decoded, or this one waited 30 seconds. Nothing is kept; send it again after `Retry-After` seconds.", "headers": {"Retry-After": {"schema": {"type": "integer"}}}, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
         }
       }
     },

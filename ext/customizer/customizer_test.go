@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -806,6 +807,63 @@ func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("an upload that waited a second to be decoded = %d, want 201", resp.StatusCode)
+	}
+}
+
+// Each upload waiting for its turn keeps its file on disk, so the waiting
+// are bounded in number and in time, and one past either bound is told to
+// come back.
+func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	spooled := func() int {
+		files, _ := os.ReadDir(spool)
+		return len(files)
+	}
+	refused := func(what string) {
+		t.Helper()
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() { done <- h.uploadRaw("", "file", jpegRedTop(40, 30)) }()
+		select {
+		case rec := <-done:
+			if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" ||
+				!strings.Contains(errorCode(t, rec), "busy: too many photos") {
+				t.Errorf("%s = %d %s, want 503 with Retry-After", what, rec.Code, rec.Body)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s still waits after 5 s; want it refused", what)
+		}
+	}
+
+	h.mod.decodes <- struct{}{}
+	codes := make(chan int, decodeQueue)
+	for range decodeQueue {
+		go func() { codes <- h.uploadRaw("", "file", jpegRedTop(40, 30)).Code }()
+	}
+	for deadline := time.Now().Add(5 * time.Second); spooled() < decodeQueue && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	refused(fmt.Sprintf("an upload behind %d waiting", decodeQueue))
+	if n := spooled(); n != decodeQueue {
+		t.Errorf("%d files on disk, want the %d waiting and not the one refused", n, decodeQueue)
+	}
+	<-h.mod.decodes
+	for range decodeQueue {
+		if code := <-codes; code != http.StatusCreated {
+			t.Errorf("an upload that waited its turn = %d, want 201", code)
+		}
+	}
+
+	decodeWait = 300 * time.Millisecond
+	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	h.mod.decodes <- struct{}{}
+	refused("an upload with no turn for 300 ms")
+	<-h.mod.decodes
+	if n := spooled(); n != 0 {
+		t.Errorf("%d files left on disk, want none", n)
 	}
 }
 

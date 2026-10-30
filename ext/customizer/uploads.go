@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -36,12 +37,20 @@ const (
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
+	// decodeQueue is how many uploads may wait for a turn to decode, each
+	// keeping its file on disk while it does.
+	decodeQueue = 8
 	// pngWriterState is what png.Encode's compress/flate writer holds
 	// whatever the picture: 1.1 MB in Go 1.27.
 	pngWriterState = 1200 << 10
 )
 
-var uploadDeadline = 15 * time.Second
+var (
+	uploadDeadline = 15 * time.Second
+	// decodeWait is how long an upload may wait for its turn: eight waiting
+	// ahead of it at the second or two a large photo takes, and then some.
+	decodeWait = 30 * time.Second
+)
 
 const (
 	jpegMarker      = 0xFF
@@ -80,6 +89,8 @@ var (
 		Message: "send a JPEG or a PNG; the editor converts other photos before uploading them"}
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
+	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
+		Message: "too many photos are being uploaded right now; try again in a few seconds"}
 )
 
 func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -107,11 +118,24 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetReadDeadline(time.Time{})
 	defer discard(file)
 	up, err := m.keep(r.Context(), file)
+	if errors.Is(err, errBusy) {
+		busy(w)
+		return
+	}
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
 	gocommerce.Respond(w, http.StatusCreated, up)
+}
+
+// busy writes its answer itself: RespondError gives every 5xx an internal
+// error's message, and this one is for the shopper to read.
+func busy(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "10")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(errBusy.Status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": errBusy})
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
@@ -209,13 +233,32 @@ func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 // rewriteInTurn rewrites file once no other upload is decoding, so the
 // pictures in memory at once stay within decodeSlots × decodeBudget.
 func (m *Module) rewriteInTurn(ctx context.Context, file *os.File) (int64, string, image.Rectangle, error) {
-	select {
-	case m.decodes <- struct{}{}:
-	case <-ctx.Done():
-		return 0, "", image.Rectangle{}, ctx.Err()
+	if err := m.awaitTurn(ctx); err != nil {
+		return 0, "", image.Rectangle{}, err
 	}
 	defer func() { <-m.decodes }()
 	return rewrite(file)
+}
+
+// awaitTurn takes a turn to decode, or answers errBusy when decodeQueue
+// uploads are waiting already or no turn comes within decodeWait.
+func (m *Module) awaitTurn(ctx context.Context) error {
+	select {
+	case m.waiting <- struct{}{}:
+	default:
+		return errBusy
+	}
+	defer func() { <-m.waiting }()
+	wait := time.NewTimer(decodeWait)
+	defer wait.Stop()
+	select {
+	case m.decodes <- struct{}{}:
+		return nil
+	case <-wait.C:
+		return errBusy
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, err error) {

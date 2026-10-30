@@ -68,6 +68,7 @@ type Module struct {
 	uploads *throttle
 	designs *throttle
 	decodes chan struct{}
+	waiting chan struct{}
 }
 
 // New constructs the module.
@@ -83,6 +84,7 @@ func New(cfg Config) *Module {
 		uploads: newThrottle(cfg.UploadsPerHour, time.Hour),
 		designs: newThrottle(cfg.DesignsPerHour, time.Hour),
 		decodes: make(chan struct{}, decodeSlots),
+		waiting: make(chan struct{}, decodeQueue),
 	}
 }
 

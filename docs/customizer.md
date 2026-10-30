@@ -86,6 +86,7 @@ design and adds that; remove the old line.
 | Time | The file must arrive within 15 seconds of the request reaching the engine, or the answer is 400 |
 | What is kept | The picture, decoded and written again: EXIF and its GPS position are dropped, a JPEG is first turned the way its camera was held, so `width` and `height` are the picture as it is seen, and a 16-bit PNG is kept at 8 bits |
 | Where | The store's media storage under a random name, not the media library |
+| Busy | Uploads are decoded one at a time. When eight are already waiting, or this one has waited 30 seconds, the answer is 503 `busy` with `Retry-After`, and nothing is kept: send it again then |
 | Limit | 30 an hour per address (429, with `Retry-After`) |
 | Kept for | 30 days, then deleted, unless a design in a basket or on an order names it |
 
