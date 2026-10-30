@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os/signal"
 	"strings"
@@ -200,6 +201,14 @@ type Config struct {
 	// shopper's browser would attach for it — the panel's store cookie stays
 	// out of reach of every origin listed here, "*" included.
 	CORSOrigins []string
+	// TrustedProxies are the proxies in front of the engine that it believes
+	// about whom they forward for: a storefront's server, a load balancer
+	// (D173). A request from one of them counts as coming from the nearest
+	// address in its X-Forwarded-For that is not one of them, so a limit per
+	// address (sign-in, sign-up, password reset, order lookup) counts each
+	// shopper and not the proxy. Empty, the default, trusts nobody, loopback
+	// included, and X-Forwarded-For is never read.
+	TrustedProxies []netip.Prefix
 	// MediaStore replaces the built-in local-disk store wholesale — the seam an
 	// S3 or GCS module uses. When set, MediaDir is ignored.
 	MediaStore MediaStore
@@ -987,8 +996,9 @@ func (a *App) Routes() []Route {
 	return out
 }
 
-// Handler returns the fully wrapped HTTP handler: panic recovery, request
-// logging and language negotiation, outermost first.
+// Handler returns the fully wrapped HTTP handler: the client address behind a
+// trusted proxy, panic recovery, request logging and language negotiation,
+// outermost first.
 //
 // Request body limits are deliberately not middleware. A single outer
 // MaxBytesReader cannot be widened again further in, which would cap CSV
@@ -1013,6 +1023,9 @@ func (a *App) Handler() http.Handler {
 	h = a.corsMW(h)
 	h = a.logMW(h)
 	h = a.recoverMW(h)
+	// Outermost, so everything inside, every module's route included, reads
+	// the shopper's address rather than a trusted proxy's.
+	h = a.trustedProxiesMW(h)
 	return h
 }
 

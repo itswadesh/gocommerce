@@ -342,10 +342,11 @@ func (m *Module) onOrderCreated(ctx context.Context, e gocommerce.Event) error {
 }
 
 // throttle is a fixed window per key, the way ext/b2b bounds its sign-ups.
-// The key is the store and the peer address, which behind a proxy is the
-// proxy's: X-Forwarded-For is not read, for core's reason — without a proxy
-// it is whatever a client says. So the bound is generous, enough that a
-// store's real traffic through one proxy fits, and only a script inflating
+// The key is the store and the peer address, which behind a proxy the engine
+// does not trust is the proxy's: X-Forwarded-For is believed only from the
+// engine's TrustedProxies, for core's reason — from anybody else it is
+// whatever a client says. So the bound is generous, enough that a store's
+// real traffic through one untrusted proxy fits, and only a script inflating
 // the counts meets it.
 type throttle struct {
 	mu    sync.Mutex

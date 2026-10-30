@@ -1058,8 +1058,8 @@ func TestAuthWithPasswordThrottlesOverHTTP(t *testing.T) {
 		t.Errorf("code = %q, want too_many_attempts", code)
 	}
 
-	// clientIP reads the peer address only — never X-Forwarded-For, which
-	// behind no proxy an attacker sets themselves. A forged header must not
+	// With no trusted proxies, the default, X-Forwarded-For is never read:
+	// behind no proxy an attacker sets it themselves. A forged header must not
 	// buy a fresh budget.
 	forged := do(t, app, http.MethodPost, "/api/admin/auth-with-password",
 		jsonBody(t, map[string]string{"identity": email, "password": password}),

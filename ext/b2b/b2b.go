@@ -135,9 +135,10 @@ type Config struct {
 	QuoteTTL time.Duration
 	// LeadsPerMinute is how many enquiries one address may send through the
 	// public dealer form in a minute. Zero means ten; a negative number turns
-	// the limit off. It counts by the connection's peer address and never by
-	// X-Forwarded-For, which anybody can write — so behind a reverse proxy
-	// every visitor shares the proxy's budget, and this wants raising.
+	// the limit off. It counts by the connection's peer address, which behind
+	// a proxy in the engine's TrustedProxies is the visitor's own; behind a
+	// proxy the engine does not trust, every visitor shares the proxy's
+	// budget, and this wants raising.
 	LeadsPerMinute int
 }
 

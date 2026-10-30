@@ -64,9 +64,10 @@ type Config struct {
 	NotifyEmail string
 	// MessagesPerMinute is how many messages and enquiries, counted together,
 	// one address may send in a minute. Zero means ten; a negative number
-	// turns the limit off. It counts by the connection's peer address and
-	// never by X-Forwarded-For, which anybody can write — so behind a reverse
-	// proxy every shopper shares the proxy's allowance.
+	// turns the limit off. It counts by the connection's peer address, which
+	// behind a proxy in the engine's TrustedProxies is the shopper's own;
+	// behind a proxy the engine does not trust, every shopper shares the
+	// proxy's allowance.
 	MessagesPerMinute int
 }
 
