@@ -12,11 +12,13 @@ the editor only once its own Customizer card is switched on.
 
 ## The flow
 
-1. A product sold only made to a design says `"designable": true` on its
-   payload, in a listing and on its own. Offer no quick add for it, and ask
-   for its setup only then: `GET /x/customizer/products/{product_id}` reads
-   it. 404 means the product cannot be designed after all: draw the ordinary
-   product page.
+1. Every product says `"designable"` on its payload, in a listing and on
+   its own. `true` is sold only made to a design: offer no quick add for it,
+   and ask for its setup only then. `false` is a plain product: skip the
+   setup request. An engine without the key predates it: ask as before.
+   `GET /x/customizer/products/{product_id}` reads the setup. 404 means
+   the product cannot be designed after all: draw the ordinary product
+   page.
 2. Before the shopper chooses a photo, show `consent`.
 3. Each photo goes to `POST /x/customizer/uploads`. Keep the `upload_id`.
 4. When the shopper adds to bag, render two pictures in the browser and upload
