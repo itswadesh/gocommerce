@@ -154,6 +154,9 @@ func (a *App) mountCheckoutRoutes() {
 	// documented webhook URL without mounting anything itself — and so the
 	// raw body reaches it untouched.
 	a.HandleFunc("POST /api/checkout/{code}/webhook", a.handlePaymentWebhook)
+	// A carrier's tracking callback, under a name its provider chose
+	// (TrackingReceiver), served before any store is known.
+	a.HandleFunc("POST /api/tracking-updates/{hook}", a.handleTrackingUpdate)
 }
 
 // handlePaymentMethods answers with the same list in two shapes, on purpose.
@@ -201,6 +204,15 @@ func (a *App) handlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 	// verification needs the bytes exactly as they were sent, and only the
 	// provider knows how big its own callbacks get.
 	receiver.Webhook().ServeHTTP(w, r)
+}
+
+func (a *App) handleTrackingUpdate(w http.ResponseWriter, r *http.Request) {
+	receiver, ok := a.fulfillment.hooks[r.PathValue("hook")]
+	if !ok {
+		RespondError(w, r, NotFoundf("no carrier sends tracking to %q", r.PathValue("hook")))
+		return
+	}
+	receiver.Tracking().ServeHTTP(w, r)
 }
 
 // ------------------------------------------------------------------ orders

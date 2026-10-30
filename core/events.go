@@ -34,6 +34,12 @@ const (
 	// really happened, and a return is the next thing that happened after it,
 	// not a note saying the delivery was recorded on the wrong row.
 	EventOrderReturned = "order.returned"
+	// A carrier said something new about a parcel on its way: in transit, out
+	// for delivery, a failed attempt, on its way back to the store, back there,
+	// lost. Delivered and cancelled are not this: they are order.delivered —
+	// when it was the last parcel — and order.unshipped. The payload's
+	// shipment block names the parcel and its tracking_status.
+	EventOrderShipmentUpdated = "order.shipment_updated"
 
 	// The corrections. Each says a fact recorded earlier was not true —
 	// somebody marked the wrong row — so they are their own names rather than
@@ -96,6 +102,7 @@ var eventCatalog = []EventInfo{
 	{EventOrderRefunded, "Orders", "Money is refunded on an order; once per refund, so a partial refund is its own event."},
 	{EventOrderEdited, "Orders", "An order is changed after it was placed."},
 	{EventOrderReturned, "Orders", "Goods come back off a shipped or delivered order."},
+	{EventOrderShipmentUpdated, "Orders", "A carrier reports a parcel in transit, out for delivery, not delivered, returning to the store, returned or lost."},
 	{EventOrderUnpaid, "Corrections", "A payment recorded by mistake is taken back."},
 	{EventOrderUnshipped, "Corrections", "A shipment recorded by mistake is taken back."},
 	{EventOrderUndelivered, "Corrections", "A delivery recorded by mistake is taken back."},
@@ -314,6 +321,10 @@ type ShipmentEvent struct {
 	// and the number also says how much is still owed, which `status` does not.
 	RemainingUnits int                 `json:"remaining_units"`
 	Lines          []ShipmentEventLine `json:"lines"`
+	// TrackingStatus and Detail are what the carrier reported, on
+	// order.shipment_updated and on an order.delivered a carrier caused.
+	TrackingStatus string `json:"tracking_status,omitempty"`
+	Detail         string `json:"detail,omitempty"`
 }
 
 // ShipmentEventLine is one line of a parcel.

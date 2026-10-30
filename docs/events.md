@@ -68,7 +68,8 @@ produces it, and is never repurposed.
 | `order.unpaid` | A payment recorded in error was taken back | `payment_status` goes back to `pending`; the order's `status` and its stock do not move. Refused once anything has been refunded. Clearing a recorded payment *failure* is silent, because the failure was never announced |
 | `order.shipped` | A parcel was booked | Fires once per parcel. Payload carries `tracking` and a `shipment` block naming what went in this one and what is still owed; `status` is `partial` while the order still owes units |
 | `order.unshipped` | A shipment recorded in error was removed, or a booked parcel was cancelled (it stays on the order as `cancelled`, and `reason` says why) | Payload carries the same `shipment` block, describing the parcel that came back; `status` is what is left — `partial` or `confirmed` |
-| `order.delivered` | The customer received it | |
+| `order.delivered` | The customer received it | Also fired by a carrier module reporting the last of the order's parcels delivered; its `shipment` block then names that parcel, with `tracking_status: delivered` |
+| `order.shipment_updated` | A carrier reported a parcel in transit, out for delivery, not delivered (a failed attempt), returning to the store, back at the store, or lost | Fires once per change, never for the same status twice, and nothing after a parcel is delivered, returned or cancelled. Payload carries the `shipment` block with `tracking_status` and `detail`, the carrier's own words. The order's `status` does not move: a parcel coming back is still one that shipped, and the store decides what to do about it |
 | `order.undelivered` | A delivery recorded in error was taken back | The order, and the fulfillments marked delivered with it, go back to `shipped`. Nothing moved when the delivery was recorded, so nothing moves back |
 | `order.refunded` | Money went back through the provider | Fires once per refund, so two partial refunds are two events. Payload carries a `refund` block and `reason`; `payment_status` says whether this one finished the job — `paid` while the store still holds part of it, `refunded` once the parts add up to the total |
 | `order.returned` | Goods came back off a shipped, partly shipped or delivered order | Stock is returned only for the lines marked to restock, and only to the shelf they were picked from unless another was named. The order's `status` and `payment_status` are unchanged — the delivery still happened — and the payload carries a `return` block. No money moves: a refund is its own operation and its own event |
@@ -200,8 +201,9 @@ describes that one movement: what went back now, the running total afterwards,
 and `remaining_minor`, which is what a consumer needs to tell a partial refund
 from the one that finished the job without doing the arithmetic itself.
 
-`shipment` is present only on `order.shipped` and `order.unshipped`, and it
-describes one parcel: top-level `lines` is still the whole order, which is what
+`shipment` is present on `order.shipped`, `order.unshipped`,
+`order.shipment_updated` and a carrier's `order.delivered`, and it describes one
+parcel: top-level `lines` is still the whole order, which is what
 it has always been. `remaining_units` is what the order still owes once this
 parcel is counted, so zero means the order is complete — the number rather than
 a flag, because it also says how much is left. It repeats neither `tracking`
