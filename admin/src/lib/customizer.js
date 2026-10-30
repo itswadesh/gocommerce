@@ -8,7 +8,7 @@
 export const MIN_DPI = 72;
 export const MAX_DPI = 600;
 export const MAX_PRINT_MM = 1000;
-export const MAX_PRINT_PIXELS = 4_000_000;
+export const MAX_PRINT_PIXELS = 3_800_000;
 export const MAX_STICKERS = 30;
 export const MAX_MIN_PHOTO = 10000;
 export const ASPECT_TOLERANCE = 0.02;

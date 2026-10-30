@@ -455,9 +455,9 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 		{"print too big", func(s *SetupInput) { s.PrintSize.WidthMM = 1001 }, "between 0 and 1000 mm"},
 		{"dpi too low", func(s *SetupInput) { s.PrintSize.DPI = 71 }, "between 72 and 600 dpi"},
 		{"dpi too high", func(s *SetupInput) { s.PrintSize.DPI = 601 }, "between 72 and 600 dpi"},
-		{"print file over 4 megapixels", func(s *SetupInput) {
+		{"print file over 3.8 megapixels", func(s *SetupInput) {
 			s.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 520}
-		}, "1433 × 2866 pixels, and can be at most 4 megapixels and 16384 pixels a side"},
+		}, "1433 × 2866 pixels, and can be at most 3.8 megapixels and 16384 pixels a side"},
 		{"print file over 16384 pixels a side", func(s *SetupInput) {
 			s.PrintSize = &PrintSize{WidthMM: 1000, HeightMM: 5, DPI: 600}
 		}, "23622 × 118 pixels"},
@@ -494,7 +494,7 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 	sharpest := c.in
 	sharpest.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 500}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, sharpest); err != nil {
-		t.Errorf("a 1378 × 2756 print file, under 4 megapixels = %v, want it saved", err)
+		t.Errorf("a 1378 × 2756 print file, under 3.8 megapixels = %v, want it saved", err)
 	}
 	draft := SetupInput{Mockup: &Picture{URL: jpegMockup.URL, Width: 200, Height: 400}}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, draft); err != nil {

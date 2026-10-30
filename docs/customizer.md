@@ -64,8 +64,9 @@ design and adds that; remove the old line.
 - **The print file** is `round(width_mm / 25.4 × dpi)` by
   `round(height_mm / 25.4 × dpi)` pixels. The print area has the same shape,
   within 2%, so scaling it up by one factor fills the print file. A setup
-  never asks for more than 4 megapixels or 16384 pixels a side, so the print file saved as a PNG
-  from a canvas fits an upload whatever it shows: a 75 × 150 mm case at
+  never asks for more than 3.8 megapixels or 16384 pixels a side, so the
+  print file saved as a PNG from a canvas fits an upload whatever it
+  shows, noise with varying transparency included: a 75 × 150 mm case at
   300 dpi is 886 × 1772. A larger print waits for print files rendered on
   the server (below).
 - **Fonts** are keys from the theme editor's list. Load each family the way
@@ -218,6 +219,7 @@ download with its size, the original photos and the words and fonts used.
 
 Templates, the "same design" add-ons (a grip or a keychain printed to match),
 rendering the print file on the server, and a customization fee are later
-phases. A print over 4 megapixels waits for the print file rendered on the
-server: a browser's PNG of one can be larger than an upload takes. The data is shaped for them: a design names its product and variant,
-so a matching add-on is a design of its own made from the same document.
+phases. A print over 3.8 megapixels waits for the print file rendered on
+the server: a browser's PNG of one can be larger than an upload takes. The
+data is shaped for them: a design names its product and variant, so a
+matching add-on is a design of its own made from the same document.
