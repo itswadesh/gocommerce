@@ -109,6 +109,7 @@ func coreMigrations() []Migration {
 		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
 		{ID: "0092_order_payment_fee", SQL: migration0092OrderPaymentFee},
 		{ID: "0093_discount_prepaid_only", SQL: migration0093DiscountPrepaidOnly},
+		{ID: "0094_cart_phone", SQL: `ALTER TABLE carts ADD COLUMN phone text;`},
 	}
 }
 
