@@ -83,6 +83,8 @@
     function look(entry) {
         // order.unshipped is a removal or a cancellation; the act says which.
         if (entry.action === "order.shipment_cancel") return ACTIONS[entry.action];
+        // A message to or from the shopper: its own words are the phrase.
+        if (entry.action === "order.message") return { icon: "ri-chat-3-line", label: entry.summary };
         if (entry.name === "order.shipment_updated" && TRACKING[entry.tracking_status]) return TRACKING[entry.tracking_status];
         if (entry.name && EVENTS[entry.name]) return EVENTS[entry.name];
         // order.edited is deliberately not in that table: it is two different

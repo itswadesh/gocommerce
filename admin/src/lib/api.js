@@ -506,6 +506,23 @@ export const telegram = {
 };
 
 /**
+ * whatsapp is ext/notify-whatsapp (D165): the store's WhatsApp Business
+ * account, which approved template each moment sends, and how it went. The
+ * account's IDs and secrets are the plugin's settings, like every credential.
+ */
+const WHATSAPP = "/api/admin/x/notify-whatsapp";
+export const whatsapp = {
+    plugin: () => api.get("/api/admin/plugins/whatsapp-cloud"),
+    savePlugin: (body) => api.patch("/api/admin/plugins/whatsapp-cloud", body),
+    status: () => api.get(`${WHATSAPP}/status`),
+    templates: () => api.get(`${WHATSAPP}/templates`),
+    mapSlot: (slot, body) => api.put(`${WHATSAPP}/slots/${encodeURIComponent(slot)}`, body),
+    unmapSlot: (slot) => api.delete(`${WHATSAPP}/slots/${encodeURIComponent(slot)}`),
+    suggest: (slot) => api.post(`${WHATSAPP}/slots/${encodeURIComponent(slot)}/suggest`, {}),
+    messages: (params) => api.get(`${WHATSAPP}/messages` + query(params)),
+};
+
+/**
  * recovery is ext/cart-recovery: baskets left behind, what was sent about
  * them, and the automation that sends it.
  *
