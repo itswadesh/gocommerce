@@ -49,9 +49,13 @@ type Category struct {
 	// the same value lists on every row, which is hundreds of kilobytes of
 	// repetition for a picker that never reads them.
 	Attributes []CategoryAttribute `json:"attributes,omitempty"`
-	Metadata   Metadata            `json:"metadata"`
-	CreatedAt  time.Time           `json:"created_at"`
-	UpdatedAt  time.Time           `json:"updated_at"`
+	// HSNCode is the GST tariff number for what this category holds, used on a
+	// tax invoice for any product filed under it, or under a subcategory of it,
+	// whose variant has no hs_code of its own (D169). Empty is "none here".
+	HSNCode   string    `json:"hsn_code"`
+	Metadata  Metadata  `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ProductCategory is the shape a category takes riding along on a product:
@@ -69,6 +73,7 @@ type CategoryInput struct {
 	Slug     string   `json:"slug"`
 	Title    string   `json:"title"`
 	Position *int     `json:"position"`
+	HSNCode  string   `json:"hsn_code"`
 	Metadata Metadata `json:"metadata"`
 	// sample marks a category of the sample shop (D96). Unexported, so no
 	// request can file the merchant's own category for the next erase.
@@ -82,6 +87,7 @@ type CategoryPatch struct {
 	Slug     *string    `json:"slug"`
 	Title    *string    `json:"title"`
 	Position *int       `json:"position"`
+	HSNCode  *string    `json:"hsn_code"`
 	Metadata *Metadata  `json:"metadata"`
 }
 
@@ -104,13 +110,13 @@ func (a *App) Categories() *Categories { return &Categories{app: a} }
 
 // -------------------------------------------------------------------- service
 
-const categoryColumns = `id, parent_id, slug, title, position, metadata, created_at, updated_at`
+const categoryColumns = `id, parent_id, slug, title, position, metadata, created_at, updated_at, hsn_code`
 
 func scanCategory(row interface{ Scan(...any) error }) (*Category, error) {
 	var c Category
 	var meta []byte
 	if err := row.Scan(&c.ID, &c.ParentID, &c.Slug, &c.Title, &c.Position,
-		&meta, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		&meta, &c.CreatedAt, &c.UpdatedAt, &c.HSNCode); err != nil {
 		return nil, err
 	}
 	if err := scanMetadata(meta, &c.Metadata); err != nil {
@@ -130,6 +136,10 @@ func (s *Categories) Create(ctx context.Context, in CategoryInput) (*Category, e
 	}
 	if in.Slug == "" {
 		return nil, Validationf("slug could not be derived from the title; supply one")
+	}
+	hsn, err := normalizeHSCode("hsn_code", in.HSNCode)
+	if err != nil {
+		return nil, err
 	}
 	meta, err := in.Metadata.value()
 	if err != nil {
@@ -161,9 +171,9 @@ func (s *Categories) Create(ctx context.Context, in CategoryInput) (*Category, e
 			}
 		}
 		c, err := scanCategory(tx.QueryRowContext(ctx, `
-			INSERT INTO categories (parent_id, slug, title, position, metadata, sample)
-			VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+categoryColumns,
-			in.ParentID, in.Slug, in.Title, position, meta, in.sample))
+			INSERT INTO categories (parent_id, slug, title, position, metadata, sample, hsn_code)
+			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+categoryColumns,
+			in.ParentID, in.Slug, in.Title, position, meta, in.sample, hsn))
 		if err != nil {
 			return translateCategoryErr(err)
 		}
@@ -344,7 +354,7 @@ func (s *Categories) Search(ctx context.Context, q CategoryQuery) ([]*Category, 
 		var c Category
 		var meta []byte
 		if err := rows.Scan(&total, &c.ID, &c.ParentID, &c.Slug, &c.Title, &c.Position,
-			&meta, &c.CreatedAt, &c.UpdatedAt, &c.FullName, &c.Depth, &c.ChildCount); err != nil {
+			&meta, &c.CreatedAt, &c.UpdatedAt, &c.HSNCode, &c.FullName, &c.Depth, &c.ChildCount); err != nil {
 			return nil, 0, err
 		}
 		if err := scanMetadata(meta, &c.Metadata); err != nil {
@@ -406,7 +416,7 @@ func (s *Categories) Children(ctx context.Context, parentID *int64) ([]*Category
 		var c Category
 		var meta []byte
 		if err := rows.Scan(&c.ID, &c.ParentID, &c.Slug, &c.Title, &c.Position,
-			&meta, &c.CreatedAt, &c.UpdatedAt, &c.ChildCount); err != nil {
+			&meta, &c.CreatedAt, &c.UpdatedAt, &c.HSNCode, &c.ChildCount); err != nil {
 			return nil, err
 		}
 		if err := scanMetadata(meta, &c.Metadata); err != nil {
@@ -453,7 +463,7 @@ func (s *Categories) Ancestors(ctx context.Context, id int64) ([]*Category, erro
 		    FROM up JOIN categories c ON c.id = up.parent_id
 		    WHERE up.climbed < $2
 		)
-		SELECT id, parent_id, slug, title, position, metadata, created_at, updated_at,
+		SELECT id, parent_id, slug, title, position, metadata, created_at, updated_at, hsn_code,
 		       (SELECT count(*) FROM categories k WHERE k.parent_id = up.id)
 		FROM up ORDER BY climbed DESC`, id, MaxCategoryDepth)
 	if err != nil {
@@ -466,7 +476,7 @@ func (s *Categories) Ancestors(ctx context.Context, id int64) ([]*Category, erro
 		var c Category
 		var meta []byte
 		if err := rows.Scan(&c.ID, &c.ParentID, &c.Slug, &c.Title, &c.Position,
-			&meta, &c.CreatedAt, &c.UpdatedAt, &c.ChildCount); err != nil {
+			&meta, &c.CreatedAt, &c.UpdatedAt, &c.HSNCode, &c.ChildCount); err != nil {
 			return nil, err
 		}
 		if err := scanMetadata(meta, &c.Metadata); err != nil {
@@ -645,6 +655,13 @@ func (s *Categories) Update(ctx context.Context, id int64, patch CategoryPatch) 
 		if patch.Position != nil {
 			add("position", *patch.Position)
 		}
+		if patch.HSNCode != nil {
+			hsn, err := normalizeHSCode("hsn_code", *patch.HSNCode)
+			if err != nil {
+				return err
+			}
+			add("hsn_code", hsn)
+		}
 		if patch.Metadata != nil {
 			meta, err := patch.Metadata.value()
 			if err != nil {
@@ -682,7 +699,7 @@ func (s *Categories) Update(ctx context.Context, id int64, patch CategoryPatch) 
 		before := map[string]any{}
 		for column, v := range map[string]any{
 			"parent_id": was.ParentID, "slug": was.Slug,
-			"title": was.Title, "position": was.Position,
+			"title": was.Title, "position": was.Position, "hsn_code": was.HSNCode,
 		} {
 			if _, changed := after[column]; changed {
 				before[column] = v

@@ -309,12 +309,33 @@ func (m *Module) issue(ctx context.Context, orderID int64) error {
 
 var errAlreadyIssued = errors.New("invoice already issued")
 
-// hsnFor is the HS code of each variant on the order as it stands at issue:
-// the supplier's classification for the document, read from the catalogue.
+// hsnFor is the HSN of each variant on the order as it stands at issue: the
+// supplier's classification for the document, read from the catalogue.
+//
+// A variant's own hs_code wins. Without one, the product's category is asked,
+// then its parent and so on up to the root, and the nearest that has a code
+// gives it (D169). Nearest, because a subcategory is the narrower and so the
+// truer classification: "Jewellery" may say 7113 while "Imitation" under it
+// says 7117. A product has one category, so there is nothing to choose between
+// sideways.
 func (m *Module) hsnFor(ctx context.Context, orderID int64) (map[int64]string, error) {
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT v.id, v.hs_code FROM order_lines l JOIN variants v ON v.id = l.variant_id
-		WHERE l.order_id = $1`, orderID)
+		SELECT v.id, CASE WHEN v.hs_code <> '' THEN v.hs_code ELSE coalesce(cat.hsn_code, '') END
+		FROM order_lines l
+		JOIN variants v ON v.id = l.variant_id
+		JOIN products p ON p.id = v.product_id
+		LEFT JOIN LATERAL (
+		    WITH RECURSIVE up AS (
+		        SELECT id, parent_id, hsn_code, 0 AS climbed
+		        FROM categories WHERE id = p.category_id
+		      UNION ALL
+		        SELECT c.id, c.parent_id, c.hsn_code, up.climbed + 1
+		        FROM up JOIN categories c ON c.id = up.parent_id
+		        WHERE up.hsn_code = '' AND up.climbed < $2
+		    )
+		    SELECT hsn_code FROM up WHERE hsn_code <> '' ORDER BY climbed LIMIT 1
+		) cat ON true
+		WHERE l.order_id = $1`, orderID, gocommerce.MaxCategoryDepth)
 	if err != nil {
 		return nil, err
 	}

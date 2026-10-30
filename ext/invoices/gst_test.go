@@ -190,6 +190,49 @@ func TestAnIntraStateInvoiceSplitsEighteenPercent(t *testing.T) {
 	}
 }
 
+// A store sets HSN once per category (D169): a variant without its own takes
+// the nearest category up the tree that has one, and a variant's own still wins.
+func TestAProductWithoutHSNTakesItsCategorys(t *testing.T) {
+	ctx := context.Background()
+	app := gstStore(t, gocommerce.Config{}, gstModule(""), "Odisha", supplierGSTIN)
+	taxRate(t, app, gocommerce.TaxRateInput{Name: "GST 3%", RateBP: 300, Country: "IN"})
+
+	jewellery, err := app.Categories().Create(ctx, gocommerce.CategoryInput{Title: "Jewellery", HSNCode: "7113"})
+	if err != nil {
+		t.Fatalf("category: %v", err)
+	}
+	// No code of its own, so a ring filed here climbs to Jewellery's.
+	rings, err := app.Categories().Create(ctx, gocommerce.CategoryInput{Title: "Rings", ParentID: &jewellery.ID})
+	if err != nil {
+		t.Fatalf("subcategory: %v", err)
+	}
+	file := func(p *gocommerce.Product, c *gocommerce.Category) {
+		t.Helper()
+		if _, err := app.Products().UpdateProduct(ctx, p.ID, gocommerce.ProductPatch{
+			CategoryID: gocommerce.NullableID{Present: true, Value: &c.ID}}); err != nil {
+			t.Fatalf("file under %s: %v", c.Title, err)
+		}
+	}
+	ring := gctest.CreateProduct(t, app, "RING", 10000, 10)
+	file(ring, rings)
+	pendant := hsnProduct(t, app, "PENDANT", 10000, "711719")
+	file(pendant, jewellery)
+
+	order := buyAndPay(t, app, purchase{Address: odisha, Lines: []*gocommerce.Product{ring, pendant}})
+	doc := taxDocOf(t, app, order.ID)
+
+	got := map[string]string{}
+	for _, l := range doc.Lines {
+		got[l.SKU] = l.HSN
+	}
+	if got["RING"] != "7113" || got["PENDANT"] != "711719" {
+		t.Errorf("HSN by SKU = %v, want RING from its category's parent (7113) and PENDANT its own (711719)", got)
+	}
+	if len(doc.Warnings) != 0 {
+		t.Errorf("warnings = %+v, want none", doc.Warnings)
+	}
+}
+
 func TestAnInterStateInvoiceChargesIGST(t *testing.T) {
 	app := gstStore(t, gocommerce.Config{}, gstModule(""), "Odisha", supplierGSTIN)
 	taxRate(t, app, gocommerce.TaxRateInput{Name: "GST 18%", RateBP: 1800, Country: "IN"})
