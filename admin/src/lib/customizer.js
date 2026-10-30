@@ -1,5 +1,5 @@
 /**
- * The arithmetic behind a product's Customizer card (D162): where the print
+ * The arithmetic behind a product's Customizer card (D165): where the print
  * area sits on the mockup, how big the print file comes out, and the body the
  * engine is sent. Everything here is in the mockup's own pixels, as the
  * engine stores it; the card scales only what it draws.

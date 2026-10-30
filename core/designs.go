@@ -132,7 +132,7 @@ func (c *Carts) AddDesignLine(ctx context.Context, tok string, variantID int64, 
 // context is bound to, and deletes them itself.
 func (a *App) MediaStore() MediaStore { return a.mediaStore }
 
-// M91 — a basket line made to a shopper's design (D162).
+// M92 — a basket line made to a shopper's design (D165).
 //
 // design_id is not a foreign key, for add_on_id's reason: the module owns the
 // design and core must not.
@@ -140,7 +140,7 @@ func (a *App) MediaStore() MediaStore { return a.mediaStore }
 // The order-line index is what lets the module ask whether an order holds a
 // design (to refuse a second order of it, and to keep its photos for as long
 // as the order exists) without reading every order line.
-const migration0091LineDesigns = `
+const migration0092LineDesigns = `
 ALTER TABLE cart_line_items
     ADD COLUMN design_id text,
     ADD COLUMN design_preview_url text;

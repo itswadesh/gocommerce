@@ -50,6 +50,7 @@
     import Select from "$lib/components/Select.svelte";
     import { countryOptions } from "$lib/countries.js";
     import ShipDialog from "$lib/components/ShipDialog.svelte";
+    import ShiprocketCard from "$lib/components/ShiprocketCard.svelte";
     import VariantPicker from "$lib/components/VariantPicker.svelte";
     import { titled } from "$lib/brand.svelte.js";
     import { copyText } from "$lib/clipboard.js";
@@ -815,7 +816,7 @@
      * what is left under the order's row lock rather than trusting a screen
      * that may be a minute old.
      */
-    async function ship({ tracking: number, carrier, provider, lines }) {
+    async function ship({ tracking: number, carrier, provider, lines, meta }) {
         await act("Shipped", () =>
             api.post("/api/admin/create-fulfillment", {
                 order_id: order.id,
@@ -825,6 +826,8 @@
                 // number, which is what it did before this field existed.
                 carrier,
                 ...(lines ? { lines } : {}),
+                // A carrier module's own options, such as Shiprocket's courier.
+                ...(meta ? { meta } : {}),
             }),
         );
         trackingOpen = false;
@@ -1570,6 +1573,12 @@
                                     {/each}
                                 </div>
                             </section>
+                        {/if}
+
+                        <!-- Only where the module is in this build: its routes are
+                             not there otherwise, and asking would be a 404 per view. -->
+                        {#if providerChoices.some((p) => p.value === "shiprocket")}
+                            <ShiprocketCard {order} onchanged={load} />
                         {/if}
 
                         <!-- No handler, no button: recording and withdrawing a

@@ -156,7 +156,7 @@ back to related products when the answer is empty.
 ## Lines made to a shopper's design
 
 A product the shop sets up in `ext/customizer` is bought made to the shopper's
-own design (D162, `docs/customizer.md`):
+own design (D165, `docs/customizer.md`):
 
 ```http
 POST /api/carts/<token>/line-items  {"variant_id": 97, "design_id": "…"}  → 200, the whole cart

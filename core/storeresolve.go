@@ -36,6 +36,9 @@ var storeExempt = []string{
 	// shopper's <img> at the engine's own host, naming no store, and no
 	// store's, like the sample photographs at /sample-media/.
 	"/x/layouts/starter/",
+	// A carrier's tracking callback (TrackingReceiver): the carrier names no
+	// store, and the provider binds one from what authenticates the call.
+	"/api/tracking-updates/",
 }
 
 func storeExemptPath(p string) bool {

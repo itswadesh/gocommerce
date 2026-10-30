@@ -542,7 +542,9 @@ environment:
 		}
 		if *withCarriers {
 			modules = append(modules,
-				shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
+				// The API address is the install owner's to set, never a store's
+				// (D162): a stand-in Shiprocket for a test drive, empty for the real one.
+				shiprocket.New(shiprocket.Config{BaseURL: os.Getenv("SHIPROCKET_BASE_URL")}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
 				indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
 				easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
 				onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),

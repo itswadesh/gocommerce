@@ -17,6 +17,7 @@
     import Drawer from "$lib/components/Drawer.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
     import MeilisearchStatus from "$lib/components/MeilisearchStatus.svelte";
+    import ShiprocketSetup from "$lib/components/ShiprocketSetup.svelte";
 
     let { plugin = null, onclose, onsaved } = $props();
 
@@ -65,6 +66,11 @@
         <form id="plugin-settings-form" onsubmit={(e) => (e.preventDefault(), saving || save())}>
             <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form />
         </form>
+        <!-- Under the fields it tests: the account typed above, tried before it
+             is saved, and the pickup location chosen from the account's own. -->
+        {#if plugin.key === "shipping-shiprocket"}
+            <ShiprocketSetup bind:form />
+        {/if}
         {#if (plugin.fields ?? []).some((f) => f.public && f.kind !== "secret")}
             <div class="field-help m-t-base">
                 Settings marked for the storefront are readable by anyone who visits it; a

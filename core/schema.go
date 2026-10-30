@@ -106,9 +106,23 @@ func coreMigrations() []Migration {
 		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
 		{ID: "0089_store_images", SQL: migration0089StoreImages},
 		{ID: "0090_store_contact_page", SQL: migration0090StoreContactPage},
-		{ID: "0091_line_designs", SQL: migration0091LineDesigns},
+		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
+		{ID: "0092_line_designs", SQL: migration0092LineDesigns},
 	}
 }
+
+// M91 — what a carrier last said about a parcel (Fulfillments.Track).
+//
+// Beside status rather than in it: status is the parcel's place in the
+// order's state machine, which counts what shipped and decides delivery, and
+// a parcel out for delivery or on its way back has shipped all the same.
+const migration0091FulfillmentTracking = `
+ALTER TABLE fulfillments
+    ADD COLUMN tracking_status text NOT NULL DEFAULT ''
+        CHECK (tracking_status IN ('', 'in_transit', 'out_for_delivery', 'delivery_failed',
+            'delivered', 'returning', 'returned', 'lost', 'cancelled')),
+    ADD COLUMN tracking_updated_at timestamptz;
+`
 
 // M90 — what a storefront's contact page shows (D156): whether the address
 // is public, a map location for when the address puts the pin in the wrong
