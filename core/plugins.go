@@ -77,7 +77,8 @@ type PluginField struct {
 	Help    string   `json:"help,omitempty"`
 	Options []string `json:"options,omitempty"`
 	// Public settings are handed to the storefront through GET /api/plugins.
-	// A secret is never public, whatever this says.
+	// A secret's value never is: a public secret reads there as true or
+	// false, whether it is set.
 	Public   bool `json:"public"`
 	Required bool `json:"required,omitempty"`
 	// Default is what an unset field reads as.
@@ -888,10 +889,19 @@ func (p *Plugins) Public(ctx context.Context) ([]PluginPublic, error) {
 		}
 		pub := PluginPublic{Key: pl.Key, Title: pl.Title, Settings: map[string]any{}}
 		for _, f := range pl.Fields {
-			if f.Public && f.Kind != "secret" {
-				if v, ok := pl.Settings[f.Key]; ok {
-					pub.Settings[f.Key] = v
-				}
+			if !f.Public {
+				continue
+			}
+			v, ok := pl.Settings[f.Key]
+			// A public secret is told as whether it is set, never as what
+			// it is: the storefront needs to know a closed store has a
+			// password to ask for (D168), and nothing more.
+			if f.Kind == "secret" {
+				pub.Settings[f.Key] = ok
+				continue
+			}
+			if ok {
+				pub.Settings[f.Key] = v
 			}
 		}
 		out = append(out, pub)

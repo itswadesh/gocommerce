@@ -583,6 +583,9 @@ func (a *App) mountStoreProfileRoutes() {
 	// could only greet a buyer with the engine's name, which they have never
 	// heard of.
 	a.HandleFunc("GET /api/store", a.handlePublicStore)
+	// A closed store's password (D168): a right one, or a pass still good,
+	// answers with the pass the storefront keeps.
+	a.HandleFunc("POST /api/store/password", a.handleStorePassword)
 }
 
 // publicStore is what anyone may read about the shop: what it is called and
