@@ -4,12 +4,14 @@
 #   .\scripts\seed-fashion.ps1 -BaseUrl http://127.0.0.1:8090 -Token dev-token
 #   .\scripts\seed-fashion.ps1 -BaseUrl https://store.example -Token <token> -Draft
 #
-# The catalogue is scripts\fashion-images\catalogue.json, so what a store gets is
-# reviewable as data rather than read out of code. It is priced in Indian rupees
-# and written for an Indian store: twelve products, three or four colours each,
-# every colour in every size, one variant per colour and size.
+# The catalogue is core\sample\catalogue.json, the one a new store's sample shop
+# is made from (D159), so what a store gets is reviewable as data rather than
+# read out of code. It is priced in Indian rupees and written for an Indian
+# store: eleven products, three or four colours each, every colour in every
+# size, one variant per colour and size.
 #
-# Photographs are not in the repository. They are free stock photographs
+# The full-size photographs are not in the repository; the engine carries
+# smaller copies for the sample shop. They are free stock photographs
 # (scripts\fashion-images\CREDITS.md) of each product in its first colour, which
 # scripts\fashion-images\fetch-photos.mjs downloads into the git-ignored
 # scripts\fashion-images\out\. The other colours are edits of those, saved
@@ -67,7 +69,7 @@ if ($BaseUrl) { $env:GC_BASE = $BaseUrl }
 if ($Token)   { $env:GC_TOKEN = $Token }
 . "$PSScriptRoot\gc.ps1"
 
-$catalogue = Get-Content (Join-Path $PSScriptRoot 'fashion-images\catalogue.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$catalogue = Get-Content (Join-Path $PSScriptRoot '..\core\sample\catalogue.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $mode = if ($Draft) { ' as hidden drafts' } else { '' }
 Write-Host "Seeding the fashion catalogue into $(Get-GCBase)$mode" -ForegroundColor Cyan
 
@@ -137,7 +139,7 @@ foreach ($c in $catalogue.collections) {
 Write-GCStep 'Products'
 
 # Found by tag rather than by reading the whole catalogue, which a store with
-# thousands of products would page through for twelve slugs.
+# thousands of products would page through for eleven slugs.
 $existing = @{}
 foreach ($p in (Invoke-GC GET "/api/admin/products?tag=$($catalogue.tag)&limit=200" -Admin)) { $existing[$p.slug] = $p }
 
@@ -197,6 +199,7 @@ foreach ($p in $catalogue.products) {
         )
         variants = $variants
     }
+    if ($p.badge) { $body.metadata.badge = $p.badge }
     if ($categoryIds.ContainsKey($p.category)) { $body.category_id = $categoryIds[$p.category] }
     try {
         $made = Invoke-GC POST '/api/admin/products' $body -Admin

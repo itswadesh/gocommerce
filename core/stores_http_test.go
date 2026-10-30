@@ -406,12 +406,12 @@ func TestANewStoreStartsWithTheSampleShopOnlyWhenAsked(t *testing.T) {
 			} `json:"sample_content"`
 		}
 		decodeData(t, rec, &with)
-		if with.SampleContent == nil || with.SampleContent.Added["products"] != 8 ||
+		if with.SampleContent == nil || with.SampleContent.Added["products"] != 11 ||
 			with.SampleContent.Added["orders"] != 12 || with.SampleContent.Error != "" {
-			t.Fatalf("%s: sample_content = %+v, want 8 products and 12 orders added", field, with.SampleContent)
+			t.Fatalf("%s: sample_content = %+v, want 11 products and 12 orders added", field, with.SampleContent)
 		}
-		if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 8 {
-			t.Fatalf("the new store holds %d samples, want 8", got)
+		if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 11 {
+			t.Fatalf("the new store holds %d samples, want 11", got)
 		}
 	}
 
@@ -432,16 +432,17 @@ func TestANewStoreStartsWithTheSampleShopOnlyWhenAsked(t *testing.T) {
 	}
 }
 
-// The sample table is written in major units, so a tee is 25 in every
-// currency: 2500 minor units in dollars, 25 in yen, which has no decimals, and
-// 25000 in dinars, which have three.
+// The sample catalogue is priced in rupees, and a store in rupees gets those
+// prices. Any other currency gets the catalogue's dollar figure in its own
+// major units, so the anarkali kurta is 45 in yen, which has no decimals, and
+// 45000 minor units in dinars, which have three: never 349900 read as yen.
 func TestSamplePricesFollowTheNewStoresCurrency(t *testing.T) {
 	app := newTestApp(t)
 	tok := signInAs(t, app, "yen@example.com", RoleStaff)
 	for _, tc := range []struct {
 		currency string
 		want     int64
-	}{{"JPY", 25}, {"KWD", 25000}} {
+	}{{"INR", 349900}, {"JPY", 45}, {"KWD", 45000}} {
 		rec := doBody(t, app, http.MethodPost, "/api/stores/create",
 			`{"name":"Shop `+tc.currency+`","currency":"`+tc.currency+`","sample_products":true}`, bearer(tok))
 		if rec.Code != http.StatusCreated {
@@ -451,12 +452,12 @@ func TestSamplePricesFollowTheNewStoresCurrency(t *testing.T) {
 			Store Store `json:"store"`
 		}
 		decodeData(t, rec, &out)
-		tee, err := app.Products().GetProductBySlug(WithStore(context.Background(), out.Store.ID), "cotton-crew-tee")
+		kurta, err := app.Products().GetProductBySlug(WithStore(context.Background(), out.Store.ID), "printed-anarkali-kurta")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := tee.Variants[0].Price; got != (Money{AmountMinor: tc.want, Currency: tc.currency}) {
-			t.Errorf("%s tee = %+v, want %d %s", tc.currency, got, tc.want, tc.currency)
+		if got := kurta.Variants[0].Price; got != (Money{AmountMinor: tc.want, Currency: tc.currency}) {
+			t.Errorf("%s kurta = %+v, want %d %s", tc.currency, got, tc.want, tc.currency)
 		}
 	}
 }

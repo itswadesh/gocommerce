@@ -63,15 +63,15 @@ func TestASamplePhotoTheMerchantUsesStaysTheirs(t *testing.T) {
 		t.Fatal(err)
 	}
 	own := simpleProduct(t, app, "OWN-1", 1500, 3)
-	var teePhoto int64
+	var kurtaPhoto int64
 	if err := app.DB().QueryRowContext(ctx,
-		`SELECT id FROM media WHERE url LIKE '%/cotton-crew-tee-white.webp'`).Scan(&teePhoto); err != nil {
+		`SELECT id FROM media WHERE url LIKE '%/printed-anarkali-kurta-rose-front.webp'`).Scan(&kurtaPhoto); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.media.SetProductMedia(ctx, own.ID, []int64{teePhoto}); err != nil {
+	if err := app.media.SetProductMedia(ctx, own.ID, []int64{kurtaPhoto}); err != nil {
 		t.Fatal(err)
 	}
-	linked, err := app.media.AddURL(ctx, samplePhotoPrefix+"cotton-crew-tee-black.webp", MediaImage, "ours")
+	linked, err := app.media.AddURL(ctx, SampleMediaPrefix+"printed-anarkali-kurta-indigo-front.webp", MediaImage, "ours")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,8 +92,8 @@ func TestASamplePhotoTheMerchantUsesStaysTheirs(t *testing.T) {
 		kept = append(kept, id)
 	}
 	rows.Close()
-	if len(kept) != 2 || kept[0] != teePhoto || kept[1] != linked.ID {
-		t.Fatalf("media left = %v, want the photo on their product (%d) and the one they linked (%d)", kept, teePhoto, linked.ID)
+	if len(kept) != 2 || kept[0] != kurtaPhoto || kept[1] != linked.ID {
+		t.Fatalf("media left = %v, want the photo on their product (%d) and the one they linked (%d)", kept, kurtaPhoto, linked.ID)
 	}
 	counts, err := app.SampleShopCounts(ctx)
 	if err != nil {
@@ -133,11 +133,11 @@ func TestErasingTheSampleShopIsAuditedAndHandsOverWhatItKeeps(t *testing.T) {
 		t.Fatal(err)
 	}
 	own := simpleProduct(t, app, "OWN-1", 1500, 3)
-	var apparel int64
-	if err := app.DB().QueryRowContext(ctx, `SELECT id FROM categories WHERE slug = 'apparel'`).Scan(&apparel); err != nil {
+	var dresses int64
+	if err := app.DB().QueryRowContext(ctx, `SELECT id FROM categories WHERE slug = 'women-dresses'`).Scan(&dresses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.Products().UpdateProduct(ctx, own.ID, ProductPatch{CategoryID: SetID(apparel)}); err != nil {
+	if _, err := app.Products().UpdateProduct(ctx, own.ID, ProductPatch{CategoryID: SetID(dresses)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.EraseSampleShop(ctx); err != nil {
@@ -151,9 +151,10 @@ func TestErasingTheSampleShopIsAuditedAndHandsOverWhatItKeeps(t *testing.T) {
 	if audited != 12 {
 		t.Fatalf("audited sample order erases = %d, want 12", audited)
 	}
-	var sample bool
-	if err := app.DB().QueryRowContext(ctx, `SELECT sample FROM categories WHERE id = $1`, apparel).Scan(&sample); err != nil || sample {
-		t.Fatalf("the kept category is still a sample (%v), want it the merchant's", err)
+	var kept int
+	if err := app.DB().QueryRowContext(ctx,
+		`SELECT count(*) FROM categories WHERE slug IN ('women', 'women-dresses') AND NOT sample`).Scan(&kept); err != nil || kept != 2 {
+		t.Fatalf("kept categories handed over = %d (%v), want the one in use and its parent, both the merchant's", kept, err)
 	}
 	counts, err := app.SampleShopCounts(ctx)
 	if err != nil {
@@ -176,8 +177,8 @@ func TestTheSampleProductsRoutesStillAnswer(t *testing.T) {
 		Count int `json:"count"`
 	}
 	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-products", withAdmin), &count)
-	if count.Count != 8 {
-		t.Fatalf("count = %d, want 8", count.Count)
+	if count.Count != 11 {
+		t.Fatalf("count = %d, want 11", count.Count)
 	}
 	rec := do(t, app, http.MethodDelete, "/api/admin/sample-products", withAdmin)
 	if rec.Code != http.StatusOK {
@@ -187,8 +188,8 @@ func TestTheSampleProductsRoutesStillAnswer(t *testing.T) {
 		Deleted int `json:"deleted"`
 	}
 	decodeData(t, rec, &erased)
-	if erased.Deleted != 8 {
-		t.Fatalf("deleted = %d, want 8", erased.Deleted)
+	if erased.Deleted != 11 {
+		t.Fatalf("deleted = %d, want 11", erased.Deleted)
 	}
 	counts, err := app.SampleShopCounts(context.Background())
 	if err != nil || counts.total() != 0 {

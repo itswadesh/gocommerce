@@ -254,7 +254,7 @@
                     <label for="store_samples">Start with a sample shop</label>
                 </div>
                 <div class="link-hint" id="store_samples_hint">
-                    <small>Eight products with photos, with categories, discounts and a month of orders around them, plus reviews, pages and menu links where the store has those. Nobody is emailed. Erase it all from Products before you open.</small>
+                    <small>A small fashion shop: eleven garments, from kurtas to a lehenga, each with photos in every colour, with categories, discounts and a month of orders around them, plus reviews, pages and menu links where the store has those. Nobody is emailed. Erase it all from Products before you open.</small>
                 </div>
             </div>
             <div class="col-12">

@@ -1209,8 +1209,8 @@
         {#if sampleTotal > 0}
             <div class="alert info m-b-sm sample-banner" transition:rise>
                 <p>
-                    This store has a sample shop: {describeSamples(sampleCounts)}. Erase it before you open, so
-                    shoppers see only what is yours.
+                    This store has a sample fashion shop: {describeSamples(sampleCounts)}. Its reviews and orders
+                    are made up, so erase it before you open and shoppers see only what is yours.
                 </p>
                 {#if sampleWritable}
                     <button
@@ -1483,7 +1483,7 @@
                                                 onclick={addSamples}
                                             >
                                                 <i class="ri-store-2-line" aria-hidden="true"></i>
-                                                <span class="txt">Add a sample shop</span>
+                                                <span class="txt">Add a sample fashion shop</span>
                                             </button>
                                         {/if}
                                     </EmptyState>

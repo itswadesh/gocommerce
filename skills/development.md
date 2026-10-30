@@ -93,9 +93,10 @@ try), a single-variant mug, a gift card with `track_inventory` off, and a draft
 product. It matches on slug and skips what already exists.
 
 **`.\scripts\seed-fashion.ps1`** — a sample fashion catalogue priced in
-rupees: twelve dresses, ethnic sets and menswear, each in three or four colours
+rupees: eleven dresses, ethnic sets and menswear, each in three or four colours
 and every size, with a few sizes sold out or running low. The products are in
-[`scripts/fashion-images/catalogue.json`](../scripts/fashion-images/catalogue.json).
+[`core/sample/catalogue.json`](../core/sample/catalogue.json), the catalogue a
+new store's sample shop is made from (D159).
 Each colour has one to three photographs of a model, and that colour's variants
 nominate them, so a storefront's gallery changes when a shopper picks a colour.
 The photographs are not in the repository. They are free Unsplash and Pexels
@@ -103,8 +104,10 @@ stock ([credits](../scripts/fashion-images/CREDITS.md)) of each product in its
 first colour: `node fetch-photos.mjs` in that folder (after `npm install`)
 downloads them into the git-ignored `scripts/fashion-images/out/`. The other
 colours are image edits of those, saved beside them; `recolour.json` lists
-each file to make with its prompt. A colour without its files gets no pictures,
-and a later run attaches them. Pass `-SetCurrency` to switch a store that sells
+each file to make with its prompt. `node build-sample.mjs` there shrinks the
+whole set into `core/sample/2/`, the sample shop's photographs, which are
+committed and built into the engine. A colour without its files gets no
+pictures, and a later run attaches them. Pass `-SetCurrency` to switch a store that sells
 in another currency to INR, which works only before its first order. Without
 `-Draft` it is for dev and demo stores only: the struck-through MRPs and low
 stock are made up. With `-Draft` it can go into a live store unseen: products

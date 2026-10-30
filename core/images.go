@@ -82,11 +82,12 @@ func (a *App) imageCacheDir() string {
 	return filepath.Join(os.TempDir(), "gocommerce-images")
 }
 
-// imageSource is a picture the store shows: a file in its own uploads, or an
-// address it was added by.
+// imageSource is a picture the store shows: a file in its own uploads, a
+// sample shop's in the binary, or an address it was added by.
 type imageSource struct {
-	file string // a path on disk, for an upload
-	url  string // what the store recorded
+	file     string // a path on disk, for an upload
+	embedded string // a path in samplePhotos, for a sample shop's picture
+	url      string // what the store recorded
 }
 
 func (a *App) handleImage(w http.ResponseWriter, r *http.Request) {
@@ -153,6 +154,12 @@ func imageWidth(options string) int {
 // path and query, whatever its host — the storefront's URL has dropped it.
 // Only the store's own pictures are candidates; nil means none matched.
 func (a *App) findImageSource(ctx context.Context, wantPath, wantQuery string) (*imageSource, error) {
+	// The sample shop's pictures (D96, D159) are the engine's own public
+	// files, not an address anybody chose, so they need no allow-list; and a
+	// banner's lives in the module's table, which the lookup below cannot see.
+	if set, ok := strings.CutPrefix(wantPath, "/sample-media/"); ok && wantQuery == "" {
+		return &imageSource{embedded: "sample/" + set, url: wantPath}, nil
+	}
 	like := "%" + likeEscape(path.Base(wantPath)) + "%"
 	// ponytail: a LIKE scan of this store's media rows on every cache miss,
 	// fine at a library's size; an index on the url's path if one grows huge.
@@ -282,6 +289,13 @@ var errImageTooLarge = &APIError{Status: http.StatusUnprocessableEntity, Code: "
 // one is fetched through the outbound client, so an address inside the
 // server's own network is refused unless the install allows it (D109).
 func (a *App) readImageSource(ctx context.Context, src *imageSource) ([]byte, error) {
+	if src.embedded != "" {
+		body, err := samplePhotos.ReadFile(src.embedded)
+		if err != nil {
+			return nil, NotFoundf("no such picture")
+		}
+		return body, nil
+	}
 	var r io.Reader
 	if src.file != "" {
 		f, err := os.Open(src.file)

@@ -2,13 +2,15 @@ package gocommerce
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 )
 
-// Sample products (D94): a new store may start with a small catalogue to look
-// at, marked so it can be erased in one go without touching anything else.
+// Sample products (D94, D159): a new store may start with a small catalogue to
+// look at, marked so it can be erased in one go without touching anything
+// else.
 
 func sampleCount(t *testing.T, app *App, ctx context.Context) int {
 	t.Helper()
@@ -23,10 +25,10 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
 	price, stock := int64(4000), 2
-	// The merchant already sells a tote under the sample's address: theirs
+	// The merchant already sells a saree under the sample's address: theirs
 	// stays, and the sample is skipped rather than refused.
 	if _, err := app.Products().CreateProduct(ctx, ProductInput{
-		Slug: "canvas-tote-bag", Title: "Our own tote", Status: ProductActive,
+		Slug: "satin-saree", Title: "Our own saree", Status: ProductActive,
 		PriceMinor: &price, Stock: &stock,
 	}); err != nil {
 		t.Fatal(err)
@@ -36,33 +38,49 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add samples: %v", err)
 	}
-	if added != 7 {
-		t.Fatalf("added = %d, want 7 (eight, less the tote the store already has)", added)
+	if added != 10 {
+		t.Fatalf("added = %d, want 10 (eleven, less the saree the store already has)", added)
 	}
-	if got := sampleCount(t, app, ctx); got != 7 {
-		t.Fatalf("count = %d, want 7", got)
+	if got := sampleCount(t, app, ctx); got != 10 {
+		t.Fatalf("count = %d, want 10", got)
 	}
 
-	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tee.Sample || tee.Status != ProductActive || len(tee.Variants) != 6 {
-		t.Fatalf("tee = sample %v, status %q, %d variants; want a sample, active, 6 variants",
-			tee.Sample, tee.Status, len(tee.Variants))
+	if !kurta.Sample || kurta.Status != ProductActive || len(kurta.Variants) != 15 {
+		t.Fatalf("kurta = sample %v, status %q, %d variants; want a sample, active, 3 colours by 5 sizes",
+			kurta.Sample, kurta.Status, len(kurta.Variants))
 	}
-	first := tee.Variants[0]
-	if first.SKU != "COTTON-CREW-TEE-S-BLACK" || first.Price != (Money{AmountMinor: 2500, Currency: "USD"}) || first.StockOnHand != 12 {
-		t.Fatalf("first tee variant = %s at %+v with %d on hand, want COTTON-CREW-TEE-S-BLACK at 2500 USD with 12",
-			first.SKU, first.Price, first.StockOnHand)
+	if kurta.Metadata[MetaBadge] != "Angrakha wrap" || len(kurta.Metadata[MetaHighlights].([]any)) != 4 {
+		t.Fatalf("kurta metadata = %v, want its badge and four highlights", kurta.Metadata)
+	}
+	byOptions := map[string]Variant{}
+	for _, v := range kurta.Variants {
+		byOptions[strings.Join(v.Options, "/")] = v
+	}
+	first := byOptions["Rose/XS"]
+	if first.SKU != "PRINTED-ANARKALI-KURTA-ROSE-XS" || first.Price != (Money{AmountMinor: 4500, Currency: "USD"}) ||
+		first.CompareAtPrice == nil || first.CompareAtPrice.AmountMinor != 5500 || first.StockOnHand != 6 {
+		t.Fatalf("rose XS = %s at %+v (was %+v) with %d on hand, want PRINTED-ANARKALI-KURTA-ROSE-XS at 45.00 USD, was 55.00, with 6",
+			first.SKU, first.Price, first.CompareAtPrice, first.StockOnHand)
+	}
+	if soldOut, low := byOptions["Mustard/XL"].StockOnHand, byOptions["Indigo/XS"].StockOnHand; soldOut != 0 || low != 2 {
+		t.Fatalf("mustard XL has %d and indigo XS %d, want the catalogue's sold-out size at 0 and its low one at 2", soldOut, low)
 	}
 
-	own, err := app.Products().GetProductBySlug(ctx, "canvas-tote-bag")
+	own, err := app.Products().GetProductBySlug(ctx, "satin-saree")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if own.Sample || own.Title != "Our own tote" {
-		t.Fatalf("the merchant's tote = sample %v, %q; want it untouched", own.Sample, own.Title)
+	if own.Sample || own.Title != "Our own saree" {
+		t.Fatalf("the merchant's saree = sample %v, %q; want it untouched", own.Sample, own.Title)
+	}
+	// The shirt's photographs show another company's logo, so it is not in
+	// the catalogue at all.
+	if _, err := app.Products().GetProductBySlug(ctx, "mens-cotton-shirt"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("the cotton shirt = %v, want no such product", err)
 	}
 
 	var variants, onHand int
@@ -73,21 +91,60 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 		WHERE p.sample`).Scan(&variants, &onHand); err != nil {
 		t.Fatal(err)
 	}
-	if variants != 16 || onHand != 221 {
-		t.Fatalf("samples hold %d variants with %d on hand, want 16 with 221", variants, onHand)
+	if variants != 160 || onHand != 1657 {
+		t.Fatalf("samples hold %d variants with %d on hand, want 160 with 1657", variants, onHand)
 	}
 	// Stock to sell means a shopper can put one in a basket.
 	cart := newCart(t, app)
 	if got := addToCart(t, app, cart.Token, first.ID, 2); len(got.Lines) != 1 || got.Lines[0].Quantity != 2 {
-		t.Fatalf("basket = %+v, want one line of 2 tees", got.Lines)
+		t.Fatalf("basket = %+v, want one line of 2 kurtas", got.Lines)
 	}
 
 	again, err := app.Products().AddSampleProducts(ctx)
 	if err != nil {
 		t.Fatalf("add samples again: %v", err)
 	}
-	if again != 0 || sampleCount(t, app, ctx) != 7 {
-		t.Fatalf("a second add made %d, count %d; want 0 and still 7", again, sampleCount(t, app, ctx))
+	if again != 0 || sampleCount(t, app, ctx) != 10 {
+		t.Fatalf("a second add made %d, count %d; want 0 and still 10", again, sampleCount(t, app, ctx))
+	}
+}
+
+// The catalogue is priced in rupees. A store selling in rupees gets those
+// prices; any other currency gets the dollar figure in its own units, never
+// a rupee number read as dollars or yen.
+func TestSampleProductsArePricedInTheStoresCurrency(t *testing.T) {
+	for _, tc := range []struct {
+		currency       string
+		price, compare int64
+	}{
+		{"INR", 349900, 429900},
+		{"USD", 4500, 5500},
+		{"JPY", 45, 55},
+		{"KWD", 45000, 55000},
+	} {
+		t.Run(tc.currency, func(t *testing.T) {
+			app := newTestApp(t)
+			ctx := withStoreCurrency(context.Background(), tc.currency)
+			if _, err := app.Products().AddSampleProducts(ctx); err != nil {
+				t.Fatal(err)
+			}
+			kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
+			if err != nil {
+				t.Fatal(err)
+			}
+			v := kurta.Variants[0]
+			if v.Price != (Money{AmountMinor: tc.price, Currency: tc.currency}) || v.CompareAtPrice == nil || v.CompareAtPrice.AmountMinor != tc.compare {
+				t.Fatalf("kurta = %+v, was %+v; want %d %s, was %d", v.Price, v.CompareAtPrice, tc.price, tc.currency, tc.compare)
+			}
+			// A garment the catalogue does not mark down has no compare-at price.
+			yoke, err := app.Products().GetProductBySlug(ctx, "printed-yoke-kurta")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if yoke.Variants[0].CompareAtPrice != nil {
+				t.Fatalf("yoke kurta compare-at = %+v, want none", yoke.Variants[0].CompareAtPrice)
+			}
+		})
 	}
 }
 
@@ -100,12 +157,12 @@ func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
 	own := simpleProduct(t, app, "OWN-1", 1500, 3)
 	// An edited sample is still a sample: the flag is the engine's, not a
 	// field the merchant's edit can clear.
-	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	renamed := "Our first tee"
-	if _, err := app.Products().UpdateProduct(ctx, tee.ID, ProductPatch{Title: &renamed}); err != nil {
+	renamed := "Our first kurta"
+	if _, err := app.Products().UpdateProduct(ctx, kurta.ID, ProductPatch{Title: &renamed}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,22 +170,22 @@ func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erase samples: %v", err)
 	}
-	if deleted != 8 || sampleCount(t, app, ctx) != 0 {
-		t.Fatalf("erased %d, %d left; want 8 and none", deleted, sampleCount(t, app, ctx))
+	if deleted != 11 || sampleCount(t, app, ctx) != 0 {
+		t.Fatalf("erased %d, %d left; want 11 and none", deleted, sampleCount(t, app, ctx))
 	}
 	if got, err := app.Products().GetProduct(ctx, own.ID); err != nil || got.Title != "Test OWN-1" {
 		t.Fatalf("the merchant's product after the erase = %v, %v; want it kept", got, err)
 	}
-	if got := len(outboxEvents(t, app, EventProductDeleted)); got != 8 {
-		t.Errorf("product.deleted events = %d, want one per sample, 8", got)
+	if got := len(outboxEvents(t, app, EventProductDeleted)); got != 11 {
+		t.Errorf("product.deleted events = %d, want one per sample, 11", got)
 	}
 	var audited int
 	if err := app.DB().QueryRowContext(ctx,
 		`SELECT count(*) FROM admin_audit WHERE action = $1`, AuditProductDelete).Scan(&audited); err != nil {
 		t.Fatal(err)
 	}
-	if audited != 8 {
-		t.Errorf("audited deletes = %d, want 8", audited)
+	if audited != 11 {
+		t.Errorf("audited deletes = %d, want 11", audited)
 	}
 
 	again, err := app.Products().DeleteSampleProducts(ctx)
@@ -137,9 +194,9 @@ func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
 	}
 }
 
-// Every sample has a photograph, and a colour shows its own: the black tee
-// nominates the black picture and the white tee the white one, which is what
-// lets a storefront swap the gallery as a shopper picks a colour.
+// Every colour has its own photographs, and each of its variants shows them
+// and no other colour's: which is what lets a storefront swap the gallery as a
+// shopper picks a colour. Every picture is the engine's own, in the binary.
 func TestSampleProductsComeWithTheirPhotos(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
@@ -149,42 +206,71 @@ func TestSampleProductsComeWithTheirPhotos(t *testing.T) {
 
 	var bare int
 	if err := app.DB().QueryRowContext(ctx, `
-		SELECT count(*) FROM products p
-		WHERE p.sample AND NOT EXISTS (SELECT 1 FROM product_media pm WHERE pm.product_id = p.id)`).Scan(&bare); err != nil {
+		SELECT count(*) FROM variants v JOIN products p ON p.id = v.product_id
+		WHERE p.sample AND NOT EXISTS (SELECT 1 FROM variant_media vm WHERE vm.variant_id = v.id)`).Scan(&bare); err != nil {
 		t.Fatal(err)
 	}
 	if bare != 0 {
-		t.Fatalf("%d sample products have no picture, want none", bare)
+		t.Fatalf("%d sample variants show no picture, want none", bare)
 	}
 
-	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	jumpsuit, err := app.Products().GetProductBySlug(ctx, "paisley-print-jumpsuit")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range tee.Variants {
-		if len(v.Images) != 1 {
-			t.Fatalf("tee %v shows %d pictures, want its colour's one", v.Options, len(v.Images))
+	for _, v := range jumpsuit.Variants {
+		colour := strings.ToLower(v.Options[0])
+		var got []string
+		for _, img := range v.Images {
+			got = append(got, strings.TrimPrefix(img.URL, SampleMediaPrefix)+" | "+img.Alt)
 		}
-		colour := strings.ToLower(v.Options[1])
-		if !strings.HasSuffix(v.Images[0].URL, "/cotton-crew-tee-"+colour+".webp") || v.Images[0].Alt == "" {
-			t.Fatalf("tee %v shows %q (alt %q), want the %s tee's picture with alt text",
-				v.Options, v.Images[0].URL, v.Images[0].Alt, colour)
+		want := []string{
+			"paisley-print-jumpsuit-" + colour + "-front.webp | Paisley print jumpsuit in " + colour + ", front view",
+			"paisley-print-jumpsuit-" + colour + "-side.webp | Paisley print jumpsuit in " + colour + ", side view",
+			"paisley-print-jumpsuit-" + colour + "-back.webp | Paisley print jumpsuit in " + colour + ", back view",
+		}
+		if strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("jumpsuit %v shows\n%s\nwant\n%s", v.Options, strings.Join(got, "\n"), strings.Join(want, "\n"))
 		}
 	}
 
-	// The picture is the engine's own, served from the binary on every
-	// install, with or without somewhere to put uploads.
-	url := tee.Variants[0].Images[0].URL
-	if !strings.HasPrefix(url, "/sample-media/") {
-		t.Fatalf("picture url = %q, want one the engine serves under /sample-media/", url)
+	// Every one of them is served, from the binary, on every install.
+	var urls []string
+	rows, err := app.DB().QueryContext(ctx, `SELECT url FROM media WHERE sample ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
 	}
-	rec := do(t, app, http.MethodGet, url)
-	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/webp" ||
-		!strings.HasPrefix(rec.Body.String(), "RIFF") {
-		t.Fatalf("GET %s = %d %q, want 200 image/webp with the picture", url, rec.Code, rec.Header().Get("Content-Type"))
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			t.Fatal(err)
+		}
+		urls = append(urls, u)
 	}
-	if rec := do(t, app, http.MethodGet, "/sample-media/1/../sample_products.go"); rec.Code == http.StatusOK {
-		t.Fatalf("a path outside the pictures was served")
+	rows.Close()
+	if len(urls) != 83 {
+		t.Fatalf("sample pictures = %d, want 83: every colour's shots of eleven products", len(urls))
+	}
+	for _, url := range urls {
+		rec := do(t, app, http.MethodGet, url)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/webp" ||
+			!strings.HasPrefix(rec.Body.String(), "RIFF") {
+			t.Fatalf("GET %s = %d %q, want 200 image/webp with the picture", url, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+	// D96's pictures are still served, for the stores whose sample shops and
+	// products still link them.
+	if rec := do(t, app, http.MethodGet, "/sample-media/1/cotton-crew-tee-black.webp"); rec.Code != http.StatusOK {
+		t.Fatalf("a D96 picture = %d, want it still served", rec.Code)
+	}
+	for _, url := range []string{
+		"/sample-media/1/../sample_products.go",
+		"/sample-media/3/printed-anarkali-kurta-rose-front.webp",
+		"/sample-media/2/..%2Fcatalogue.json",
+	} {
+		if rec := do(t, app, http.MethodGet, url); rec.Code == http.StatusOK {
+			t.Fatalf("GET %s = 200, want nothing served", url)
+		}
 	}
 
 	// Erasing the samples takes their pictures out of the media library too.
