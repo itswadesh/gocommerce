@@ -118,6 +118,15 @@ func checkMapping(s *Slot, t *Template, vars []Variable) error {
 	if len(t.QuickReplies) < len(s.Buttons) {
 		return gocommerce.Validationf("%s needs %d quick-reply buttons, %s first", s.Label, len(s.Buttons), strings.Join(s.Buttons, " then "))
 	}
+	// The payloads go by position, so the labels must say the same thing in
+	// the same order: a template whose first button reads Cancel would cancel
+	// orders on a tap meant to confirm them.
+	for i, meaning := range s.Buttons {
+		if !strings.Contains(strings.ToLower(t.QuickReplies[i]), meaning) {
+			return gocommerce.Validationf("%s's button %d reads %q; it must say %q, the buttons in the order %s",
+				t.Name, i+1, t.QuickReplies[i], meaning, strings.Join(s.Buttons, " then "))
+		}
+	}
 	got := map[string]string{}
 	for _, v := range vars {
 		got[v.Name] = v.Key

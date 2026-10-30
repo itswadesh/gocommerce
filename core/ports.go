@@ -403,6 +403,15 @@ func (a *App) RegisterNotifyTemplate(t NotifyTemplate) {
 	}
 }
 
+// Carries is whether a backend that delivers would take this message: on a
+// channel with a scoped backend, such as WhatsApp's, that is a question about
+// the one message (its recipient's consent, a template for its event) rather
+// than about the channel. A caller that would rather skip than send into a
+// log asks first.
+func (a *App) Carries(ctx context.Context, n Notification) bool {
+	return a.notifier.carries(ctx, n)
+}
+
 // Notify delivers one notification on one channel, to every backend registered
 // for it, and is how a module tells a shopper something the engine will not
 // tell them itself.
@@ -422,15 +431,6 @@ func (a *App) RegisterNotifyTemplate(t NotifyTemplate) {
 // It refuses an unknown channel and an empty recipient rather than reporting a
 // delivery that did not happen: `send` over a channel nobody registered finds
 // no backends and returns nil, which reads as success.
-// Carries is whether a backend that delivers would take this message: on a
-// channel with a scoped backend, such as WhatsApp's, that is a question about
-// the one message (its recipient's consent, a template for its event) rather
-// than about the channel. A caller that would rather skip than send into a
-// log asks first.
-func (a *App) Carries(ctx context.Context, n Notification) bool {
-	return a.notifier.carries(ctx, n)
-}
-
 func (a *App) Notify(ctx context.Context, n Notification) error {
 	n, err := a.addressed(ctx, n)
 	if err != nil {

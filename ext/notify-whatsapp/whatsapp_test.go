@@ -673,3 +673,51 @@ func TestRoutesAreDocumentedAndGated(t *testing.T) {
 	gctest.AssertSpecCoversModuleRoutes(t, app, "notify-whatsapp")
 	gctest.AssertAdminRoutesDeclareRights(t, app, "notify-whatsapp")
 }
+
+// The public opt-in only adds: it cannot silence somebody's updates, nor undo
+// the STOP they sent from their own phone.
+func TestTheOptInCannotWithdrawOrUndoAStop(t *testing.T) {
+	h := newHarness(t)
+	h.connect(nil)
+	h.mustMap("order_confirmation", "order_placed", "customer_first_name", "order_number", "order_total")
+	ctx := context.Background()
+	h.consent(h.cart("OPT-1"), shopperPhone, true, false)
+	h.consent(h.cart("OPT-2"), shopperPhone, false, false)
+	if !h.mod.consented(ctx, shopperPhone, false) {
+		t.Fatal("an unticked box withdrew order updates")
+	}
+	h.webhook(textFrom("STOP"), true)
+	h.consent(h.cart("OPT-3"), shopperPhone, true, true)
+	if h.mod.consented(ctx, shopperPhone, false) || h.mod.consented(ctx, shopperPhone, true) {
+		t.Fatal("the web form undid a STOP")
+	}
+}
+
+// A STOP that lands while a message waits in the queue stops it.
+func TestConsentIsCheckedAgainAtSending(t *testing.T) {
+	h := newHarness(t)
+	h.connect(nil)
+	h.mustMap("order_confirmation", "order_placed", "customer_first_name", "order_number", "order_total")
+	tok := h.cart("LATE-1")
+	h.consent(tok, shopperPhone, true, false)
+	h.checkout(tok, gocommerce.CodeCOD, shopperPhone)
+	gctest.DrainOutbox(t, h.app) // queued, not yet sent
+	h.app.DB().Exec(`UPDATE whatsapp_contacts SET opted_out_at = now()`)
+	if _, err := h.mod.DeliverPass(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(h.graph.sent()); n != 0 {
+		t.Fatalf("%d sent after STOP", n)
+	}
+}
+
+func TestCashButtonsMustReadConfirmThenCancel(t *testing.T) {
+	h := newHarness(t)
+	h.graph.templates = append(h.graph.templates,
+		tpl("cod_backwards", "UTILITY", "APPROVED", "Order {{1}}?", "Cancel it", "Confirm it"))
+	h.connect(nil)
+	rec := h.mapSlot("cod_confirmation", "cod_backwards", "order_number")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "confirm") {
+		t.Fatalf("backwards buttons: %d %s", rec.Code, rec.Body)
+	}
+}
