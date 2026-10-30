@@ -74,6 +74,13 @@
        recipient. Its docs list no others that an NDR answer applies to. */
     const NDR_CODES = [21, 77];
 
+    /* Shiprocket cancels a shipment only before it is out for pickup, so the
+       button shows only while its status is one of the steps before that —
+       or it has said nothing yet. Once the parcel moves, Cancel would only be
+       refused. */
+    const BEFORE_PICKUP = [0, 1, 2, 3, 4, 5, 11, 13, 15, 20, 27, 52];
+    const cancellable = (row) => BEFORE_PICKUP.includes(row.status_code ?? 0);
+
     async function refresh(row) {
         await act(row, "track", "track", "Tracking refreshed");
         onchanged?.();
@@ -187,15 +194,17 @@
                                         <span class="txt">Request pickup</span>
                                     </button>
                                 {/if}
-                                <button
-                                    type="button"
-                                    class="btn sm transparent danger m-l-auto"
-                                    class:loading={working === `${row.id}:cancel`}
-                                    disabled={!!working}
-                                    onclick={() => askCancel(row)}
-                                >
-                                    <span class="txt">Cancel</span>
-                                </button>
+                                {#if cancellable(row)}
+                                    <button
+                                        type="button"
+                                        class="btn sm transparent danger m-l-auto"
+                                        class:loading={working === `${row.id}:cancel`}
+                                        disabled={!!working}
+                                        onclick={() => askCancel(row)}
+                                    >
+                                        <span class="txt">Cancel</span>
+                                    </button>
+                                {/if}
                             </div>
                         {:else if mayFulfill && !row.awb}
                             <div class="sr-actions">
