@@ -1104,6 +1104,27 @@ func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
 	}
 }
 
+func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	decodeWait = 200 * time.Millisecond
+	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	h.mod.decodes <- struct{}{}
+	defer func() { <-h.mod.decodes }()
+	turnAway := func(n int) {
+		t.Helper()
+		for range n {
+			if rec := h.uploadRaw("", "file", jpegRedTop(40, 30)); rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("an upload with no turn = %d, want 503", rec.Code)
+			}
+		}
+	}
+	warned := regexp.MustCompile(`level=WARN msg="customizer: uploads turned away while the decoder was busy" uploads=(\d+)`)
+	turnAway(3)
+	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 1 || got[0][1] != "1" {
+		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for the first", got)
+	}
+}
+
 func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	spool := t.TempDir()
