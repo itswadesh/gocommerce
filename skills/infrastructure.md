@@ -328,7 +328,7 @@ check warns while it is on. The guarded client ignores `HTTP_PROXY` and
 The install's own addresses (`MEILI_HOST`, `IMPORT_AMAZON_LLM_URL`, the
 browser import-amazon drives) are the server owner's and use ordinary clients.
 
-**Limits per address count the shopper behind a listed proxy** (D163). Sign-in,
+**Limits per address count the shopper behind a listed proxy** (D168). Sign-in,
 sign-up, password reset, invitations, order lookup and the modules' public
 forms count by `r.RemoteAddr`. `-trusted-proxies` / `GOCOMMERCE_TRUSTED_PROXIES`
 (CIDR ranges or addresses, comma-separated; a bad entry stops the engine at
