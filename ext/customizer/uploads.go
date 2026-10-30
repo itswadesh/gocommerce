@@ -50,7 +50,11 @@ const (
 )
 
 var (
-	uploadDeadline = 15 * time.Second
+	// uploadIdle is how long a body may go without a byte, and uploadWithin
+	// how long it may take in all: the largest file arrives within it at
+	// 0.7 Mbit/s.
+	uploadIdle   = 15 * time.Second
+	uploadWithin = 3 * time.Minute
 	// decodeWait is how long an upload may wait for its turn: eight waiting
 	// ahead of it at the second or two a large photo takes, and then some.
 	decodeWait = 30 * time.Second
@@ -93,6 +97,8 @@ var (
 		Message: "send a JPEG or a PNG; the editor converts other photos before uploading them"}
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
+	errTooSlow = &gocommerce.APIError{Status: http.StatusBadRequest, Code: "upload_too_slow",
+		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
 		Message: "too many photos are being uploaded right now; try again in a few seconds"}
 )
@@ -105,15 +111,17 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !m.allow(w, r, m.uploads, "uploads") {
 		return
 	}
-	// receive reads the body to its end under the deadline. The deadline
-	// comes off once the body is in, as a read timing out later cancels the
-	// request waiting to be decoded, and stays on a body that failed, which
-	// the server drains before answering.
+	// The read deadline moves on while the body arrives. It comes off once
+	// the body is in, as a read timing out later cancels the request waiting
+	// to be decoded, and stays on a body that failed, which the server drains
+	// before answering.
 	rc := http.NewResponseController(w)
-	if err := rc.SetReadDeadline(time.Now().Add(uploadDeadline)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+	body := &arriving{ReadCloser: r.Body, rc: rc, by: time.Now().Add(uploadWithin)}
+	if err := body.extend(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "time the upload"))
 		return
 	}
+	r.Body = body
 	file, err := receive(w, r)
 	// The server's WriteTimeout runs from when the request arrived, so the
 	// answer gets a deadline of its own once the body is in. The upload is
@@ -149,6 +157,31 @@ func busy(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": errBusy})
 }
 
+// arriving is a request body whose read deadline moves on with each read
+// that brings bytes, to uploadIdle past the last of them and never past by:
+// a slow connection gets its file in, and one that has stopped is let go.
+type arriving struct {
+	io.ReadCloser
+	rc *http.ResponseController
+	by time.Time
+}
+
+func (a *arriving) Read(p []byte) (int, error) {
+	n, err := a.ReadCloser.Read(p)
+	if n > 0 {
+		_ = a.extend()
+	}
+	return n, err
+}
+
+func (a *arriving) extend() error {
+	next := time.Now().Add(uploadIdle)
+	if next.After(a.by) {
+		next = a.by
+	}
+	return a.rc.SetReadDeadline(next)
+}
+
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1<<20)
 	mr, err := r.MultipartReader()
@@ -161,7 +194,7 @@ func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
 			return nil, gocommerce.Validationf("send the photo in a field called file")
 		}
 		if err != nil {
-			return nil, tooBigOr(err, gocommerce.Validationf("the upload could not be read"))
+			return nil, unreadable(err)
 		}
 		if part.FormName() != "file" {
 			part.Close()
@@ -173,7 +206,7 @@ func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
 		}
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
 			discard(f)
-			return nil, tooBigOr(err, gocommerce.Validationf("the upload could not be read"))
+			return nil, unreadable(err)
 		}
 		return f, nil
 	}
@@ -191,7 +224,7 @@ func spool(part *multipart.Part) (*os.File, error) {
 		if err == nil {
 			return nil, errTooBig
 		}
-		return nil, tooBigOr(err, gocommerce.Validationf("the upload could not be read"))
+		return nil, unreadable(err)
 	}
 	return f, nil
 }
@@ -201,12 +234,15 @@ func discard(f *os.File) {
 	_ = os.Remove(f.Name())
 }
 
-func tooBigOr(err error, otherwise error) error {
+func unreadable(err error) error {
 	var maxErr *http.MaxBytesError
-	if errors.As(err, &maxErr) {
+	switch {
+	case errors.As(err, &maxErr):
 		return errTooBig
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return errTooSlow
 	}
-	return otherwise
+	return gocommerce.Validationf("the upload could not be read")
 }
 
 func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {

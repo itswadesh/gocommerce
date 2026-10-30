@@ -750,8 +750,8 @@ func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
 
 func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	uploadDeadline = 500 * time.Millisecond
-	t.Cleanup(func() { uploadDeadline = 15 * time.Second })
+	uploadIdle = 500 * time.Millisecond
+	t.Cleanup(func() { uploadIdle = 15 * time.Second })
 	srv := h.server(0, 0)
 	body, contentType := form("file", jpegRedTop(400, 300))
 
@@ -789,6 +789,53 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("stalled upload %d = %d, want 400", i, resp.StatusCode)
 		}
+	}
+}
+
+// A body that keeps coming is read however slowly it comes, up to
+// uploadWithin; one that stops for uploadIdle, or takes longer in all, is
+// let go with an answer the shopper can act on.
+func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	uploadIdle, uploadWithin = 500*time.Millisecond, 3*time.Second
+	t.Cleanup(func() { uploadIdle, uploadWithin = 15*time.Second, 3*time.Minute })
+	srv := h.server(0, 0)
+	body, contentType := form("file", append(jpegRedTop(64, 64), make([]byte, 600<<10)...))
+	send := func(chunk int) (int, string) {
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+			contentType, len(body))
+		go func() {
+			for rest := body; len(rest) > 0; rest = rest[min(chunk, len(rest)):] {
+				if _, err := c.Write(rest[:min(chunk, len(rest))]); err != nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+		_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		answer, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(answer)
+	}
+
+	start := time.Now()
+	if code, answer := send(16 << 10); code != http.StatusCreated {
+		t.Errorf("600 KB at 320 KB/s, 2 s in all, never 0.5 s without a byte = %d %s after %v; want 201",
+			code, answer, time.Since(start).Round(100*time.Millisecond))
+	}
+	start = time.Now()
+	if code, answer := send(64); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") {
+		t.Errorf("1.3 KB/s for ever = %d %s after %v; want 400 at 3 s, too long to arrive",
+			code, answer, time.Since(start).Round(100*time.Millisecond))
 	}
 }
 
