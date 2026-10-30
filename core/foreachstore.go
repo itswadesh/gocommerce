@@ -16,6 +16,21 @@ func (a *App) ForEachStore(ctx context.Context, fn func(ctx context.Context) err
 	if err != nil {
 		return err
 	}
+	return a.eachStore(ctx, stores, fn)
+}
+
+// ForEveryStore is ForEachStore over suspended stores as well, for upkeep a
+// store owes whether or not it is serving, such as deleting what it keeps
+// only for a while.
+func (a *App) ForEveryStore(ctx context.Context, fn func(ctx context.Context) error) error {
+	stores, err := a.stores.list(ctx, "")
+	if err != nil {
+		return err
+	}
+	return a.eachStore(ctx, stores, fn)
+}
+
+func (a *App) eachStore(ctx context.Context, stores []Store, fn func(ctx context.Context) error) error {
 	var errs []error
 	for _, s := range stores {
 		if ctx.Err() != nil {

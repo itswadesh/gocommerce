@@ -29,6 +29,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"meilisearch": true,
 		// Other
 		"import-shopify": true, "ai-gateway": true, "header-scripts": true,
+		"customizer": true,
 	}
 	builtIn := map[string]string{
 		"banners":          "/dash/themes/banners",

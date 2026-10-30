@@ -679,11 +679,22 @@ func coercePluginValue(f PluginField, v any) (any, error) {
 // Enabled is whether a plugin is switched on — what a module asks before it
 // does anything. An unknown key is off.
 func (p *Plugins) Enabled(ctx context.Context, key string) (bool, error) {
+	return p.enabled(ctx, p.app.db, key)
+}
+
+// EnabledTx is Enabled read through tx, for a module that decides inside a
+// transaction: a second connection taken from the pool while tx holds one
+// can wait on the very pool tx fills.
+func (p *Plugins) EnabledTx(ctx context.Context, tx *sql.Tx, key string) (bool, error) {
+	return p.enabled(ctx, tx, key)
+}
+
+func (p *Plugins) enabled(ctx context.Context, q rowQuerier, key string) (bool, error) {
 	def, ok := p.def(key)
 	if !ok {
 		return false, nil
 	}
-	r, err := p.row(ctx, p.app.db, key)
+	r, err := p.row(ctx, q, key)
 	if err != nil {
 		return false, err
 	}
