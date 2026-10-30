@@ -15,15 +15,18 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,17 +35,37 @@ import (
 )
 
 type harness struct {
-	t   *testing.T
-	app *gocommerce.App
-	mod *Module
-	ctx context.Context
+	t    *testing.T
+	app  *gocommerce.App
+	mod  *Module
+	ctx  context.Context
+	logs *logLines
+}
+
+// logLines is the engine's log.
+type logLines struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *logLines) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logLines) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func newHarness(t *testing.T, cfg Config) *harness {
 	t.Helper()
 	mod := New(cfg)
-	app := gctest.NewWithConfig(t, gocommerce.Config{MediaDir: t.TempDir()}, mod)
-	h := &harness{t: t, app: app, mod: mod, ctx: context.Background()}
+	logs := &logLines{}
+	app := gctest.NewWithConfig(t, gocommerce.Config{MediaDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(logs, nil))}, mod)
+	h := &harness{t: t, app: app, mod: mod, ctx: context.Background(), logs: logs}
 	h.switchOn(h.ctx)
 	return h
 }
@@ -1078,6 +1101,40 @@ func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
 	}
 	if got := post(); got != http.StatusTooManyRequests {
 		t.Errorf("a second decoded upload in the hour = %d, want 429", got)
+	}
+}
+
+func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	srv := h.server(0, 0)
+	body, contentType := form("file", jpegRedTop(40, 30))
+	h.mod.decodes <- struct{}{}
+	defer func() { <-h.mod.decodes }()
+	c, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		contentType, len(body))
+	_, _ = c.Write(body)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if files, _ := os.ReadDir(spool); len(files) == 1 {
+			break
+		}
+	}
+	_ = c.Close()
+
+	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	var got []string
+	for deadline := time.Now().Add(5 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		got = answered.FindStringSubmatch(h.logs.String())
+	}
+	if got == nil || got[1] != "499" || strings.Contains(h.logs.String(), "level=ERROR") {
+		t.Errorf("a shopper who hung up while their upload waited: logged %q, errors logged %v; want 499 and none",
+			got, strings.Contains(h.logs.String(), "level=ERROR"))
 	}
 }
 
