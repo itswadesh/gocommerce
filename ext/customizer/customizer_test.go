@@ -1182,6 +1182,31 @@ func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
 	}
 }
 
+func TestAnUploadThatFailsAfterItsShopperLeftKeepsItsCause(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	srv := h.server(0, 0)
+	truncated := scanBomb(16384, 2441, 99, nil, nil)
+	body, contentType := form("file", truncated[:len(truncated)-2])
+	c, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		contentType, len(body))
+	_, _ = c.Write(body)
+	time.Sleep(300 * time.Millisecond)
+	_ = c.Close()
+
+	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	var got []string
+	for deadline := time.Now().Add(10 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		got = answered.FindStringSubmatch(h.logs.String())
+	}
+	if got == nil || got[1] != "415" {
+		t.Errorf("a JPEG without its end, its shopper gone while it was decoded: logged %q; want 415, what was wrong with it", got)
+	}
+}
+
 func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	srv := h.server(0, time.Second)
