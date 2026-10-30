@@ -1,0 +1,1 @@
+import{f as i,b as c}from"./qnxnmuPX.js";function f(t){const r=t-1;return r*r*r+1}function n(){return typeof matchMedia=="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches}function o(t,{y:r=6,duration:u=180,delay:e=0}={}){return n()?i(t,{duration:150,delay:e}):c(t,{y:r,duration:u,delay:e,easing:f})}function s(){return n()?0:200}export{f as c,s as f,o as r};
