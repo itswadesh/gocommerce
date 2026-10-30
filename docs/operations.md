@@ -428,6 +428,11 @@ domestic service. An install that embeds the engine can pass an account in
 install that hosts stores for other people leaves it empty: every one of those
 stores would otherwise book on, and see the pickup addresses of, that account.
 
+`SHIPROCKET_BASE_URL` points the `gocommerce` binary's Shiprocket at another
+address for every store — a stand-in for trying the panel without an account.
+Empty is Shiprocket's own API. It is the install's setting and not a store's,
+because a store's saved password is sent wherever it points.
+
 ### Several brands
 
 One install — one database, one deployment — can answer under several names,
