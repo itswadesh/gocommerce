@@ -200,6 +200,13 @@ export const NAV = [
         children: [
             { href: "/dash/notifications/email", label: "Setup Email", right: "notifications.read", keywords: "sendgrid provider templates" },
             { href: "/dash/notifications/sms", label: "Setup SMS", right: "notifications.read", keywords: "msg91 provider templates" },
+            {
+                href: "/dash/notifications/whatsapp",
+                label: "Setup WhatsApp",
+                right: "notifications.read",
+                module: "notify-whatsapp",
+                keywords: "whatsapp meta cloud api templates cod confirmation opt-in",
+            },
             // The owner's own alerts rather than the shoppers' messages, but
             // found where somebody looks for "what the store sends".
             {
