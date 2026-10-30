@@ -955,6 +955,35 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	}
 }
 
+func TestAnUploadIsLetGoOnlyOnceItFallsBehindEightKBASecond(t *testing.T) {
+	start := time.Unix(0, 0)
+	for _, s := range []struct {
+		name         string
+		size, burst  int64
+		every, stall time.Duration
+		taken        bool
+	}{
+		{"a 10 MB print at 2 Mbit/s", 10 << 20, 32 << 10, 128 * time.Millisecond, 0, true},
+		{"1 MB at 9 KB/s in 32 KB bursts", 1 << 20, 32 << 10, 3556 * time.Millisecond, 0, true},
+		{"1 MB at 10 KB/s in 64 KB bursts", 1 << 20, 64 << 10, 6400 * time.Millisecond, 0, true},
+		{"1 MB at 40 KB/s after 13 s without a byte", 1 << 20, 4 << 10, 100 * time.Millisecond, 13 * time.Second, true},
+		{"1 MB at 6 KB/s", 1 << 20, 4 << 10, 680 * time.Millisecond, 0, false},
+		{"a byte every 14 s", 1 << 20, 1, 14 * time.Second, 0, false},
+	} {
+		n, deadline, at := int64(0), readDeadline(start, start, 0), start.Add(s.stall)
+		for n < s.size {
+			if at = at.Add(s.every); at.After(deadline) {
+				break
+			}
+			n += s.burst
+			deadline = readDeadline(start, at, n)
+		}
+		if taken := n >= s.size; taken != s.taken {
+			t.Errorf("%s: taken %v, want %v (%d bytes in by %v)", s.name, taken, s.taken, n, deadline.Sub(start))
+		}
+	}
+}
+
 func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	uploadIdle, uploadWithin = 500*time.Millisecond, 3*time.Second

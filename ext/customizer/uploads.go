@@ -189,9 +189,13 @@ func (a *arriving) Read(p []byte) (int, error) {
 }
 
 func (a *arriving) extend() error {
-	idle := time.Since(a.start) + uploadIdle
-	belowRate := max(uploadIdle, time.Duration(a.n)*time.Second/minUploadBytesPerSecond)
-	return a.rc.SetReadDeadline(a.start.Add(min(idle, belowRate, uploadWithin)))
+	return a.rc.SetReadDeadline(readDeadline(a.start, time.Now(), a.n))
+}
+
+func readDeadline(start, now time.Time, n int64) time.Time {
+	idle := now.Sub(start) + uploadIdle
+	belowRate := max(uploadIdle, time.Duration(n)*time.Second/minUploadBytesPerSecond)
+	return start.Add(min(idle, belowRate, uploadWithin))
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
