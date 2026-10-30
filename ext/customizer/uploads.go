@@ -19,7 +19,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +49,7 @@ const (
 	// pngWriterState is what png.Encode's compress/flate writer holds
 	// whatever the picture: 1.1 MB in Go 1.27.
 	pngWriterState = 1200 << 10
+	spoolPrefix    = "customizer-upload-"
 )
 
 var (
@@ -214,7 +217,7 @@ func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
 
 func spool(part *multipart.Part) (*os.File, error) {
 	defer part.Close()
-	f, err := os.CreateTemp("", "customizer-upload-*")
+	f, err := os.CreateTemp("", spoolPrefix+"*")
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "hold the upload")
 	}
@@ -227,6 +230,23 @@ func spool(part *multipart.Part) (*os.File, error) {
 		return nil, unreadable(err)
 	}
 	return f, nil
+}
+
+// sweepSpool removes the files of uploads an engine was reading when it
+// stopped, as one killed for its memory leaves them in the temporary
+// directory. A live upload holds its file for five minutes at most, so one
+// untouched for an hour is nobody's, whichever engine on the host made it.
+func sweepSpool() (removed int) {
+	dir := os.TempDir()
+	files, _ := os.ReadDir(dir)
+	for _, f := range files {
+		info, err := f.Info()
+		if err == nil && strings.HasPrefix(f.Name(), spoolPrefix) && time.Since(info.ModTime()) > time.Hour &&
+			os.Remove(filepath.Join(dir, f.Name())) == nil {
+			removed++
+		}
+	}
+	return removed
 }
 
 func discard(f *os.File) {

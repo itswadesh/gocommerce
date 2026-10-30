@@ -220,6 +220,14 @@ runs `-customizer` ([the customizer](customizer.md#uploads)):
 |---|---|
 | `GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR`, `GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR` | How many photos and designs one address may send in an hour, 30 each when unset. Raise them only where many real shoppers share one address, such as a mobile carrier's NAT; a proxy in front of the engine is listed in `GOCOMMERCE_TRUSTED_PROXIES` instead. Anything but a whole number above 0 stops the engine at start. |
 
+With `-customizer` the engine needs a writable temporary directory, the
+system's or the one `TMPDIR` names: each upload is written there while it
+arrives and is decoded, up to 15 MB, and nine may sit there at once beside
+those still arriving. On a read-only root filesystem, mount a tmpfs at `/tmp`
+or point `TMPDIR` at a writable volume. A file left by an engine stopped
+mid-upload is removed once it is an hour old, at the next start or the
+hourly sweep.
+
 Notifications › Setup Email has a **Send test email** button: it sends one
 message now and shows the provider's answer, such as an unverified sender.
 

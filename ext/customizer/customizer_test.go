@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -972,6 +973,45 @@ func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("an upload after a decode that panicked still waits for its turn after 5 s")
+	}
+}
+
+// An engine killed while it read uploads leaves their files in the temporary
+// directory; the next one removes those an hour old, and nothing else.
+func TestStartRemovesTheFilesAStoppedEngineLeft(t *testing.T) {
+	h := newHarness(t, Config{})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	left, live, other := filepath.Join(spool, "customizer-upload-1"), filepath.Join(spool, "customizer-upload-2"),
+		filepath.Join(spool, "someone-elses")
+	for _, f := range []string{left, live, other} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	for _, f := range []string{left, other} {
+		if err := os.Chtimes(f, twoHoursAgo, twoHoursAgo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(f string) bool {
+		_, err := os.Stat(f)
+		return err == nil
+	}
+
+	ctx, cancel := context.WithCancel(h.ctx)
+	defer cancel()
+	if err := h.mod.start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); exists(left) && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if exists(left) || !exists(live) || !exists(other) {
+		t.Errorf("after start: a left upload's file there %v, a live one's %v, another program's %v; want false, true, true",
+			exists(left), exists(live), exists(other))
 	}
 }
 
