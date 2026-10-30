@@ -38,6 +38,7 @@
     import { COUNTRIES } from "$lib/countries.js";
     import Drawer from "$lib/components/Drawer.svelte";
     import Select from "$lib/components/Select.svelte";
+    import HsnPicker from "$lib/components/HsnPicker.svelte";
 
     let {
         // The variant to edit, or null while the drawer is shut. It is the row
@@ -408,13 +409,7 @@
                 <div class="delimiter"></div>
                 <div class="field">
                     <label for="vd-hs-code">HS code</label>
-                    <input
-                        id="vd-hs-code"
-                        type="text"
-                        inputmode="numeric"
-                        placeholder="6109.10"
-                        bind:value={form.hs_code}
-                    />
+                    <HsnPicker id="vd-hs-code" bind:value={form.hs_code} />
                 </div>
             </div>
             <div class="field-help">
