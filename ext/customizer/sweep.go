@@ -17,12 +17,15 @@ var retention = fmt.Sprintf("%d days", RetentionDays)
 //
 // A design is kept while a basket holds it or an order line names it, and an
 // upload while any kept design names it. Order lines are where an ordered
-// design lives, not the checked-out basket, which is kept for ever: so a line
-// taken off an order, or an order deleted, lets its photos go after the same
-// wait. Each upload's row is deleted before its file,
-// in a transaction that skips rows a design being saved holds, and the file
-// goes after the commit: a crash between the two leaves a file with no row,
-// which is logged, never a design whose photo is gone.
+// design lives, not the checked-out basket, which is kept for ever. A line
+// an edit takes off an order lets its design go at the first sweep after
+// RetentionDays from when the design was made or last vouched for, which
+// for an older order is the next one. Orders are not otherwise deleted,
+// except a sample shop's and a deleted store's, whose rows all go with it.
+// Each upload's row is deleted before its file, in a transaction that skips
+// rows a design being saved holds, and the file goes after the commit: a
+// crash between the two leaves a file with no row, which is logged, never a
+// design whose photo is gone.
 //
 // Exported for the reason layouts' PublishDue is: a test, or an operator in a
 // hurry, need not wait out a tick.

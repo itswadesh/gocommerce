@@ -189,7 +189,13 @@ download with its size, the original photos and the words and fonts used.
   days after it was made or last added to a basket. A design on an order is
   kept, with its photos, preview and print file, for as long as the order
   line exists.
-- Deleting a store deletes its files with it.
+- An upload or a design of a suspended store is deleted the same way.
+- Deleting a store deletes its rows. On the engine's own disk (`-media-dir`)
+  the store's folder goes too, and with it every file of the module's. On
+  any other media store an embedder plugs in, the module's files are left
+  behind: a store's rows are gone before a module hears of its deletion, so
+  nothing names them any more, and they are removed by the storage's own
+  means, under the store's prefix.
 
 ## Not yet
 

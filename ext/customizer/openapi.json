@@ -25,7 +25,8 @@
           "413": {"description": "Over 15 MB.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "415": {"description": "Not a JPEG or a PNG.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "422": {"description": "Over 40 megapixels, or more than 256 MB to decode: a 16-bit PNG or a progressive JPEG that large; the message says how to save it instead.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
-          "429": {"$ref": "#/components/responses/RateLimited"}
+          "429": {"$ref": "#/components/responses/RateLimited"},
+          "501": {"description": "The install has no media storage to keep uploads in (`media_store_unconfigured`).", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
         }
       }
     },
@@ -33,7 +34,7 @@
       "post": {
         "tags": ["customizer"],
         "summary": "Save a design",
-        "description": "A finished design for one variant: its document, and the uploads of its preview (shown on the basket line and the order) and its print file (the design rendered at the print size). The document is checked against the product's setup: only its tools, fonts and stickers, every photo an upload of this store's, at most 50 layers and 64 KB. The print file must be the print size in pixels, a pixel either way. The design keeps the print size and print area it was made for, and the order line copies them. A design is never edited; a changed design is saved again. Add it to the basket with `POST /api/carts/{cartId}/line-items` and `design_id`. A design nobody ordered is deleted 30 days after a basket last held it. 30 designs an hour per address. 404 while the plugin is off or the product cannot be designed.",
+        "description": "A finished design for one variant: its document, and the uploads of its preview (shown on the basket line and the order) and its print file (the design rendered at the print size). The document is checked against the product's setup: only its tools, fonts and stickers, every photo an upload of this store's, at most 50 layers and 64 KB. The print file must be the print size in pixels, a pixel either way. The design keeps the print size and print area it was made for, and the order line copies them. A design is never edited; a changed design is saved again. Add it to the basket with `POST /api/carts/{cartId}/line-items` and `design_id`. A design that no open basket holds and no order line names is deleted 30 days after it was made or last vouched for, which adding it to a basket and checking it out both do. 30 designs an hour per address. 404 while the plugin is off or the product cannot be designed.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CustomizerDesignInput"}}}},
         "responses": {
           "201": {"description": "The saved design.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"design_id": {"type": "string"}, "preview_url": {"type": "string"}}}}}}}},
@@ -77,7 +78,7 @@
         "tags": ["customizer"],
         "summary": "Set a product's customizer up",
         "security": [{"adminToken": []}],
-        "description": "Replaces the setup. Tools, fonts, the resolution and the smallest photo left out take their defaults. The mockup, the overlay and the stickers must be pictures in the store's media library, JPEG or PNG, and their sizes are read from the files as a browser shows them, a JPEG turned by its EXIF orientation: the mockup's must match what is sent, and the overlay must be a PNG of the mockup's size. The print area lies inside the mockup with a corner radius of at most half its shorter side, and has the print size's shape within 2%. 1 to 1000 mm a side, 72 to 600 dpi, a print file of at most 6 megapixels (so its PNG fits an upload), at most 30 stickers. Switching it on needs the mockup, the print area, the print size and a tool. Needs customizer.write.",
+        "description": "Replaces the setup. Tools, fonts, the resolution and the smallest photo left out take their defaults. The mockup, the overlay and the stickers must be pictures in the store's media library, JPEG or PNG, and their sizes are read from the files as a browser shows them, a JPEG turned by its EXIF orientation: the mockup's must match what is sent, and the overlay must be a PNG of the mockup's size. The print area lies inside the mockup with a corner radius of at most half its shorter side, and has the print size's shape within 2%. Up to 1000 mm a side, 0 (unset) allowed while the customizer is off, 72 to 600 dpi, a print file of at most 6 megapixels (so its PNG fits an upload), at most 30 stickers. Switching it on needs the mockup, the print area, the print size and a tool. Needs customizer.write.",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CustomizerSetup"}}}},
         "responses": {
           "200": {"description": "The saved setup.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/CustomizerSetup"}}}}}},
