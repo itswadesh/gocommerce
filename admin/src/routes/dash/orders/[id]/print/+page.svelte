@@ -257,6 +257,12 @@
                                         : "Free"}
                                 </span>
                             </div>
+                            {#if order.payment_fee?.amount_minor}
+                                <div class="order-line">
+                                    <span class="txt-hint">Cash on delivery charge</span>
+                                    <span class="txt-money">{formatMoney(order.payment_fee)}</span>
+                                </div>
+                            {/if}
                             <div class="order-line slip-total">
                                 <span class="txt-bold">Total</span>
                                 <span class="txt-money txt-bold">{formatMoney(order.total)}</span>

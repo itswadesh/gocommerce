@@ -70,6 +70,9 @@ type Order struct {
 	// Empty means no rate was involved — a store still on the flat number.
 	ShippingMethod string `json:"shipping_method,omitempty"`
 	Discount       Money  `json:"discount"`
+	// PaymentFee is what the payment method added: the store's extra charge
+	// for cash on delivery. Part of Total, never of Subtotal.
+	PaymentFee Money `json:"payment_fee"`
 	// Tax is what was charged across every line. When TaxInclusive it is part
 	// of Subtotal rather than added to it, which is what that flag is for.
 	Tax          Money `json:"tax"`
@@ -170,12 +173,15 @@ type Fulfillment struct {
 	// CarrierName and TrackingURL are derived from Carrier and Tracking on the
 	// way out, never stored. A stored URL is a URL that goes stale the day the
 	// carrier changes its site.
-	CarrierName string    `json:"carrier_name,omitempty"`
-	TrackingURL string    `json:"tracking_url,omitempty"`
-	LabelURL    string    `json:"label_url,omitempty"`
-	Status      string    `json:"status"`
-	Metadata    Metadata  `json:"metadata"`
-	CreatedAt   time.Time `json:"created_at"`
+	CarrierName string `json:"carrier_name,omitempty"`
+	TrackingURL string `json:"tracking_url,omitempty"`
+	LabelURL    string `json:"label_url,omitempty"`
+	Status      string `json:"status"`
+	// TrackingStatus is the carrier's latest word on the parcel, one of the
+	// Tracking constants, when a carrier module reports one (Fulfillments.Track).
+	TrackingStatus string    `json:"tracking_status,omitempty"`
+	Metadata       Metadata  `json:"metadata"`
+	CreatedAt      time.Time `json:"created_at"`
 	// Lines is what went in this parcel. Empty on a shipment recorded before
 	// M22 that the backfill could not credit.
 	Lines []FulfillmentLine `json:"lines"`
@@ -350,12 +356,13 @@ const orderColumns = `o.id, o.number, o.status, o.payment_status, o.payment_prov
 	o.address, o.lang, o.metadata, o.shipping_method,
 	coalesce((SELECT ch.code FROM channels ch WHERE ch.id = o.channel_id), ''),
 	o.created_at, o.updated_at,
-	o.tax_exempt_group_id, o.tax_exempt_group_code, o.tax_exempt_group_name`
+	o.tax_exempt_group_id, o.tax_exempt_group_code, o.tax_exempt_group_name,
+	o.payment_fee_minor`
 
 func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) {
 	o := &Order{}
 	var addr, meta []byte
-	var subtotal, shipping, discount, tax, total, refunded int64
+	var subtotal, shipping, discount, tax, total, refunded, paymentFee int64
 	var exemptID sql.NullInt64
 	var exemptCode, exemptName sql.NullString
 	if err := row.Scan(&o.ID, &o.Number, &o.Status, &o.PaymentStatus, &o.PaymentProvider,
@@ -363,7 +370,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 		&tax, &o.TaxInclusive, &total, &refunded,
 		&o.Email, &o.Phone, &o.Name, &addr, &o.Language, &meta, &o.ShippingMethod,
 		&o.ChannelCode, &o.CreatedAt, &o.UpdatedAt,
-		&exemptID, &exemptCode, &exemptName); err != nil {
+		&exemptID, &exemptCode, &exemptName, &paymentFee); err != nil {
 		return nil, err
 	}
 	if exemptCode.Valid {
@@ -374,6 +381,7 @@ func (s *Orders) scanOrder(row interface{ Scan(...any) error }) (*Order, error) 
 	}
 	o.Subtotal = money(subtotal, o.Currency)
 	o.Shipping = money(shipping, o.Currency)
+	o.PaymentFee = money(paymentFee, o.Currency)
 	o.Discount = money(discount, o.Currency)
 	o.Tax = money(tax, o.Currency)
 	o.Total = money(total, o.Currency)
@@ -730,7 +738,7 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 	}
 
 	fRows, err := s.app.db.QueryContext(ctx, `
-		SELECT id, order_id, provider, tracking, carrier, label_url, status, metadata, created_at
+		SELECT id, order_id, provider, tracking, carrier, label_url, status, tracking_status, metadata, created_at
 		FROM fulfillments WHERE order_id = ANY($1::bigint[]) ORDER BY id`, int64Array(ids))
 	if err != nil {
 		return err
@@ -745,7 +753,7 @@ func (s *Orders) loadChildren(ctx context.Context, orders []*Order) error {
 		var orderID int64
 		var meta []byte
 		if err := fRows.Scan(&f.ID, &orderID, &f.Provider, &f.Tracking, &f.Carrier,
-			&f.LabelURL, &f.Status, &meta, &f.CreatedAt); err != nil {
+			&f.LabelURL, &f.Status, &f.TrackingStatus, &meta, &f.CreatedAt); err != nil {
 			return err
 		}
 		if err := scanMetadata(meta, &f.Metadata); err != nil {
@@ -959,7 +967,8 @@ func (s *Orders) MarkUndelivered(ctx context.Context, id int64) (*Order, error) 
 		// Only the ones this delivery moved. A fulfillment cancelled separately
 		// stays cancelled — it was not part of what is being undone.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE fulfillments SET status = 'shipped', updated_at = now()
+			`UPDATE fulfillments SET status = 'shipped', updated_at = now(),
+			     tracking_status = CASE WHEN tracking_status = 'delivered' THEN '' ELSE tracking_status END
 			 WHERE order_id = $1 AND status = 'delivered'`, o.ID); err != nil {
 			return transitionResult{}, err
 		}
@@ -1485,10 +1494,10 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 				"an order must keep at least one line; cancel order %s instead", o.Number)
 		}
 
-		var shipping, discount int64
+		var shipping, discount, paymentFee int64
 		if err := tx.QueryRowContext(ctx,
-			`SELECT shipping_minor, discount_minor FROM orders WHERE id = $1`,
-			o.ID).Scan(&shipping, &discount); err != nil {
+			`SELECT shipping_minor, discount_minor, payment_fee_minor FROM orders WHERE id = $1`,
+			o.ID).Scan(&shipping, &discount, &paymentFee); err != nil {
 			return transitionResult{}, err
 		}
 		// The discount follows the basket it came off (D27, amended by D39). A
@@ -1504,7 +1513,7 @@ func (s *Orders) EditLines(ctx context.Context, id int64, in OrderEdit) (*Order,
 		if err != nil {
 			return transitionResult{}, err
 		}
-		total := subtotal + shipping - discount
+		total := subtotal + shipping - discount + paymentFee
 		if total < 0 {
 			// A discount larger than what is left of the order. The floor is the
 			// database's own CHECK; saying so beats a constraint violation.
@@ -2041,6 +2050,9 @@ type OrderTimelineEntry struct {
 	Tracking      string       `json:"tracking,omitempty"`
 	Reason        string       `json:"reason,omitempty"`
 	Change        *OrderChange `json:"change,omitempty"`
+	// TrackingStatus is what a carrier reported, on order.shipment_updated;
+	// its own words for it are in Reason.
+	TrackingStatus string `json:"tracking_status,omitempty"`
 
 	// Which fields moved, from the audit row. Money keys are the same *_minor
 	// integers the API uses. An absent Before means the previous value was not
@@ -2191,6 +2203,10 @@ func (s *Orders) timeline(ctx context.Context, id int64, limit, offset int, newe
 			if json.Unmarshal(payload, &ev) == nil {
 				e.Status, e.PaymentStatus = ev.Status, ev.PaymentStatus
 				e.Tracking, e.Reason, e.Change = ev.Tracking, ev.Reason, ev.Change
+				if ev.Shipment != nil && ev.Shipment.TrackingStatus != "" {
+					e.TrackingStatus = ev.Shipment.TrackingStatus
+					e.Reason = firstNonEmpty(e.Reason, ev.Shipment.Detail)
+				}
 			}
 		}
 		out = append(out, e)

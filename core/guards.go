@@ -43,7 +43,9 @@ type CheckoutAttempt struct {
 	Shipping Money
 	Discount Money
 	Tax      Money
-	Total    Money
+	// PaymentFee is what the method adds: cash on delivery's extra charge.
+	PaymentFee Money
+	Total      Money
 	// ByOperator is true when the order is being placed through
 	// Orders.Create — an operator on a customer's behalf, or a module standing
 	// in for one — rather than by whoever holds the cart's token.

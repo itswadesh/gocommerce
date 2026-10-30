@@ -154,6 +154,9 @@ func (a *App) mountCheckoutRoutes() {
 	// documented webhook URL without mounting anything itself — and so the
 	// raw body reaches it untouched.
 	a.HandleFunc("POST /api/checkout/{code}/webhook", a.handlePaymentWebhook)
+	// A carrier's tracking callback, under a name its provider chose
+	// (TrackingReceiver), served before any store is known.
+	a.HandleFunc("POST /api/tracking-updates/{hook}", a.handleTrackingUpdate)
 }
 
 // handlePaymentMethods answers with the same list in two shapes, on purpose.
@@ -202,6 +205,22 @@ func (a *App) handlePaymentWebhook(w http.ResponseWriter, r *http.Request) {
 	// provider knows how big its own callbacks get.
 	receiver.Webhook().ServeHTTP(w, r)
 }
+
+func (a *App) handleTrackingUpdate(w http.ResponseWriter, r *http.Request) {
+	receiver, ok := a.fulfillment.hooks[r.PathValue("hook")]
+	if !ok {
+		RespondError(w, r, NotFoundf("no carrier sends tracking to %q", r.PathValue("hook")))
+		return
+	}
+	// Bound to no store a statement can match — not the host's, not an
+	// embedder's fallback — so a provider that forgets to bind the store its
+	// caller proved sees no rows rather than somebody else's.
+	receiver.Tracking().ServeHTTP(w, r.WithContext(WithStore(r.Context(), unboundCallback)))
+}
+
+// unboundCallback is the store a carrier callback starts bound to: never a
+// store id, which NewStoreID makes "store_" and a ULID.
+const unboundCallback = "tracking-callback"
 
 // ------------------------------------------------------------------ orders
 

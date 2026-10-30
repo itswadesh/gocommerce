@@ -18,6 +18,7 @@
     import { untrack } from "svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import Select from "$lib/components/Select.svelte";
+    import ShiprocketCouriers from "$lib/components/ShiprocketCouriers.svelte";
 
     let {
         open = false,
@@ -89,12 +90,24 @@
        the engine's own provider; anything else came from a module. */
     const manual = $derived(!provider || provider === "manual");
 
+    /* Shiprocket books the courier it is told to and fills in the waybill
+       itself, so its dialog asks which courier and not for a number. */
+    const shiprocket = $derived(provider === "shiprocket");
+    let courier = $state("");
+    let weight = $state("");
+    $effect(() => {
+        if (open) untrack(() => ((courier = ""), (weight = "")));
+    });
+
     function submit(event) {
         event?.preventDefault();
         onship?.({
             tracking: tracking.trim(),
             carrier,
             provider,
+            meta: shiprocket
+                ? { courier_id: courier, ...(Number(weight) > 0 ? { weight_kg: String(weight) } : {}) }
+                : null,
             /* Only when something is being held back. An untouched dialog sends
                the body this panel has always sent, which is the one the engine
                resolves under the row lock — so a colleague shipping a unit while
@@ -123,7 +136,10 @@
             </div>
         {/if}
         <div class="field-help m-b-sm">
-            {#if manual}
+            {#if shiprocket}
+                Shiprocket books the courier you pick, assigns the waybill, asks for the pickup and
+                prints the label. The tracking number fills itself in.
+            {:else if manual}
                 The manual provider records what you type — the parcel is booked wherever you
                 book parcels, and this is the store's note of it.
             {:else}
@@ -171,6 +187,9 @@
             </div>
         {/if}
 
+        {#if shiprocket && open}
+            <ShiprocketCouriers {order} bind:courier bind:weight />
+        {:else}
         <div class="field m-t-sm">
             <label for="tracking">Tracking number</label>
             <input
@@ -206,6 +225,7 @@
                 The carrier is worked out from the number.
             {/if}
         </div>
+        {/if}
     </form>
 
     {#snippet footer()}
@@ -217,9 +237,9 @@
             form="ship-form"
             class="btn expanded"
             class:loading={busy}
-            disabled={busy || units === 0}
+            disabled={busy || units === 0 || (shiprocket && !courier)}
         >
-            <span class="txt">{whole ? "Mark shipped" : `Ship ${units} of ${owed}`}</span>
+            <span class="txt">{shiprocket ? "Book with Shiprocket" : whole ? "Mark shipped" : `Ship ${units} of ${owed}`}</span>
         </button>
     {/snippet}
 </Drawer>

@@ -431,6 +431,56 @@ passes the browser's header on unchanged lets a shopper choose the address
 they are counted as. List proxies only: a listed address can claim to be
 anybody.
 
+### Shipping through Shiprocket
+
+Each store connects its own Shiprocket account; nothing about one store's
+account is used for another's. A store owner does this once:
+
+1. In Shiprocket, Settings › API › Add New API User. The email must differ
+   from the account's own login. Copy the password Shiprocket shows.
+2. In the panel, Settings › Shipping providers › Shiprocket › Configure: type
+   the API user's email and password, press **Test connection**, and choose
+   the pickup location from the ones the account lists. Save, then Activate.
+3. For tracking, press **Generate token** in the same drawer. In Shiprocket,
+   Settings › API › Webhooks: add the address it shows
+   (`https://<this server>/api/tracking-updates/courier-aggregator`), switch
+   it on, and paste the token as the security token. Shiprocket refuses an
+   address containing "shiprocket", "kartrocket", "sr" or "kr", which is why
+   the path is neutral and why the panel warns when this server's own host
+   name contains one; the token, not the address, says which store it is.
+   Without the webhook the store asks Shiprocket about every parcel on its
+   way every thirty minutes, so tracking is late rather than missing.
+
+From then on the ship dialog on an order offers Shiprocket with every courier
+that serves the order's pincode, its rate and Shiprocket's delivery estimate,
+and books the chosen one: the Shiprocket order, its waybill, the pickup and
+the label. The order's Shiprocket card has the label, manifest and invoice,
+asks for a pickup again when the first request failed, and cancels a booking
+until the parcel is out for pickup. It shows each parcel's journey as
+Shiprocket reports it, and a failed delivery's reason with Shiprocket's two
+answers: try again, or send it back. On the order, a parcel delivered is
+delivered (the order with its last parcel, which sends the delivered email),
+and in transit, out for delivery, a failed attempt, returning and returned
+are `order.shipment_updated` events for webhooks; a status Shiprocket's docs do
+not list is logged and kept as in transit. **Reverse pickup** on the card books
+a Shiprocket return order for items that went out, from the customer's address
+to the pickup location, with a waybill and tracking of its own; it changes
+nothing on the order, and what arrives is recorded with the order's Return.
+
+The password is sealed with the other secrets (see Secrets at rest) and never
+shown again; the login token Shiprocket gives for it is kept in memory only.
+A cash-on-delivery order goes out in one parcel, collecting the order's total;
+an order not in rupees or not to India is refused, since this is Shiprocket's
+domestic service. An install that embeds the engine can pass an account in
+`shiprocket.Config`, which every store without its own falls back to — so an
+install that hosts stores for other people leaves it empty: every one of those
+stores would otherwise book on, and see the pickup addresses of, that account.
+
+`SHIPROCKET_BASE_URL` points the `gocommerce` binary's Shiprocket at another
+address for every store — a stand-in for trying the panel without an account.
+Empty is Shiprocket's own API. It is the install's setting and not a store's,
+because a store's saved password is sent wherever it points.
+
 ### Several brands
 
 One install — one database, one deployment — can answer under several names,
