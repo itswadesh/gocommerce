@@ -714,7 +714,7 @@ func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 	}
 	// image/jpeg's findRST skips "\xff\xff\x00" in a scan where a restart is
 	// due, where the walk takes it for a marker.
-	refused("progressive, 99 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 99, nil, []byte{0xFF, 0xFF, 0x00}),
+	refused("progressive, 20 scans behind fill bytes and a zero at a restart, each reckoned the costliest", scanBomb(512, 512, 20, nil, []byte{0xFF, 0xFF, 0x00}),
 		http.StatusCreated)
 	refused("progressive, 100 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 100, nil, []byte{0xFF, 0xFF, 0x00}),
 		http.StatusUnprocessableEntity)
@@ -724,7 +724,9 @@ func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 	refused("progressive, a DC scan and 19 refining all 63 coefficients", refining(scanBomb(512, 512, 20, nil, nil), 1, 63), http.StatusCreated)
 	refused("progressive, a DC scan and 20 refining all 63 coefficients", refining(scanBomb(512, 512, 21, nil, nil), 1, 63),
 		http.StatusUnprocessableEntity)
-	refused("progressive, a DC scan and 98 refining 5 coefficients", refining(scanBomb(512, 512, 99, nil, nil), 1, 5), http.StatusCreated)
+	refused("progressive, a DC scan and 49 refining 5 coefficients", refining(scanBomb(512, 512, 50, nil, nil), 1, 5), http.StatusCreated)
+	refused("progressive, a DC scan and 50 refining 5 coefficients", refining(scanBomb(512, 512, 51, nil, nil), 1, 5),
+		http.StatusUnprocessableEntity)
 	refused("progressive, 25 scans refining all 63 coefficients behind fill bytes and a zero at a restart",
 		refining(scanBomb(512, 512, 26, nil, []byte{0xFF, 0xFF, 0x00}), 1, 63), http.StatusUnprocessableEntity)
 

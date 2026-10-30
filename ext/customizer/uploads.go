@@ -32,10 +32,10 @@ const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
 	maxUploadSide   = 16384
-	// maxScans is the most scans Skia, which decodes JPEGs for Chrome and
+	// maxPasses is the most scans Skia, which decodes JPEGs for Chrome and
 	// Android, reads (SkJpegDecoderMgr.cpp); libjpeg writes 6 to 18. The
 	// decoder passes over every block of the picture once a scan.
-	maxScans      = 99
+	maxPasses     = 99
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
@@ -374,7 +374,7 @@ func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, er
 	var f jpegHead
 	orientation := 1
 	if mime == "image/jpeg" {
-		if f, orientation = jpegHeader(body); f.scans > f.scanLimit() {
+		if f, orientation = jpegHeader(body); f.passes > f.passLimit() {
 			return "", bounds, errTooManyScans
 		}
 	}
@@ -452,7 +452,7 @@ func decodeCost(body []byte, mime string, cfg image.Config, f jpegHead, orientat
 		}
 		return int64(len(body)) + pngCost(body, w, h), advice
 	}
-	if f.scans == 0 || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
+	if f.passes == 0 || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
 		f = dearestFrame(cfg)
 	}
 	cost = int64(len(body)) + jpegCost(f)
@@ -531,27 +531,43 @@ type jpegHead struct {
 	progressive   bool
 	width, height int
 	components    []sampling
-	scans         int
+	passes        int
 }
 
 // A sequential JPEG has a scan for each component at most, as libjpeg's
 // encoder insists (jcmaster.c validate_script), and image/jpeg decodes each
 // of its scans whole.
-func (f jpegHead) scanLimit() int {
+func (f jpegHead) passLimit() int {
 	if f.progressive {
-		return maxScans
+		return maxPasses
 	}
 	return len(f.components)
+}
+
+// scanPasses is a scan's work for image/jpeg in first scans: its refine walks
+// every coefficient a refinement covers, in every block, even inside an
+// end-of-band run. Over all 63 that takes 4.3 first scans' time, and over n
+// about 1 + n/18.
+func scanPasses(progressive bool, sos []byte) int {
+	if !progressive || len(sos) == 0 || len(sos) < 4+2*int(sos[0]) {
+		return 1
+	}
+	n := int(sos[0])
+	from, to, refining := int(sos[1+2*n]), int(sos[2+2*n]), sos[3+2*n]>>4 != 0
+	if !refining || from == 0 || to < from {
+		return 1
+	}
+	return 1 + (to-from+18)/18
 }
 
 // jpegHeader walks a JPEG's markers the way image/jpeg's decoder does (Go
 // 1.27, reader.go decoder.decode): a byte before a marker that is not 0xFF, a
 // 0xFF fill byte, "\xff\x00" and a restart marker are skipped without a
 // length, and every other segment by its length. The data of a scan is such
-// bytes, so the walk goes on to the end, counting the scans. Where it stops
-// short of the end, every "ÿÚ" after counts as a scan too: in a scan
-// with restarts, the decoder's findRST (scan.go) skips bytes the walk takes
-// for a marker, and reads on.
+// bytes, so the walk goes on to the end, counting the scans' passes. Where it
+// stops short of the end, every "\xff\xda" after counts as the costliest scan:
+// in a scan with restarts, the decoder's findRST (scan.go) skips bytes the
+// walk takes for a marker, and reads on.
 func jpegHeader(b []byte) (f jpegHead, orientation int) {
 	orientation = 1
 	exif := false
@@ -560,7 +576,7 @@ func jpegHeader(b []byte) (f jpegHead, orientation int) {
 	}
 	at := 2
 	stop := func() (jpegHead, int) {
-		f.scans += bytes.Count(b[at:], []byte{jpegMarker, jpegScan})
+		f.passes += scanPasses(true, []byte{1, 0, 0, 1, 63, 0x10}) * bytes.Count(b[at:], []byte{jpegMarker, jpegScan})
 		return f, orientation
 	}
 	for i := 2; ; at = i {
@@ -615,9 +631,9 @@ func jpegHeader(b []byte) (f jpegHead, orientation int) {
 			if f.components == nil {
 				return stop()
 			}
-			f.scans++
+			f.passes += scanPasses(f.progressive, seg)
 		case marker == jpegApp1:
-			if !exif && f.scans == 0 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
+			if !exif && f.passes == 0 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
 				exif, orientation = true, tiffOrientation(seg[6:])
 			}
 		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
