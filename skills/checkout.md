@@ -143,6 +143,20 @@ product beats any rate on a category (D137), a category reaches everything
 beneath it and the deeper category wins, and within either a country beats a
 bare fallback and a state beats its country. Shipping is never taxed.
 
+**India's rates can be proposed from the catalogue's HSN codes (D175).**
+`GET /api/admin/gst-rates?hsn=6403` answers every entry of CBIC's goods rate
+schedule (9/2025-Integrated Tax (Rate) as amended, embedded as
+`core/hsn/gst-rates.tsv.gz`) whose code covers it, longest first, each with
+its rate, description, `conditional` flag and source. Shorter entries stay in
+the answer: chapter 64's "footwear up to Rs 2,500 a pair" at 5% still applies
+to a shoe under 6403's 18%. `GET /api/admin/gst-rates/catalog` lists each
+category with its own HSN code and each product whose variants carry another,
+with those matches. Both need taxes.read and write nothing; the taxes screen's
+"Fill from GST schedule" turns them into rules only for the rows an operator
+ticks, through the ordinary tax-rate routes. The rate is the whole GST rate;
+the invoice splits it into CGST and SGST/UTGST or charges it as IGST (D137).
+Exemptions, services and compensation cess are not in the schedule.
+
 **`metadata.gst` is the buyer's GST registration,** `{"gstin": "...", "name":
 "..."}`, for an Indian store's tax invoice (D137). Any checkout may send it, and
 `ext/b2b` writes it for a company whose tax id is a valid GSTIN. On a store
