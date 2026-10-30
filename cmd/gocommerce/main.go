@@ -39,11 +39,13 @@ import (
 	shipstation "github.com/itswadesh/gocommerce/ext/fulfill-shipstation"
 	usps "github.com/itswadesh/gocommerce/ext/fulfill-usps"
 	veeqo "github.com/itswadesh/gocommerce/ext/fulfill-veeqo"
+	googlereviews "github.com/itswadesh/gocommerce/ext/google-reviews"
 	"github.com/itswadesh/gocommerce/ext/identity"
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
+	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	"github.com/itswadesh/gocommerce/ext/navigation"
 	"github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -235,10 +237,12 @@ environment:
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withMetaCAPI = fs.Bool("meta-capi", false, "install the Meta Conversions API module idle: each store switches it on under Plugins with its access token, and its purchases reach Meta from the server as well as from the pixel")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
 		withMenus    = fs.Bool("menus", false, "install the navigation module: the storefront's menus, edited from the Menus screen")
 		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen; with -ai-gateway it also summarizes what shoppers praise and complain about in a product's reviews")
+		withGoogle   = fs.Bool("google-reviews", false, "install the google-reviews module idle: the store's Google rating and reviews on the storefront, Google Customer Reviews after checkout, and a product ratings feed of its own reviews for Merchant Center (the feed takes -reviews and -feeds), each switched on under Settings › Plugins")
 		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Contact messages screen)")
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
 		withRecovery = fs.Bool("recovery", false, "install the cart-recovery module: abandoned checkouts, a reminder sequence by email, and the recovery figures (STOREFRONT_URL, or the automation screen)")
@@ -456,8 +460,15 @@ environment:
 				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
 			}))
 		}
+		if *withMetaCAPI {
+			modules = append(modules, metacapi.New(metacapi.Config{}))
+		}
+		// Kept, with reviews below, for the Google product ratings feed, which
+		// names products as this feed does.
+		var productFeeds *feeds.Module
 		if *withFeeds {
-			modules = append(modules, feeds.New(feeds.Config{StorefrontURL: env("STOREFRONT_URL")}))
+			productFeeds = feeds.New(feeds.Config{StorefrontURL: env("STOREFRONT_URL")})
+			modules = append(modules, productFeeds)
 		}
 		if *withSitemaps {
 			modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: env("STOREFRONT_URL")}))
@@ -465,8 +476,13 @@ environment:
 		if *withMenus {
 			modules = append(modules, navigation.New(navigation.Config{}))
 		}
+		var productReviews *reviews.Module
 		if *withReviews {
-			modules = append(modules, reviews.New(reviews.Config{Gateway: gateway}))
+			productReviews = reviews.New(reviews.Config{Gateway: gateway})
+			modules = append(modules, productReviews)
+		}
+		if *withGoogle {
+			modules = append(modules, googlereviews.New(googlereviews.Config{Feeds: productFeeds, Reviews: productReviews}))
 		}
 		if *withContact {
 			modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))

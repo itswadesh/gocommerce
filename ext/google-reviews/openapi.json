@@ -1,0 +1,211 @@
+{
+  "paths": {
+    "/x/google-reviews/place": {
+      "get": {
+        "tags": [
+          "google-reviews"
+        ],
+        "summary": "The store's Google rating and recent Google reviews",
+        "description": "Read live from the Places API (New) on every request, because Google's terms allow storing a place's ID and nothing else of it; the answer carries Cache-Control: no-store. rating and user_rating_count are Google's own figures. reviews are the at most five Google sends, in its order (most relevant first), none left out; text is the reviewer's own words in their language, never Google's translation. Each review carries what Google's attribution policy asks a storefront to show: the author's name, profile link and photo, a link to the review on Google Maps and one to report it. Every link is https or absent. 404 while the plugin or its show_place switch is off, or the key or place ID is unset; 429 once the store's daily_lookups are used up for the day (UTC); 502 when Google refuses or fails, the reason logged on the server.",
+        "responses": {
+          "200": {
+            "description": "Google's answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "rating": {
+                          "type": "number",
+                          "description": "1.0 to 5.0; 0 when Google has no rating."
+                        },
+                        "user_rating_count": {
+                          "type": "integer"
+                        },
+                        "google_maps_uri": {
+                          "type": "string"
+                        },
+                        "reviews": {
+                          "type": "array",
+                          "maxItems": 5,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "author": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "uri": {
+                                    "type": "string"
+                                  },
+                                  "photo_uri": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "rating": {
+                                "type": "number"
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "language": {
+                                "type": "string"
+                              },
+                              "relative_time": {
+                                "type": "string",
+                                "description": "Google's own words for when, such as \"a month ago\"."
+                              },
+                              "publish_time": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "visit_date": {
+                                "type": "string",
+                                "description": "YYYY-MM, when Google has one."
+                              },
+                              "google_maps_uri": {
+                                "type": "string"
+                              },
+                              "flag_uri": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "description": "`google_unavailable`: Google refused the key or did not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/google-reviews/survey/{number}": {
+      "get": {
+        "tags": [
+          "google-reviews"
+        ],
+        "summary": "What Google Customer Reviews' survey opt-in is rendered with, for one order",
+        "description": "For the order confirmation page of the shopper holding the order's access token (the same token GET /api/orders/{number} takes). Every field comes from the order: merchant_id is the store's Merchant Center ID, order_id the order number, email the order's, delivery_country its shipping address's ISO 3166-1 alpha-2 country, and estimated_delivery_date (YYYY-MM-DD) the day it was placed (UTC) plus the store's delivery_days. opt_in_style is Google's name for where the offer appears, absent for Google's default. Cache-Control: no-store. 404 while the plugin or its customer_reviews switch is off, without a numeric merchant ID or a delivery estimate, for a wrong or missing token, for an order that is awaiting payment or cancelled, and for an order with no usable email or country: Google requires each, so a missing one means no survey rather than a guess.",
+        "parameters": [
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The opt-in's fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "merchant_id": {
+                          "type": "integer"
+                        },
+                        "order_id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "delivery_country": {
+                          "type": "string"
+                        },
+                        "estimated_delivery_date": {
+                          "type": "string",
+                          "format": "date"
+                        },
+                        "opt_in_style": {
+                          "type": "string",
+                          "enum": [
+                            "CENTER_DIALOG",
+                            "BOTTOM_RIGHT_DIALOG",
+                            "BOTTOM_LEFT_DIALOG",
+                            "TOP_RIGHT_DIALOG",
+                            "TOP_LEFT_DIALOG",
+                            "BOTTOM_TRAY"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/x/google-reviews/product-reviews.xml": {
+      "get": {
+        "tags": [
+          "google-reviews"
+        ],
+        "summary": "The store's product reviews as a Google product reviews feed, for Merchant Center's Product Ratings",
+        "description": "Google's product reviews feed, schema 2.4. Every published, verified review of a product the store still has, on sale or not, every rating, oldest first, because Google deletes a review that leaves the feed; a review whose words hold an email address, a phone number or a link is left out, as Google's Product Ratings policies ask, and the sample shop's reviews are never in it. Each review carries review_id, the reviewer as a first name and an initial (Anonymous, with is_anonymous, when the name is itself contact details), review_timestamp, title when there is one, content, review_url (the product's page, type group), ratings/overall on 1 to 5, one product per variant the product feed lists (every variant, for a product it does not) with the product feed's own gtin, mpn, sku, brand, name and link, so Merchant Center matches them, and is_verified_purchase, in the XSD's order. Generated on request; cacheable for fifteen minutes. 404 while the plugin or its product_ratings switch is off; 409 while the reviews or feeds module is missing, product reviews are off, or the product feed is off or has no storefront URL.",
+        "responses": {
+          "200": {
+            "description": "The feed.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    }
+  }
+}

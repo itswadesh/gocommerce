@@ -49,6 +49,8 @@ services:
       - -gateways
       - -carriers
       - -feeds
+      - -google-reviews
+      - -meta-capi
       - -sitemaps
       - -b2b
       - -recovery

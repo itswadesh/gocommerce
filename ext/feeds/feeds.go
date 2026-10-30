@@ -127,19 +127,29 @@ func firstNonEmpty(values ...string) string {
 
 // item is one variant as both feeds see it.
 type item struct {
+	ProductID int64
+	Page      string
+	// Listed is whether the feeds carry it: an active variant of an active
+	// product. items(…, true) also returns the rest.
+	Listed                                                         bool
 	ID, Title, Description, Link, Image, Brand, GroupID, GTIN, MPN string
 	Price, SalePrice, Availability, Condition, Category, Weight    string
 	Quantity                                                       int
 }
 
-// items walks the active catalogue. mediaBase makes a site-relative picture
-// absolute: the platform fetches it, and "/media/x.jpg" is not an address.
-func (m *Module) items(ctx context.Context, s settings, mediaBase string) ([]item, error) {
+// items walks the active catalogue, or with every set the whole of it.
+// mediaBase makes a site-relative picture absolute: the platform fetches it,
+// and "/media/x.jpg" is not an address.
+func (m *Module) items(ctx context.Context, s settings, mediaBase string, every bool) ([]item, error) {
 	exp := exponent(m.app.Settings().Currency)
 	currency := strings.ToUpper(m.app.Settings().Currency)
 	var out []item
 	for offset := 0; ; offset += pageSize {
-		products, _, err := m.app.Products().ListProducts(ctx, gocommerce.ProductQuery{Status: gocommerce.ProductActive, Limit: pageSize, Offset: offset})
+		q := gocommerce.ProductQuery{Status: gocommerce.ProductActive, Limit: pageSize, Offset: offset}
+		if every {
+			q.Status = ""
+		}
+		products, _, err := m.app.Products().ListProducts(ctx, q)
 		if err != nil {
 			return nil, err
 		}
@@ -163,10 +173,12 @@ func (m *Module) items(ctx context.Context, s settings, mediaBase string) ([]ite
 				description = description[:5000]
 			}
 			for _, v := range p.Variants {
-				if !v.Active {
+				listed := v.Active && p.Status == gocommerce.ProductActive
+				if !listed && !every {
 					continue
 				}
 				it := item{
+					ProductID: p.ID, Page: link, Listed: listed,
 					ID: v.SKU, MPN: v.SKU, GTIN: v.Barcode, GroupID: "product-" + strconv.FormatInt(p.ID, 10),
 					Title: p.Title, Description: description, Link: link, Brand: brand, Category: category,
 					Condition: "new", Availability: "out of stock", Image: absolute(mediaBase, p.ImageURL),
@@ -260,20 +272,60 @@ func requestBase(r *http.Request) string {
 // ready is the settings, or the refusal a feed answers with when it cannot
 // be built: off is a 404, on but unconfigured a 409 that says what to set.
 func (m *Module) ready(w http.ResponseWriter, r *http.Request) (settings, bool) {
-	s, err := m.settings(r.Context())
+	s, err := m.readySettings(r.Context())
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return s, false
 	}
+	return s, true
+}
+
+func (m *Module) readySettings(ctx context.Context) (settings, error) {
+	s, err := m.settings(ctx)
+	if err != nil {
+		return s, err
+	}
 	if !s.enabled {
-		gocommerce.RespondError(w, r, gocommerce.NotFoundf("product feeds are not enabled on this store"))
-		return s, false
+		return s, gocommerce.NotFoundf("product feeds are not enabled on this store")
 	}
 	if s.storefront == "" {
-		gocommerce.RespondError(w, r, gocommerce.Conflictf("product feeds need the storefront URL: set it on the Plugins screen"))
-		return s, false
+		return s, gocommerce.Conflictf("product feeds need the storefront URL: set it on the Plugins screen")
 	}
-	return s, true
+	return s, nil
+}
+
+// Variant is one item of the Google feed as another feed has to name it:
+// Merchant Center matches a product rating to a product by these
+// identifiers, and they must be the product feed's own.
+type Variant struct {
+	ProductID int64
+	// SKU is the item's g:id; Link its g:link; Page the product's page with
+	// no variant chosen.
+	SKU, Title, Link, Page, GTIN, MPN, Brand string
+	// Listed is whether the product feed carries it; the rest are archived or
+	// draft products and inactive variants, named the same way.
+	Listed bool
+}
+
+// Variants is every variant of every product, named as the Google feed names
+// its items, or the feed's own refusal: not found while it is off, a conflict
+// until it has a storefront URL. Not only the listed ones, because a review
+// outlives the product being on sale.
+func (m *Module) Variants(ctx context.Context) ([]Variant, error) {
+	s, err := m.readySettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := m.items(ctx, s, "", true)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Variant, 0, len(items))
+	for _, it := range items {
+		out = append(out, Variant{ProductID: it.ProductID, SKU: it.ID, Title: it.Title, Link: it.Link,
+			Page: it.Page, GTIN: it.GTIN, MPN: it.MPN, Brand: it.Brand, Listed: it.Listed})
+	}
+	return out, nil
 }
 
 // ------------------------------------------------------------------ google
@@ -316,7 +368,7 @@ func (m *Module) handleGoogle(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := m.items(r.Context(), s, requestBase(r))
+	items, err := m.items(r.Context(), s, requestBase(r), false)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -355,7 +407,7 @@ func (m *Module) handleMeta(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	items, err := m.items(r.Context(), s, requestBase(r))
+	items, err := m.items(r.Context(), s, requestBase(r), false)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
