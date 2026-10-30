@@ -7,10 +7,11 @@
 //   node fetch-photos.mjs --force    # downloads every photograph again
 //
 // The photographs are free stock (Unsplash and Pexels licences), listed per
-// product in catalogue.json with the page each came from. Each product was
-// photographed in one colour, its first; that colour's files are downloaded
-// here as out/<product>/<colour>-<shot>.webp, cropped to 3:4 and at most 1200x1600
-// under 200 KB, which is what seed-fashion.ps1 uploads.
+// product in core/sample/catalogue.json, the sample shop's catalogue, with the
+// page each came from. Each product was photographed in one colour, its first;
+// that colour's files are downloaded here as out/<product>/<colour>-<shot>.webp,
+// cropped to 3:4 and at most 1200x1600 under 200 KB, which is what
+// seed-fashion.ps1 uploads and build-sample.mjs shrinks into the engine.
 //
 // The product's other colours are edits of those files, made by hand with an
 // image editor and saved beside them under their own colour's name. This
@@ -27,7 +28,7 @@ import sharp from 'sharp'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, 'out')
-const catalogue = JSON.parse(await readFile(join(here, 'catalogue.json'), 'utf8'))
+const catalogue = JSON.parse(await readFile(join(here, '..', '..', 'core', 'sample', 'catalogue.json'), 'utf8'))
 const force = process.argv.includes('--force')
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -60,7 +61,7 @@ await writeFile(join(here, 'recolour.json'), JSON.stringify(recolour, null, '\t'
 const lines = [
 	'# Photo credits',
 	'',
-	'Written by `fetch-photos.mjs` from `catalogue.json`; edit the catalogue, not this file.',
+	'Written by `fetch-photos.mjs` from `core/sample/catalogue.json`; edit the catalogue, not this file.',
 	'',
 	'Each product was photographed in its first colour. Its other colours are colour',
 	'variants edited with ChatGPT from the original photo, which both licences allow.',
