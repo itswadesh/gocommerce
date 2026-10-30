@@ -312,7 +312,7 @@ func (m *Module) pictureSize(ctx context.Context, what string, id int64) (width,
 	// The size a browser draws it at, which is what the panel measured and
 	// the storefront scales by: a phone's JPEG held on its side is shown
 	// turned by its EXIF orientation, its width and height swapped.
-	if _, o, _ := jpegHeader(body); format == "jpeg" && o >= 5 {
+	if _, o := jpegHeader(body); format == "jpeg" && o >= 5 {
 		return cfg.Height, cfg.Width, format, nil
 	}
 	return cfg.Width, cfg.Height, format, nil

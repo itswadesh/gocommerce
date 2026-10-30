@@ -42,7 +42,6 @@ type harness struct {
 	logs *logLines
 }
 
-// logLines is the engine's log.
 type logLines struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -633,23 +632,20 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
-// scanBomb is a progressive grey JPEG of a DC scan and then AC scans that are
-// each a few end-of-band runs over every block: 66 bytes a scan at
-// 16384 × 2441, and for the decoder a pass over all 625,000 blocks.
 func scanBomb(w, h, scans int) []byte {
+	const endOfBands14, longestEndOfBandRun = 0xE0, 1<<15 - 1
 	b := []byte{0xFF, jpegStart}
 	q := bytes.Repeat([]byte{1}, 65)
 	q[0] = 0
 	b = append(b, segment(jpegQuant, q)...)
 	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
-	// One AC code, 0, for an end-of-band run of 2^14 blocks and more.
-	b = append(b, segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), 0xE0))...)
+	b = append(b, segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), endOfBands14))...)
 	b = append(b, segment(jpegProgressive, []byte{8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0})...)
 	blocks := ((w + 7) / 8) * ((h + 7) / 8)
 	b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
 	b = append(b, make([]byte, (blocks+7)/8)...)
 	var bits []bool
-	for left := blocks; left > 0; left -= 32767 {
+	for left := blocks; left > 0; left -= longestEndOfBandRun {
 		bits = append(bits, false)
 		for range 14 {
 			bits = append(bits, true)
@@ -794,7 +790,7 @@ func withinItsReckoning(t *testing.T, b []byte) {
 	mime := http.DetectContentType(b)
 	orientation := 1
 	if mime == "image/jpeg" {
-		_, orientation, _ = jpegHeader(b)
+		_, orientation = jpegHeader(b)
 	}
 	cost, _ := decodeCost(b, mime, cfg, orientation)
 	var before, after runtime.MemStats
@@ -806,11 +802,6 @@ func withinItsReckoning(t *testing.T, b []byte) {
 	}
 }
 
-// FuzzAJPEGAllocatesNoMoreThanItIsReckoned fuzzes a picture's shape and
-// writes scan data to fit it, as a mutated byte only ever breaks a picture's
-// data and the fuzzer then never reaches one large enough to be wrong about.
-// The bytes before the frame stay free, where a gadget hides a frame from
-// the walk.
 func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
 	type shape struct {
 		w, h                    uint16
@@ -1123,7 +1114,7 @@ func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
 	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 1 || got[0][1] != "1" {
 		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for the first", got)
 	}
-	h.mod.warnedAt.Add(-int64(time.Minute))
+	h.mod.warnedAtUnixNano.Add(-int64(time.Minute))
 	turnAway(1)
 	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 2 || got[1][1] != "3" {
 		t.Errorf("an upload turned away a minute after the warning logged %q; want a second warning, for the three since", got)
@@ -1222,6 +1213,9 @@ func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
 }
 
 func TestStartRemovesTheFilesAStoppedEngineLeft(t *testing.T) {
+	if live := uploadWithin + decodeWait + keepWithin + answerWithin; 4*live > spoolAbandonedAfter {
+		t.Fatalf("a live upload keeps its file up to %v, too near the %v after which the sweep takes it", live, spoolAbandonedAfter)
+	}
 	h := newHarness(t, Config{})
 	spool := t.TempDir()
 	t.Setenv("TMP", spool)
@@ -1643,7 +1637,7 @@ func TestReportsCannotReadShoppersPhotos(t *testing.T) {
 
 func TestOrientationReadsAndTurns(t *testing.T) {
 	for o := 1; o <= 8; o++ {
-		if _, got, _ := jpegHeader(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
+		if _, got := jpegHeader(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
 			t.Errorf("orientation %d read as %d", o, got)
 		}
 		src := image.NewRGBA(image.Rect(0, 0, 3, 2))
@@ -1654,10 +1648,10 @@ func TestOrientationReadsAndTurns(t *testing.T) {
 			t.Errorf("orientation %d: the top-left pixel is not at %v", o, want)
 		}
 	}
-	if _, plain, _ := jpegHeader(jpegRedTop(4, 4)); plain != 1 {
+	if _, plain := jpegHeader(jpegRedTop(4, 4)); plain != 1 {
 		t.Error("a JPEG without EXIF should read as stored")
 	}
-	if _, nope, _ := jpegHeader([]byte("nope")); nope != 1 {
+	if _, nope := jpegHeader([]byte("nope")); nope != 1 {
 		t.Error("something that is not a JPEG should read as stored")
 	}
 }

@@ -31,11 +31,7 @@ import (
 const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
-	// maxUploadSide is wider than a 200-megapixel phone sensor's photo, 16320
-	// pixels, and any print file a setup may ask for; a panorama can be wider
-	// and is refused. The rows a picture is read and written through grow
-	// with its width alone.
-	maxUploadSide = 16384
+	maxUploadSide   = 16384
 	// maxScans is the most scans Skia, which decodes JPEGs for Chrome and
 	// Android, reads (SkJpegDecoderMgr.cpp); libjpeg writes 6 to 18. The
 	// decoder passes over every block of the picture once a scan.
@@ -50,12 +46,11 @@ const (
 	answerWithin = 10 * time.Second
 	// pngWriterState is what png.Encode's compress/flate writer holds
 	// whatever the picture: 1.1 MB in Go 1.27.
-	pngWriterState = 1200 << 10
-	spoolPrefix    = "customizer-upload-"
-	// uploadFloor is the bytes a second an upload must average once
-	// uploadIdle has passed: 64 kbit/s, a thirtieth of the 2 Mbit/s that
-	// brings a 10 MB print in 40 seconds.
-	uploadFloor = 8 << 10
+	pngWriterState            = 1200 << 10
+	spoolPrefix               = "customizer-upload-"
+	spoolAbandonedAfter       = time.Hour
+	minUploadBytesPerSecond   = 8 << 10
+	statusClientClosedRequest = 499
 )
 
 var (
@@ -110,9 +105,7 @@ var (
 		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
 		Message: "too many photos are being uploaded right now; try again in a few seconds"}
-	// errGone is 499, as nginx logs a request its client closed: nobody reads
-	// the answer, and the request log says what happened.
-	errGone = &gocommerce.APIError{Status: 499, Code: "client_closed_request",
+	errClientClosedRequest = &gocommerce.APIError{Status: statusClientClosedRequest, Code: "client_closed_request",
 		Message: "the request was closed before the upload was kept"}
 )
 
@@ -158,7 +151,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if r.Context().Err() != nil {
-			err = errGone
+			err = errClientClosedRequest
 		}
 		gocommerce.RespondError(w, r, err)
 		return
@@ -166,14 +159,10 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusCreated, up)
 }
 
-// busy writes its answer itself: RespondError gives every 5xx an internal
-// error's message, and this one is for the shopper to read. Shedding load is
-// no error, so it is a warning, at most once a minute so a flood of them is
-// one line.
 func (m *Module) busy(w http.ResponseWriter) {
 	m.turnedAway.Add(1)
 	now := time.Now().UnixNano()
-	if last := m.warnedAt.Load(); now-last >= int64(time.Minute) && m.warnedAt.CompareAndSwap(last, now) {
+	if last := m.warnedAtUnixNano.Load(); now-last >= int64(time.Minute) && m.warnedAtUnixNano.CompareAndSwap(last, now) {
 		m.app.Log().Warn("customizer: uploads turned away while the decoder was busy", "uploads", m.turnedAway.Swap(0))
 	}
 	w.Header().Set("Retry-After", "10")
@@ -183,9 +172,6 @@ func (m *Module) busy(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": errBusy})
 }
 
-// arriving moves the read deadline on with each read that brings bytes, so a
-// slow connection gets its file in, and one that has stopped or sends a byte
-// now and then is let go.
 type arriving struct {
 	io.ReadCloser
 	rc    *http.ResponseController
@@ -203,8 +189,9 @@ func (a *arriving) Read(p []byte) (int, error) {
 }
 
 func (a *arriving) extend() error {
-	floor := max(uploadIdle, time.Duration(a.n)*time.Second/uploadFloor)
-	return a.rc.SetReadDeadline(a.start.Add(min(time.Since(a.start)+uploadIdle, floor, uploadWithin)))
+	idle := time.Since(a.start) + uploadIdle
+	belowRate := max(uploadIdle, time.Duration(a.n)*time.Second/minUploadBytesPerSecond)
+	return a.rc.SetReadDeadline(a.start.Add(min(idle, belowRate, uploadWithin)))
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
@@ -254,18 +241,12 @@ func spool(part *multipart.Part) (*os.File, error) {
 	return f, nil
 }
 
-// sweepSpool removes the files of uploads an engine was reading when it
-// stopped, as one killed for its memory leaves them in the temporary
-// directory. A live upload holds its file under five minutes: three to
-// arrive, then a minute to wait its turn, be decoded, which the limits above
-// keep to seconds, and be kept. One untouched for an hour is nobody's,
-// whichever engine on the host made it.
 func sweepSpool() (removed int) {
 	dir := os.TempDir()
 	files, _ := os.ReadDir(dir)
 	for _, f := range files {
 		info, err := f.Info()
-		if err == nil && strings.HasPrefix(f.Name(), spoolPrefix) && time.Since(info.ModTime()) > time.Hour &&
+		if err == nil && strings.HasPrefix(f.Name(), spoolPrefix) && time.Since(info.ModTime()) > spoolAbandonedAfter &&
 			os.Remove(filepath.Join(dir, f.Name())) == nil {
 			removed++
 		}
@@ -386,7 +367,7 @@ func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, er
 	orientation := 1
 	if mime == "image/jpeg" {
 		var f jpegHead
-		if f, orientation, _ = jpegHeader(body); f.scans > f.scanLimit() {
+		if f, orientation = jpegHeader(body); f.scans > f.scanLimit() {
 			return "", bounds, errTooManyScans
 		}
 	}
@@ -464,8 +445,8 @@ func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (co
 		}
 		return int64(len(body)) + pngCost(body, w, h), advice
 	}
-	f, _, ok := jpegHeader(body)
-	if !ok || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
+	f, _ := jpegHeader(body)
+	if f.scans == 0 || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
 		f = dearestFrame(cfg)
 	}
 	cost = int64(len(body)) + jpegCost(f)
@@ -547,9 +528,9 @@ type jpegHead struct {
 	scans         int
 }
 
-// scanLimit is the most scans the decoder may read. A sequential JPEG has a
-// scan for each component at most, as libjpeg's encoder insists (jcmaster.c
-// validate_script), and image/jpeg decodes each of its scans whole.
+// A sequential JPEG has a scan for each component at most, as libjpeg's
+// encoder insists (jcmaster.c validate_script), and image/jpeg decodes each
+// of its scans whole.
 func (f jpegHead) scanLimit() int {
 	if f.progressive {
 		return maxScans
@@ -562,23 +543,22 @@ func (f jpegHead) scanLimit() int {
 // 0xFF fill byte, "\xff\x00" and a restart marker are skipped without a
 // length, and every other segment by its length. The data of a scan is such
 // bytes, so the walk goes on to the end, counting the scans, and stops where
-// the decoder would fail. The frame and orientation are those before the
-// first scan, and ok says there was one.
-func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
+// the decoder would fail.
+func jpegHeader(b []byte) (f jpegHead, orientation int) {
 	orientation = 1
 	exif := false
 	if len(b) < 2 || b[0] != jpegMarker || b[1] != jpegStart {
-		return f, orientation, false
+		return f, orientation
 	}
 	for i := 2; ; {
 		if i+2 > len(b) {
-			return f, orientation, f.scans > 0
+			return f, orientation
 		}
 		prev, marker := b[i], b[i+1]
 		i += 2
 		for prev != jpegMarker {
 			if i >= len(b) {
-				return f, orientation, f.scans > 0
+				return f, orientation
 			}
 			prev, marker = marker, b[i]
 			i++
@@ -588,38 +568,39 @@ func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 		}
 		for marker == jpegMarker {
 			if i >= len(b) {
-				return f, orientation, f.scans > 0
+				return f, orientation
 			}
 			marker = b[i]
 			i++
 		}
 		if marker == jpegEnd {
-			return f, orientation, f.scans > 0
+			return f, orientation
 		}
 		if jpegRestart0 <= marker && marker <= jpegRestart7 {
 			continue
 		}
 		if i+2 > len(b) {
-			return f, orientation, f.scans > 0
+			return f, orientation
 		}
 		n := int(binary.BigEndian.Uint16(b[i:])) - 2
 		i += 2
 		if n < 0 || i+n > len(b) {
-			return f, orientation, f.scans > 0
+			return f, orientation
 		}
 		seg := b[i : i+n]
 		i += n
 		switch {
 		case marker == jpegBaseline || marker == jpegExtended || marker == jpegProgressive:
 			if f.components != nil {
-				return f, orientation, f.scans > 0
+				return f, orientation
 			}
+			var ok bool
 			if f, ok = jpegFrame(marker, seg); !ok {
-				return f, orientation, false
+				return f, orientation
 			}
 		case marker == jpegScan:
 			if f.components == nil {
-				return f, orientation, false
+				return f, orientation
 			}
 			f.scans++
 		case marker == jpegApp1:
@@ -629,7 +610,7 @@ func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
 			jpegApp0 <= marker && marker <= jpegApp15 || marker == jpegComment:
 		default:
-			return f, orientation, f.scans > 0
+			return f, orientation
 		}
 	}
 }
@@ -828,7 +809,6 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	return 0, true
 }
 
-// refund gives back an attempt that did no work worth limiting.
 func (t *throttle) refund(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

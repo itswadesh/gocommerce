@@ -63,17 +63,15 @@ type Config struct {
 
 // Module is the routes, the tables and the sweep.
 type Module struct {
-	cfg     Config
-	app     *gocommerce.App
-	db      *sql.DB
-	uploads *throttle
-	designs *throttle
-	decodes chan struct{}
-	waiting chan struct{}
-	// turnedAway counts the uploads answered busy since warnedAt, in Unix
-	// nanoseconds, when the log last said so.
-	turnedAway atomic.Int64
-	warnedAt   atomic.Int64
+	cfg              Config
+	app              *gocommerce.App
+	db               *sql.DB
+	uploads          *throttle
+	designs          *throttle
+	decodes          chan struct{}
+	waiting          chan struct{}
+	turnedAway       atomic.Int64
+	warnedAtUnixNano atomic.Int64
 }
 
 // New constructs the module.
