@@ -179,13 +179,7 @@ func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 	if store == nil {
 		return nil, errNoUploads
 	}
-	select {
-	case m.decodes <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	size, mime, bounds, err := rewrite(file)
-	<-m.decodes
+	size, mime, bounds, err := m.rewriteInTurn(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -210,6 +204,18 @@ func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 		return nil, gocommerce.Internalf(err, "record the upload")
 	}
 	return &Upload{ID: id, URL: url, Width: bounds.Dx(), Height: bounds.Dy()}, nil
+}
+
+// rewriteInTurn rewrites file once no other upload is decoding, so the
+// pictures in memory at once stay within decodeSlots × decodeBudget.
+func (m *Module) rewriteInTurn(ctx context.Context, file *os.File) (int64, string, image.Rectangle, error) {
+	select {
+	case m.decodes <- struct{}{}:
+	case <-ctx.Done():
+		return 0, "", image.Rectangle{}, ctx.Err()
+	}
+	defer func() { <-m.decodes }()
+	return rewrite(file)
 }
 
 func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, err error) {

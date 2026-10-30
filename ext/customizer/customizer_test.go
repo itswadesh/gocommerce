@@ -809,6 +809,24 @@ func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	}
 }
 
+func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = h.mod.keep(h.ctx, nil)
+	}()
+	done := make(chan int, 1)
+	go func() { done <- h.uploadRaw("", "file", jpegRedTop(8, 8)).Code }()
+	select {
+	case code := <-done:
+		if code != http.StatusCreated {
+			t.Errorf("an upload after a decode that panicked = %d, want 201", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an upload after a decode that panicked still waits for its turn after 5 s")
+	}
+}
+
 func TestADesignIsCheckedAgainstItsProduct(t *testing.T) {
 	h := newHarness(t, Config{})
 	c := h.phoneCase(h.ctx, "CASE-D")
