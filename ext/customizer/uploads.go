@@ -57,6 +57,7 @@ var (
 	// uploadWithin lets the largest file arrive at 0.7 Mbit/s.
 	uploadIdle   = 15 * time.Second
 	uploadWithin = 3 * time.Minute
+	warnEvery    = time.Minute
 	// decodeWait is eight uploads ahead at the second or two a large photo
 	// takes, and then some.
 	decodeWait = 30 * time.Second
@@ -161,10 +162,11 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) busy(w http.ResponseWriter) {
-	m.turnedAway.Add(1)
-	now := time.Now().UnixNano()
-	if last := m.warnedAtUnixNano.Load(); now-last >= int64(time.Minute) && m.warnedAtUnixNano.CompareAndSwap(last, now) {
-		m.app.Log().Warn("customizer: uploads turned away while the decoder was busy", "uploads", m.turnedAway.Swap(0))
+	if m.turnedAway.Add(1) == 1 {
+		time.AfterFunc(warnEvery, func() {
+			m.app.Log().Warn("customizer: uploads turned away while the decoder was busy", "uploads", m.turnedAway.Swap(0),
+				"within", warnEvery)
+		})
 	}
 	w.Header().Set("Retry-After", "10")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

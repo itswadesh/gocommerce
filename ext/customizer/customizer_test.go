@@ -1171,8 +1171,8 @@ func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
 
 func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	decodeWait = 200 * time.Millisecond
-	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	decodeWait, warnEvery = 10*time.Millisecond, time.Second
+	t.Cleanup(func() { decodeWait, warnEvery = 30*time.Second, time.Minute })
 	h.mod.decodes <- struct{}{}
 	defer func() { <-h.mod.decodes }()
 	turnAway := func(n int) {
@@ -1184,14 +1184,22 @@ func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
 		}
 	}
 	warned := regexp.MustCompile(`level=WARN msg="customizer: uploads turned away while the decoder was busy" uploads=(\d+)`)
-	turnAway(3)
-	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 1 || got[0][1] != "1" {
-		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for the first", got)
+	warnings := func(n int) (got [][]string) {
+		for deadline := time.Now().Add(3 * time.Second); len(got) < n && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			got = warned.FindAllStringSubmatch(h.logs.String(), -1)
+		}
+		return got
 	}
-	h.mod.warnedAtUnixNano.Add(-int64(time.Minute))
+	turnAway(3)
+	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 0 {
+		t.Fatalf("three uploads turned away logged %q at once; want one warning when the minute is out", got)
+	}
+	if got := warnings(1); len(got) != 1 || got[0][1] != "3" {
+		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for all three", got)
+	}
 	turnAway(1)
-	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 2 || got[1][1] != "3" {
-		t.Errorf("an upload turned away a minute after the warning logged %q; want a second warning, for the three since", got)
+	if got := warnings(2); len(got) != 2 || got[1][1] != "1" {
+		t.Errorf("an upload turned away after the warning logged %q; want a second warning, for that one", got)
 	}
 }
 
