@@ -2997,10 +2997,13 @@ button.media-check {
  * phone the same way, further once "Customer groups" joined the record types.
  * A product has the status, Preview, Share, More actions and the pair that
  * walks the catalog, and the pair ended up past the edge of a 360px phone.
+ * The theme editor has the save state, undo and redo and six more, and once
+ * Match to logo joined them "Saved" pushed Publish 15px off a 360px phone.
  */
 .page-orders .page-header-primary-btns,
 .page-audit .page-header-primary-btns,
-.page-product .page-header-primary-btns {
+.page-product .page-header-primary-btns,
+.page-homepage .page-header-primary-btns {
     flex-wrap: wrap;
     /* Wrapping alone changes nothing while the group is a `flex-shrink: 0` item
        of the header: it keeps its max-content width and never reaches a line it
@@ -3019,7 +3022,8 @@ button.media-check {
  */
 .page-orders .page-header-primary-btns .btn,
 .page-audit .page-header-primary-btns .btn,
-.page-product .page-header-primary-btns .btn {
+.page-product .page-header-primary-btns .btn,
+.page-homepage .page-header-primary-btns .btn {
     flex-grow: 0;
     /* `flex-basis: auto` has to come with it. PocketBase's pair is
        `grow: 1; basis: 0`, and below 550px the button is also
@@ -12590,4 +12594,48 @@ html .tw\:rounded-2xl {
     font-size: 18px;
     line-height: 24px;
     font-weight: 600;
+}
+
+/* Themes › Home page: Match to logo in the header, the way into the theme
+   settings' own. The logo rides along so the button says whose colours it
+   reads. With none it is not dimmed: it is a working button (a click opens
+   the panel's link that adds one), and dimmed hint-grey text fails contrast. */
+.hp-match-tool {
+    transition:
+        color var(--animationSpeed),
+        border-color var(--animationSpeed),
+        background var(--animationSpeed),
+        transform 150ms ease-out;
+}
+/* A fixed box, so the logo arriving does not widen the button and push the
+   toolbar along. */
+.hp-match-tool-logo {
+    width: 40px;
+    height: 18px;
+    object-fit: contain;
+}
+.hp-match-tool:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 2px;
+}
+@media (hover: hover) {
+    .hp-match-tool:hover:not(:disabled) {
+        transform: translateY(-1px);
+    }
+}
+.hp-match-tool:active:not(:disabled) {
+    transform: scale(0.97);
+}
+/* Below 550px PocketBase draws a header button as its icon in a circle; the
+   logo would not fit in it. */
+@media (max-width: 550px) {
+    .hp-match-tool-logo {
+        display: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hp-match-tool:hover:not(:disabled),
+    .hp-match-tool:active:not(:disabled) {
+        transform: none;
+    }
 }

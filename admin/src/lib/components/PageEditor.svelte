@@ -123,6 +123,7 @@
     let matchError = $state("");
     let matchCandidates = $state([]); // [{ accent, accent_text, muted }]
     let matchChosen = $state(-1);
+    let matchBox = $state(); // the Match to logo box in the theme settings
 
     const draftDoc = () =>
         HOME
@@ -275,12 +276,16 @@
     async function load() {
         loading = true;
         try {
-            const [reg, state, plugin] = await Promise.all([
+            const [reg, state, plugin, profile] = await Promise.all([
                 api.registry(),
                 api.get(PAGE),
                 // Behind plugins.read, which staff do not hold by default; a
                 // refusal there was a console error on every theme page.
                 can("plugins.read") ? api.plugin().catch(() => null) : null,
+                // The theme settings, and so Match to logo, live on the home
+                // page alone (D127). Read with the page, not after it: the
+                // header's button drew as "no logo" for a moment, then moved.
+                HOME ? storeProfile.get().catch(() => null) : null,
             ]);
             registry = reg?.sections ?? [];
             pageInfos = reg?.pages ?? [];
@@ -293,9 +298,7 @@
             // saves the engine refused.
             if (CHROME && sections.length && writable) selectedId = sections[0].id;
             pluginOn = plugin ? !!plugin.enabled : true;
-            // The theme settings — and so Match to logo — live on the home page
-            // alone (D127), so only it needs the store's logo.
-            if (HOME) storeProfile.get().then((p) => (storeInfo = p)).catch(() => {});
+            storeInfo = profile;
         } catch (err) {
             toast.error(err);
         } finally {
@@ -370,6 +373,23 @@
     function openTheme() {
         selectedId = null;
         themeOpen = true;
+    }
+
+    // The header's Match to logo is a way into the theme settings' own, not a
+    // second copy: the palettes, the error and the hint about the logo stay
+    // there. With no logo it still opens them rather than sitting disabled: a
+    // disabled button can't be focused or explain itself to a keyboard, and
+    // the link that fixes it is in the panel.
+    async function matchFromHeader() {
+        openTheme();
+        await matchToLogo();
+        // Closed while the logo was read: the panel's message has nowhere to show.
+        if (matchError && !themeOpen) toast.error(matchError);
+        // A frame on, so it lands after the phone's drawer makes its own first focus.
+        requestAnimationFrame(() => {
+            const target = matchBox?.querySelector(".hp-match-choice.selected") ?? matchBox?.querySelector("a[href], .hp-match-btn:not(:disabled)");
+            target?.focus();
+        });
     }
 
     function closePanel() {
@@ -818,7 +838,7 @@
 {#snippet themeBody()}
     <p class="txt-hint txt-sm m-b-sm">Colours, type, spacing, product cards, lists and the product page, for every page of the storefront, published with the home page. Anything empty or on "Storefront's own" keeps the storefront's look.</p>
     {#if writable}
-        <div class="hp-match">
+        <div class="hp-match" bind:this={matchBox}>
             <div class="hp-match-head">
                 <button
                     type="button"
@@ -826,6 +846,7 @@
                     class:loading={matchBusy}
                     disabled={!logoURL || matchBusy}
                     onclick={matchToLogo}
+                    aria-describedby={matchError ? "hp-match-err" : undefined}
                 >
                     <i class="ri-palette-line" aria-hidden="true"></i>
                     <span class="txt">Match to logo</span>
@@ -840,7 +861,7 @@
                 <p class="hp-match-hint txt-hint txt-sm">Sets the buttons, text on buttons and quiet backgrounds from your logo's colours. Preview it here, then publish.</p>
             {/if}
             {#if matchError}
-                <p class="hp-match-err danger txt-sm" role="status" in:rise><i class="ri-error-warning-line" aria-hidden="true"></i>{matchError}</p>
+                <p id="hp-match-err" class="hp-match-err danger txt-sm" role="status" in:rise><i class="ri-error-warning-line" aria-hidden="true"></i>{matchError}</p>
             {/if}
             {#if matchCandidates.length > 1}
                 <div class="hp-match-choices" role="group" aria-label="Palettes from your logo" in:rise>
@@ -1047,6 +1068,20 @@
                         <button type="button" class="btn transparent secondary" class:loading={busy === "schedule"} disabled={!!busy || saveState === "conflict"} onclick={openSchedule} aria-label="Schedule" title="Publish at a time you choose">
                             <i class="ri-calendar-schedule-line" aria-hidden="true"></i><span class="txt">Schedule</span>
                         </button>
+                        {#if HOME}
+                            <button
+                                type="button"
+                                class="btn transparent secondary hp-match-tool"
+                                class:loading={matchBusy}
+                                disabled={matchBusy}
+                                onclick={matchFromHeader}
+                                aria-label="Match to logo"
+                                title={logoURL ? "Set the theme's colours from your logo" : "Add a logo in Settings › Store to match colours"}
+                            >
+                                <i class="ri-palette-line" aria-hidden="true"></i><span class="txt">Match to logo</span>
+                                {#if logoURL}<img class="hp-match-tool-logo" src={logoURL} alt="" aria-hidden="true" />{/if}
+                            </button>
+                        {/if}
                         <button type="button" class="btn" class:loading={busy === "publish"} disabled={!!busy || !hasChanges || saveState === "conflict"} onclick={() => (confirmPublish = true)} aria-label="Publish">
                             <i class="ri-upload-cloud-2-line" aria-hidden="true"></i><span class="txt">Publish</span>
                         </button>
@@ -1780,11 +1815,11 @@
         transform: translateY(-1px);
     }
     .hp-match-choice:focus-visible {
-        outline: 2px solid var(--primaryColor);
+        outline: 2px solid var(--markColor);
         outline-offset: 2px;
     }
     .hp-match-choice.selected {
-        border-color: var(--primaryColor);
+        border-color: var(--markColor);
     }
     .hp-match-sw {
         position: relative;
