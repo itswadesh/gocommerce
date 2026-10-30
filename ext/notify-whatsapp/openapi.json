@@ -38,7 +38,7 @@
           "notify-whatsapp"
         ],
         "summary": "Record a shopper's answer to the WhatsApp opt-in boxes",
-        "description": "The latest answer for a number wins; a yes after a STOP reply is a fresh opt-in. The number is read in the store's country when typed without a code, and stored as E.164. With `marketing` the number is put on the basket, so a reminder can reach it.",
+        "description": "Only adds consent: an unticked box withdraws nothing, and a number that replied STOP stays silent until it writes START itself. The answer is the number's standing consent. The number is read in the store's country when typed without a code, and stored as E.164. With `marketing` the number is put on the basket, so a reminder can reach it.",
         "requestBody": {
           "required": true,
           "content": {

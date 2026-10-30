@@ -252,7 +252,7 @@ const (
 	ChannelSMS   = "sms"
 	// ChannelWhatsApp is addressed to a phone, like SMS, but a store's
 	// WhatsApp module owns whether a message may go at all: the shopper's
-	// consent and the Meta-approved template both live there (D165). Core
+	// consent and the Meta-approved template both live there (D168). Core
 	// offers an order's messages on it only when a backend says it carries
 	// them, so a store without one sees no rows for it.
 	ChannelWhatsApp = "whatsapp"
