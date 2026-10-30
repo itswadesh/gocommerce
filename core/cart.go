@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -51,6 +52,10 @@ type Cart struct {
 	// something that has proof — an operator, a signed-in account whose address
 	// is confirmed, or a module — through VerifyEmail (D66).
 	VerifiedEmail string `json:"verified_email,omitempty"`
+	// Phone is a number the shopper gave this basket for messages about it,
+	// in E.164, set by a module that holds their consent to be written to
+	// there (SetPhone). Empty on most baskets.
+	Phone string `json:"phone,omitempty"`
 	// ChannelCode is the storefront this basket was opened on, empty on a store
 	// that has no channels. It is what the price of every line was resolved
 	// against, so it travels with the cart rather than being looked up again.
@@ -117,6 +122,7 @@ type CartSummary struct {
 	// VerifiedEmail says whose prices the basket carries, which is what an
 	// operator needs to read a trade total that looks low (D66).
 	VerifiedEmail string     `json:"verified_email,omitempty"`
+	Phone         string     `json:"phone,omitempty"`
 	DiscountCode  string     `json:"discount_code,omitempty"`
 	LineCount     int        `json:"line_count"`
 	ItemCount     int        `json:"item_count"`
@@ -202,14 +208,14 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 	}
 	cart := &Cart{}
 	var meta []byte
-	var email, verified, channelCode sql.NullString
+	var email, verified, phone, channelCode sql.NullString
 	err := c.app.db.QueryRowContext(ctx, `
-		SELECT c.id, c.token, c.status, c.currency, c.email, c.verified_email, ch.code,
+		SELECT c.id, c.token, c.status, c.currency, c.email, c.verified_email, c.phone, ch.code,
 		       c.metadata, c.created_at, c.updated_at, c.expires_at
 		FROM carts c
 		LEFT JOIN channels ch ON ch.id = c.channel_id
 		WHERE c.token = $1`, tok,
-	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email, &verified, &channelCode,
+	).Scan(&cart.ID, &cart.Token, &cart.Status, &cart.Currency, &email, &verified, &phone, &channelCode,
 		&meta, &cart.CreatedAt, &cart.UpdatedAt, &cart.ExpiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -219,6 +225,7 @@ func (c *Carts) GetByToken(ctx context.Context, tok string) (*Cart, error) {
 	}
 	cart.Email = email.String
 	cart.VerifiedEmail = verified.String
+	cart.Phone = phone.String
 	cart.ChannelCode = channelCode.String
 	if err := scanMetadata(meta, &cart.Metadata); err != nil {
 		return nil, err
@@ -363,7 +370,7 @@ const cartSummaryColumns = `c.id,
 	     WHEN c.expires_at < now()   THEN 'abandoned'
 	     ELSE 'live' END,
 	c.status, c.currency, coalesce(c.email, ''), coalesce(c.verified_email, ''),
-	c.discount_code, c.metadata,
+	coalesce(c.phone, ''), c.discount_code, c.metadata,
 	c.created_at, c.updated_at, c.expires_at, c.abandoned_at,
 	v.line_count, v.item_count, v.subtotal_minor`
 
@@ -388,7 +395,7 @@ func scanCartSummary(row interface{ Scan(...any) error }) (*CartSummary, error) 
 	var abandonedAt sql.NullTime
 	var subtotalMinor int64
 	if err := row.Scan(&s.ID, &s.State, &s.Status, &s.Currency, &s.Email, &s.VerifiedEmail,
-		&s.DiscountCode, &meta, &s.CreatedAt, &s.UpdatedAt, &s.ExpiresAt,
+		&s.Phone, &s.DiscountCode, &meta, &s.CreatedAt, &s.UpdatedAt, &s.ExpiresAt,
 		&abandonedAt, &s.LineCount, &s.ItemCount, &subtotalMinor); err != nil {
 		return nil, err
 	}
@@ -765,6 +772,36 @@ func (c *Carts) SetEmail(ctx context.Context, tok, email string) (*Cart, error) 
 	}
 	return c.GetByToken(ctx, tok)
 }
+
+// SetPhone records the number the shopper gave this basket for messages about
+// it, or clears it with "". No public route reaches it: a module that holds
+// the shopper's consent to be written to on that number sets it (the WhatsApp
+// module's opt-in), and a reminder about the basket goes there only through
+// that module, which checks the consent again at sending. The caller passes
+// E.164 — "+" and up to fifteen digits.
+func (c *Carts) SetPhone(ctx context.Context, tok, phone string) (*Cart, error) {
+	phone = strings.TrimSpace(phone)
+	if phone != "" && !e164.MatchString(phone) {
+		return nil, Validationf("a phone number with its country code, such as +919876543210, is required")
+	}
+	err := InTx(ctx, c.app.db, func(tx *sql.Tx) error {
+		cartID, err := c.openCartID(ctx, tx, tok)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE carts SET phone = $2 WHERE id = $1`,
+			cartID, nullString(phone)); err != nil {
+			return err
+		}
+		return touchCart(ctx, tx, cartID, c.app.cfg.CartTTL)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return c.GetByToken(ctx, tok)
+}
+
+var e164 = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
 
 // VerifyEmail says who a basket belongs to, so it is priced as them: the
 // customer groups that address is in reach this cart's lines (D66). An empty

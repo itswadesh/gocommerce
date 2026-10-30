@@ -915,6 +915,26 @@ func (s *Orders) Cancel(ctx context.Context, id int64, reason string) (*Order, e
 	})
 }
 
+// RecordMessage puts a message to or from the shopper about this order on its
+// history: a WhatsApp update delivered or read, a cash-on-delivery order the
+// shopper confirmed by reply. It changes nothing about the order and announces
+// nothing — a message is not a state change, and an event here would send
+// "your order was updated" about the message itself. The actor is whoever ctx
+// carries; a module names itself with WithActorLabel.
+func (s *Orders) RecordMessage(ctx context.Context, id int64, summary string) error {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return Validationf("a message record needs a summary")
+	}
+	if r := []rune(summary); len(r) > 500 {
+		summary = string(r[:500])
+	}
+	_, err := s.transition(ctx, id, func(context.Context, *sql.Tx, *Order) (transitionResult, error) {
+		return transitionResult{Action: AuditOrderMessage, Summary: summary}, nil
+	})
+	return err
+}
+
 // MarkDelivered records that the customer received the order.
 func (s *Orders) MarkDelivered(ctx context.Context, id int64) (*Order, error) {
 	return s.transition(ctx, id, func(ctx context.Context, tx *sql.Tx, o *Order) (transitionResult, error) {
