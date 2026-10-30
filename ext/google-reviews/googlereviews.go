@@ -92,13 +92,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	}
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Google reviews", Icon: "ri-google-line", Category: "marketing",
-		Description: "Three things, each switched on below. Your Google rating and latest reviews on the storefront, " +
-			"read live from Google Maps with Google's attribution. Google Customer Reviews: Google's survey offered after checkout, " +
-			"and its store widget. A product ratings feed of your own reviews at /x/google-reviews/product-reviews.xml, for Merchant Center.",
+		Description: "Your Google rating and reviews on the storefront, Google Customer Reviews after checkout, and a product ratings " +
+			"feed for Merchant Center at /x/google-reviews/product-reviews.xml. Each has its own switch in Settings.",
 		Docs: "https://developers.google.com/maps/documentation/places/web-service/place-id",
 		Fields: []gocommerce.PluginField{
 			{Key: "show_place", Label: "Show your Google rating and reviews", Kind: "bool", Public: true,
-				Help: "The Google reviews section on the home page shows them. Google sends its five most relevant reviews at most, and the section links to the rest on Google Maps."},
+				Help: "Add the Google reviews section to the home page to show them."},
 			{Key: "api_key", Label: "Google Maps Platform API key", Kind: "secret",
 				Help: "From Google Cloud: enable Places API (New) and restrict the key to it. Each time a shopper scrolls to the section is one Place Details call, which Google bills."},
 			{Key: "place_id", Label: "Place ID", Kind: "text",
@@ -106,8 +105,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "daily_lookups", Label: "Most Google lookups a day", Kind: "number", Default: 30,
 				Help: "After this many the section hides until tomorrow, so nobody can run up your Google bill. Google gives 1,000 a month free; 30 a day stays inside that."},
 			{Key: "customer_reviews", Label: "Offer the Google Customer Reviews survey", Kind: "bool", Public: true,
-				Help: "After checkout, Google asks the shopper whether to email them a survey after delivery. Join Google Customer Reviews in Merchant Center first, and say in your privacy policy that Google receives order details."},
-			{Key: "merchant_id", Label: "Merchant Center ID", Kind: "text", Help: "The number at the top right of Merchant Center."},
+				Help: "Google offers its survey after checkout. Join Google Customer Reviews in Merchant Center first."},
+			{Key: "merchant_id", Label: "Merchant Center ID", Kind: "text",
+				Help: "The number at the top right of Merchant Center. Your privacy policy must say that Google receives order details and may set cookies for the survey."},
 			{Key: "delivery_days", Label: "Delivery estimate in days", Kind: "number",
 				Help: "Days from the order to delivery. Google sends its survey after this date. With no estimate the survey is not offered."},
 			{Key: "opt_in_style", Label: "Where the survey offer appears", Kind: "select",
@@ -117,7 +117,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 				Options: []string{"Bottom right", "Bottom left"},
 				Help:    "Google's badge with your store rating, on every page. Empty shows none. It needs the survey switched on."},
 			{Key: "product_ratings", Label: "Serve the product ratings feed", Kind: "bool",
-				Help: "Your verified, published product reviews, for Merchant Center's Product Ratings. It needs Product reviews and Product feeds on. Google asks for every review, low ratings too, so moderate only spam."},
+				Help: "Needs Product reviews and Product feeds on. Google wants every review, low ratings too, and deletes one that leaves the feed: reject only spam."},
 		},
 	})
 	app.HandleFunc("GET /x/google-reviews/place", m.handlePlace)

@@ -148,7 +148,12 @@ func (m *Module) fetchPlace(ctx context.Context, key, placeID string) (*Place, e
 
 // httpsOnly keeps a link a storefront will put in an href or a src only when
 // it is https: the answer comes from outside, and javascript: is a link too.
+// Google writes some attribution links scheme-relative (//maps.google.com/…),
+// and those are https.
 func httpsOnly(u string) string {
+	if strings.HasPrefix(u, "//") {
+		u = "https:" + u
+	}
 	if strings.HasPrefix(u, "https://") {
 		return u
 	}
