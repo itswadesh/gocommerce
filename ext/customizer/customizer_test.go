@@ -1151,7 +1151,7 @@ func TestAnAttemptIsGivenBackOnlyToTheHourThatCountedIt(t *testing.T) {
 }
 
 func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
-	h := newHarness(t, Config{UploadsPerHour: 1})
+	h := newHarness(t, Config{UploadsPerHour: 2})
 	decodeWait, uploadIdle = 300*time.Millisecond, 300*time.Millisecond
 	t.Cleanup(func() { decodeWait, uploadIdle = 30*time.Second, 15*time.Second })
 	srv := h.server(0, 0)
@@ -1164,32 +1164,39 @@ func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
+	stalledAfter := func(n int) int {
+		long, contentType := form("file", append(jpegRedTop(40, 30), make([]byte, 64<<10)...))
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+			contentType, len(long))
+		_, _ = c.Write(long[:n])
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
 
-	c, err := net.Dial("tcp", srv.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
-		contentType, len(body))
-	_, _ = c.Write(body[:len(body)/2])
-	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
-	resp, err := http.ReadResponse(bufio.NewReader(c), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
+	slow := stalledAfter(48 << 10)
 	h.mod.decodes <- struct{}{}
 	busy := post()
 	<-h.mod.decodes
-	if resp.StatusCode != http.StatusBadRequest || busy != http.StatusServiceUnavailable {
-		t.Fatalf("an upload that stalled = %d, then one with no turn = %d; want 400 and 503", resp.StatusCode, busy)
+	trickle := stalledAfter(100)
+	if slow != http.StatusBadRequest || busy != http.StatusServiceUnavailable || trickle != http.StatusBadRequest {
+		t.Fatalf("an upload that stalled after 48 KB = %d, one with no turn = %d, one that stalled after 100 bytes = %d; want 400, 503 and 400",
+			slow, busy, trickle)
 	}
 	if got := post(); got != http.StatusCreated {
-		t.Errorf("the one upload an hour, after one turned away busy and one too slow = %d, want 201", got)
+		t.Errorf("an upload after one too slow with 48 KB in, one busy and one too slow with 100 bytes in = %d, want 201", got)
 	}
 	if got := post(); got != http.StatusTooManyRequests {
-		t.Errorf("a second decoded upload in the hour = %d, want 429", got)
+		t.Errorf("a third upload in the hour, two counted: the one with 100 bytes in and the one decoded = %d, want 429", got)
 	}
 }
 
