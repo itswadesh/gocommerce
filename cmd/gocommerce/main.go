@@ -404,6 +404,7 @@ environment:
 				PlatformStrongModel:  os.Getenv("AI_PLATFORM_STRONG_MODEL"),
 				PlatformStrongPrices: os.Getenv("AI_PLATFORM_STRONG_PRICES"),
 				PlatformUSDRates:     os.Getenv("AI_PLATFORM_USD_RATES"),
+				FreeTrial:            os.Getenv("AI_FREE_TRIAL"),
 			})
 			modules = append(modules, gateway)
 		}

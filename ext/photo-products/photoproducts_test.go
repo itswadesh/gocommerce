@@ -31,6 +31,8 @@ type claude struct {
 	describe func(n int) (int, string)
 	calls    map[string]int
 	srv      *httptest.Server
+	// onCall, when set, sees each call while the gateway holds its credit.
+	onCall func(task string, body []byte)
 }
 
 func (c *claude) count(task string) int {
@@ -52,7 +54,11 @@ func (c *claude) serve(w http.ResponseWriter, r *http.Request) {
 	if task == "describe" {
 		status, answer = c.describe(n)
 	}
+	onCall := c.onCall
 	c.mu.Unlock()
+	if onCall != nil {
+		onCall(task, body)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if status != http.StatusOK {
 		w.WriteHeader(status)
@@ -423,11 +429,6 @@ func TestABatchSaysWhatToSetBeforeItCanRun(t *testing.T) {
 func TestPhotosNeedOnlyCreditOnThePlatformKey(t *testing.T) {
 	h := newHarnessOn(t, aigateway.Config{PlatformAnthropicKey: "sk-ant-platform", PlatformUSDRates: "INR=88.50"})
 	ctx := context.Background()
-	// An operator's top-up of ₹100: one grouping call's ceiling on Claude
-	// Sonnet 5.5 is about ₹30.53, past the placeholder free trial.
-	if _, err := h.mod.cfg.Gateway.Grant(ctx, 10000, ""); err != nil {
-		t.Fatal(err)
-	}
 	h.claude.group = grouping
 	b := h.upload(t, 5)
 	h.do(t, "POST", fmt.Sprintf("/batches/%d/start", b.ID), nil, http.StatusAccepted)
@@ -498,4 +499,59 @@ func TestRoutesNameARightAndAreInTheContract(t *testing.T) {
 	h := newHarness(t)
 	gctest.AssertAdminRoutesDeclareRights(t, h.app, "photo-products")
 	gctest.AssertSpecCoversModuleRoutes(t, h.app, "photo-products")
+}
+
+// The free trial is ₹30 (D151, 2026-10-30), and it is enough to try photos:
+// a three-photo batch on a fresh Indian store, nothing topped up, sorts and
+// describes every product. Each call holds what its own request could cost,
+// not the most any batch could, and never costs more than it held.
+func TestAThreePhotoBatchRunsOnTheFreeTrial(t *testing.T) {
+	for _, n := range []int{3, 6, 20} {
+		h := newHarnessOn(t, aigateway.Config{PlatformAnthropicKey: "sk-ant-platform", PlatformUSDRates: "INR=88.50"})
+		ctx := context.Background()
+		var mu sync.Mutex
+		peak := map[string]int64{}
+		h.claude.onCall = func(task string, body []byte) {
+			var held int64
+			if err := h.app.DB().QueryRowContext(ctx, `SELECT reserved_micro FROM ai_credits`).Scan(&held); err != nil {
+				t.Error(err)
+			}
+			mu.Lock()
+			peak[task] = max(peak[task], held)
+			mu.Unlock()
+		}
+		// Each photo a product of its own: the most describing calls a batch
+		// of n can make.
+		var products []string
+		for i := 1; i <= n; i++ {
+			products = append(products, fmt.Sprintf(`{"name":"Item %d","option_name":"","variants":[{"value":"","photos":[%d]}]}`, i, i))
+		}
+		h.claude.group = `{"products":[` + strings.Join(products, ",") + `]}`
+		b := h.upload(t, n)
+		h.do(t, "POST", fmt.Sprintf("/batches/%d/start", b.ID), nil, http.StatusAccepted)
+		b = h.wait(t, b.ID)
+		credit, err := h.mod.cfg.Gateway.Credit(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%d photos: grouping held %d, describing held at most %d (up to %d at once), consumed %d micro-paise",
+			n, peak["group"], peak["describe"], describers, credit.ConsumedMicroMinor)
+		if n > 3 {
+			continue
+		}
+		if b.Status != StatusReview || len(b.Items) != n {
+			t.Fatalf("status %s with %d items: %s", b.Status, len(b.Items), b.Message)
+		}
+		for _, it := range b.Items {
+			if !it.Described {
+				t.Errorf("item %q not described: %s", it.Draft.Title, it.Error)
+			}
+		}
+		if credit.FreeAllowanceMicroMinor != 3000*1_000_000 || credit.GrantedMicroMinor != 0 {
+			t.Errorf("credit %+v, want the ₹30 trial and nothing topped up", credit)
+		}
+		if credit.ConsumedMicroMinor != b.CostMicroMinor || credit.ReservedMicroMinor != 0 {
+			t.Errorf("consumed %d, held %d; the batch cost %d", credit.ConsumedMicroMinor, credit.ReservedMicroMinor, b.CostMicroMinor)
+		}
+	}
 }

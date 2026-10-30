@@ -33,8 +33,10 @@ type Task struct {
 	// additionalProperties, items and enum constrain, with description and
 	// title as notes: a length or range bound is checked in Check.
 	Schema json.RawMessage
-	// MaxInputTokens refuses a request built larger than this, unsent. With
-	// MaxOutputTokens it is also the ceiling reserved against the cap.
+	// MaxInputTokens refuses a request built larger than this, unsent.
+	// MaxOutputTokens is the most output any request may ask for; Build may
+	// ask for less in Request.MaxTokens. A call holds what its own request
+	// could cost, its estimated input and its MaxTokens, not these bounds.
 	MaxInputTokens  int
 	MaxOutputTokens int
 	// Ladder is the models to try, in order: TierSmall, then TierStrong.
