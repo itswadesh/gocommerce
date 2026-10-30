@@ -208,7 +208,7 @@ services:
       # store in a currency with no rate here cannot use the platform's key.
       AI_PLATFORM_USD_RATES: ${AI_PLATFORM_USD_RATES:-}
       # A new store's free AI trial, whole minor units per currency, e.g.
-      # INR=3000,USD=50. Empty is INR=3000 (₹30); a currency not named gets
+      # INR=3000,USD=50. Empty is INR=20000 (₹200); a currency not named gets
       # the first amount's worth at the rates above.
       AI_FREE_TRIAL: ${AI_FREE_TRIAL:-}
     volumes:

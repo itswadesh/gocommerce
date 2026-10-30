@@ -116,7 +116,7 @@ type Config struct {
 	// FreeTrial is the AI credit a store gets to try AI before an operator
 	// tops it up (AI_FREE_TRIAL): whole minor units per currency, as
 	// "INR=3000,USD=50". A currency it does not name gets the first amount
-	// converted at PlatformUSDRates. Empty is DefaultFreeTrial, ₹30. A store
+	// converted at PlatformUSDRates. Empty is DefaultFreeTrial, ₹200. A store
 	// keeps the trial it started with when this changes.
 	FreeTrial string
 
@@ -696,6 +696,7 @@ ALTER TABLE ai_executions ADD CONSTRAINT ai_executions_outcome_check
                        'policy_blocked', 'credit_exhausted'));`,
 		},
 		gocommerce.ScopeMigration("0006_credits_scope", "ai_credits", "ai_credit_ledger"),
-		{ID: "0007_free_trial", Run: m.raisePlaceholderTrials},
+		{ID: "0007_free_trial", Run: m.raiseTrials(true)},
+		{ID: "0008_free_trial_200", Run: m.raiseTrials(false)},
 	}
 }

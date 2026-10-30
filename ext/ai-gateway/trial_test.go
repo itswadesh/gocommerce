@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,24 +28,24 @@ func trialStore(t *testing.T, cfg Config, currency string) (*gocommerce.App, *Mo
 	return app, m
 }
 
-// The owner's free trial is ₹30 (D151, 2026-10-30): a fresh Indian store gets
-// exactly 3,000 paise, whatever the rupee's rate.
-func TestAFreshRupeeStoreGetsThirtyRupees(t *testing.T) {
+// The owner's free trial is ₹200 (D151, 2026-10-30): a fresh Indian store gets
+// exactly 20,000 paise, whatever the rupee's rate.
+func TestAFreshRupeeStoreGetsTwoHundredRupees(t *testing.T) {
 	cfg := Config{PlatformAnthropicKey: platformKey, PlatformUSDRates: "INR=88.50"}
 	_, m := trialStore(t, cfg, "INR")
-	if c := mustCredit(t, m, context.Background()); c.FreeAllowanceMicroMinor != 3000*microPerMinor || c.Currency != "INR" {
-		t.Errorf("free trial %d %s, want ₹30 (%d)", c.FreeAllowanceMicroMinor, c.Currency, 3000*microPerMinor)
+	if c := mustCredit(t, m, context.Background()); c.FreeAllowanceMicroMinor != 20000*microPerMinor || c.Currency != "INR" {
+		t.Errorf("free trial %d %s, want ₹200 (%d)", c.FreeAllowanceMicroMinor, c.Currency, 20000*microPerMinor)
 	}
 }
 
-// A store in another currency gets ₹30's worth at the install's own rates,
-// rounded down, rather than 3,000 of its own minor units: $30 would be a
+// A store in another currency gets ₹200's worth at the install's own rates,
+// rounded down, rather than 20,000 of its own minor units: $200 would be a
 // hundred times the trial.
-func TestAStoreInAnotherCurrencyGetsThirtyRupeesWorth(t *testing.T) {
+func TestAStoreInAnotherCurrencyGetsTwoHundredRupeesWorth(t *testing.T) {
 	cfg := Config{PlatformAnthropicKey: platformKey, PlatformUSDRates: "INR=88.50,EUR=0.92"}
 	for currency, want := range map[string]int64{
-		"USD": 33, // 3000 / 88.50 = 33.9 cents
-		"EUR": 31, // 3000 / 88.50 × 0.92 = 31.2 cents
+		"USD": 225, // 20000 / 88.50 = 225.9 cents
+		"EUR": 207, // 20000 / 88.50 × 0.92 = 207.9 cents
 	} {
 		_, m := trialStore(t, cfg, currency)
 		if c := mustCredit(t, m, context.Background()); c.FreeAllowanceMicroMinor != want*microPerMinor {
@@ -63,11 +64,11 @@ func TestTheInstallNamesTheTrialPerCurrency(t *testing.T) {
 			t.Errorf("%s free trial %d micro-minor, want %d minor", currency, c.FreeAllowanceMicroMinor, want)
 		}
 	}
-	// A figure that does not read falls back to the owner's ₹30, not to nothing.
+	// A figure that does not read falls back to the owner's ₹200, not to nothing.
 	cfg.FreeTrial = "INR=30.00"
 	_, m := trialStore(t, cfg, "INR")
-	if c := mustCredit(t, m, context.Background()); c.FreeAllowanceMicroMinor != 3000*microPerMinor {
-		t.Errorf("unreadable AI_FREE_TRIAL gave %d micro-minor, want ₹30", c.FreeAllowanceMicroMinor)
+	if c := mustCredit(t, m, context.Background()); c.FreeAllowanceMicroMinor != 20000*microPerMinor {
+		t.Errorf("unreadable AI_FREE_TRIAL gave %d micro-minor, want ₹200", c.FreeAllowanceMicroMinor)
 	}
 }
 
@@ -196,7 +197,7 @@ func TestUpgradeRaisesOnlyThePlaceholderTrial(t *testing.T) {
 	}
 	// First: on the placeholder, never set by hand. Second: an operator set
 	// it to 500 on purpose. Third: a dollar store, whose $5 is more than
-	// ₹30's worth.
+	// ₹200's worth.
 	seed(ctx, "INR")
 	b := gocommerce.WithStore(ctx, second.ID)
 	seed(b, "INR")
@@ -206,32 +207,13 @@ func TestUpgradeRaisesOnlyThePlaceholderTrial(t *testing.T) {
 	c := gocommerce.WithStore(ctx, third.ID)
 	seed(c, "USD")
 
-	var run func(context.Context, *sql.Tx) error
-	for _, mig := range m.Migrations() {
-		if mig.ID == "0007_free_trial" {
-			run = mig.Run
-		}
-	}
-	if run == nil {
-		t.Fatal("no 0007_free_trial migration")
-	}
-	tx, err := app.DB().BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := run(ctx, tx); err != nil {
-		_ = tx.Rollback()
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
+	runMigration(t, m, "0007_free_trial")
 
 	for name, tc := range map[string]struct {
 		ctx  context.Context
 		want int64
 	}{
-		"placeholder":  {ctx, 3000 * microPerMinor},
+		"placeholder":  {ctx, 20000 * microPerMinor},
 		"set by hand":  {b, placeholder},
 		"dollar store": {c, placeholder},
 	} {
@@ -242,6 +224,80 @@ func TestUpgradeRaisesOnlyThePlaceholderTrial(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("%s: free trial %d, want %d", name, got, tc.want)
 		}
+	}
+}
+
+// The owner raised the trial from ₹30 to ₹200 (D151, 2026-10-30). Stores
+// already seeded with ₹30, or ₹30's worth, that nobody set by hand are raised
+// to the new trial; one an operator set stays as set, and none is lowered.
+func TestUpgradeRaisesTheThirtyRupeeTrial(t *testing.T) {
+	cfg := Config{PlatformAnthropicKey: platformKey, PlatformUSDRates: "INR=88.50"}
+	_, m := trialStore(t, cfg, "INR")
+	app := m.app
+	ctx := context.Background()
+	stores := map[string]context.Context{"thirty rupees": ctx}
+	for _, name := range []string{"set by hand", "thirty rupees worth", "five dollars"} {
+		s, err := app.Stores().Create(ctx, name, strings.ReplaceAll(name, " ", "-"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		stores[name] = gocommerce.WithStore(ctx, s.ID)
+	}
+	seed := func(ctx context.Context, minor int64, currency string) {
+		t.Helper()
+		if _, err := app.DB().ExecContext(ctx, `
+			INSERT INTO ai_credits (free_allowance_micro, currency) VALUES ($1, $2)`, minor*microPerMinor, currency); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(stores["thirty rupees"], 3000, "INR")
+	seed(stores["set by hand"], 3000, "INR")
+	if _, err := m.SetFreeAllowance(stores["set by hand"], 3000, "agreed"); err != nil {
+		t.Fatal(err)
+	}
+	seed(stores["thirty rupees worth"], 33, "USD")
+	seed(stores["five dollars"], 500, "USD")
+
+	runMigration(t, m, "0008_free_trial_200")
+
+	for name, want := range map[string]int64{
+		"thirty rupees":       20000,
+		"set by hand":         3000,
+		"thirty rupees worth": 225, // 20000 / 88.50 = 225.9 cents
+		"five dollars":        500,
+	} {
+		var got int64
+		if err := app.DB().QueryRowContext(stores[name], `SELECT free_allowance_micro FROM ai_credits`).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want*microPerMinor {
+			t.Errorf("%s: free trial %d micro-minor, want %d minor", name, got, want)
+		}
+	}
+}
+
+// runMigration runs one of the module's migrations in a transaction of its own.
+func runMigration(t *testing.T, m *Module, id string) {
+	t.Helper()
+	var run func(context.Context, *sql.Tx) error
+	for _, mig := range m.Migrations() {
+		if mig.ID == id {
+			run = mig.Run
+		}
+	}
+	if run == nil {
+		t.Fatalf("no %s migration", id)
+	}
+	tx, err := m.app.DB().BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), tx); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 }
 
