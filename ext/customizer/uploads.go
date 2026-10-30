@@ -132,6 +132,9 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	keepBy := time.Now().Add(decodeWait + keepWithin)
 	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
+		if errors.Is(err, errTooSlow) {
+			m.uploads.refund(throttleKey(r))
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -144,6 +147,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	up, err := m.keep(ctx, file)
 	if errors.Is(err, errBusy) {
+		m.uploads.refund(throttleKey(r))
 		busy(w)
 		return
 	}
@@ -754,8 +758,7 @@ func orient(src image.Image, o int) image.Image {
 }
 
 func (m *Module) allow(w http.ResponseWriter, r *http.Request, t *throttle, what string) bool {
-	store, _ := gocommerce.StoreFrom(r.Context())
-	wait, ok := t.allow(store+" "+peerAddr(r), time.Now())
+	wait, ok := t.allow(throttleKey(r), time.Now())
 	if ok {
 		return true
 	}
@@ -806,6 +809,20 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	}
 	w.count++
 	return 0, true
+}
+
+// refund gives back an attempt that did no work worth limiting.
+func (t *throttle) refund(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if w := t.seen[key]; w != nil && w.count > 0 {
+		w.count--
+	}
+}
+
+func throttleKey(r *http.Request) string {
+	store, _ := gocommerce.StoreFrom(r.Context())
+	return store + " " + peerAddr(r)
 }
 
 // peerAddr is the request's address as the engine's outermost handler left
