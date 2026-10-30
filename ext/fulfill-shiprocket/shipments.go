@@ -71,7 +71,11 @@ ALTER TABLE shiprocket_shipments
     ADD COLUMN status      text        NOT NULL DEFAULT '',
     ADD COLUMN scans       jsonb       NOT NULL DEFAULT '[]',
     ADD COLUMN etd         text        NOT NULL DEFAULT '',
-    ADD COLUMN tracked_at  timestamptz;
+    ADD COLUMN tracked_at  timestamptz,
+    -- When the poll last asked, which is not when Shiprocket last said
+    -- anything: a parcel nothing happens to must not keep the front of the
+    -- queue.
+    ADD COLUMN polled_at   timestamptz;
 CREATE INDEX shiprocket_shipments_awb_idx ON shiprocket_shipments (store_id, awb) WHERE awb <> '';
 `,
 	},
