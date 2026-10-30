@@ -9,6 +9,7 @@
     import { request } from "$lib/api.js";
     import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
+    import Select from "$lib/components/Select.svelte";
 
     let { order, onbooked, oncancel } = $props();
 
@@ -77,14 +78,10 @@
             <span class="txt-hint txt-sm">of {line.shipped}</span>
         </label>
     {/each}
-    <label class="sr-ndr-field">
-        <span class="txt-hint txt-sm">Reason</span>
-        <select bind:value={reason}>
-            {#each REASONS as r (r)}
-                <option value={r}>{r}</option>
-            {/each}
-        </select>
-    </label>
+    <div class="sr-ndr-field">
+        <label class="txt-hint txt-sm" for="sr-return-reason">Reason</label>
+        <Select id="sr-return-reason" bind:value={reason} options={REASONS.map((r) => ({ value: r, label: r }))} />
+    </div>
     <div class="sr-actions">
         <button type="submit" class="btn sm" class:loading={busy} disabled={busy || units === 0}>
             <span class="txt">Book reverse pickup</span>
