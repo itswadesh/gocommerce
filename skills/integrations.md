@@ -55,7 +55,7 @@ the engine is abstracted.
 | `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS) |
 | *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
 | `Translator` | `Translate` | `RegisterTranslator` | `ext/translations` — products, and the names of categories and collections, in the language a shopper asked for (kinds `product`, `category`, `collection`, D87) |
-| `LineDesigner` | *(a function)* | `RegisterLineDesigner` | `ext/customizer` — vouches for a shopper's design on a basket line and at checkout, and returns what the order line keeps (D159). One per store |
+| `LineDesigner` | *(a function)* | `RegisterLineDesigner` | `ext/customizer` — vouches for a shopper's design on a basket line and at checkout, and returns what the order line keeps (D160). One per store |
 
 One more optional capability lives in `openapi.go`: implement
 `OpenAPI() []byte` and your fragment's paths and component schemas are merged

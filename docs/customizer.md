@@ -3,7 +3,7 @@
 A shopper designs their own print on a product, such as a phone case with
 their photo, a name, shapes and stickers, and buys it as a line of its own.
 This page is the contract a storefront's editor is built against. The
-decision behind it is D159 in [`PLAN.md`](../PLAN.md); the exact request and
+decision behind it is D160 in [`PLAN.md`](../PLAN.md); the exact request and
 response shapes are in the OpenAPI document every store serves at `/doc`.
 
 The module is `ext/customizer`, installed with `-customizer`. It is off in

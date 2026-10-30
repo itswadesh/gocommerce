@@ -219,8 +219,9 @@ multiplier.
 
 - Product screenshots are real screens of the panel or a storefront, captured
   at phone width (390px) and desktop width (1440px), in light and dark.
-- The sample shop's product photos are licensed (Unsplash License) and credited
-  in `docs/admin-panel.md` (D96); they exist to be erased before a store opens.
+- The sample shop's product photos are licensed (Unsplash and Pexels licences)
+  and credited in `docs/admin-panel.md` (D96, D159); they exist to be erased
+  before a store opens.
   Any other photo is the owner's own, or licensed and credited. No stock
   photos.
 - No reviews, ratings, customer counts or logos of customers anywhere until

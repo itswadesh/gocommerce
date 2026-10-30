@@ -78,6 +78,9 @@ type SampleItem struct {
 	ID    int64
 	Slug  string
 	Title string
+	// Parent is the slug of the category a category sits under, empty at the
+	// top, so a menu can nest its links as the categories are.
+	Parent string
 }
 
 // SampleCustomer is a sample shopper: a name, an address at example.com,
@@ -132,36 +135,19 @@ func (a *App) sampleSeeders() []SampleSeeder {
 	return append(first, last...)
 }
 
-// The sample categories, by product type: every sample product files under
-// the one its type names. Each has a picture, one of its products'
-// photographs, kept where a storefront reads a category's picture
-// (metadata.image), so a page of category tiles is not a row of blanks.
-var sampleCategories = []struct{ slug, title, productType, picture string }{
-	{"apparel", "Apparel", "Apparel", "cotton-crew-tee-white"},
-	{"accessories", "Accessories", "Accessories", "canvas-tote-bag"},
-	{"home", "Home", "Home", "ceramic-mug"},
-	{"stationery", "Stationery", "Stationery", "a5-notebook"},
-}
-
-var sampleCollections = []struct {
-	slug, title, description string
-	products                 []string
-}{
-	{"new-in", "New in", "The latest additions to the shop.",
-		[]string{"cotton-crew-tee", "hooded-sweatshirt", "wool-beanie", "a5-notebook"}},
-	{"gifts", "Gifts", "Small things that make good presents.",
-		[]string{"ceramic-mug", "leather-card-holder", "linen-napkins", "canvas-tote-bag"}},
-}
-
 // The sample discounts are limited to the sample products, so one left
-// switched on can never take money off anything the merchant sells.
+// switched on can never take money off anything the merchant sells. Each
+// pair is for a store selling in the catalogue's currency and then for any
+// other, as the prices are (sampleProduct.prices); a minimum is in major
+// units, and 0 is none.
 var sampleDiscounts = []struct {
-	code, title string
-	percent     int
-	minimum     int64 // in major units, scaled like the prices; 0 is none
+	code    string
+	percent int
+	title   [2]string
+	minimum [2]int64
 }{
-	{"WELCOME10", "10% off your first order", 10, 0},
-	{"BUNDLE15", "15% off a basket of 60 or more", 15, 60},
+	{"WELCOME10", 10, [2]string{"10% off your first order", "10% off your first order"}, [2]int64{}},
+	{"BUNDLE15", 15, [2]string{"15% off a basket of 5,000 or more", "15% off a basket of 100 or more"}, [2]int64{5000, 100}},
 }
 
 var sampleCustomers = []struct{ name, email string }{
@@ -185,23 +171,26 @@ type sampleOrderLine struct {
 // paid on delivery is: a pending order holds a stock reservation, which an
 // imported one never took, so marking it paid could not commit its stock. Numbered SAMPLE-1001 on, which no checkout ever takes and which says
 // what they are wherever an order number is shown.
+//
+// Between them the confirmed ones buy every sample product, so each has a
+// customer to review it.
 var sampleOrders = []struct {
 	customer, daysAgo int
 	status, payment   string
 	lines             []sampleOrderLine
 }{
-	{0, 27, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"cotton-crew-tee", []string{"M", "Black"}, 2}, {"canvas-tote-bag", nil, 1}}},
-	{1, 23, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"hooded-sweatshirt", []string{"L"}, 1}}},
-	{2, 19, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"ceramic-mug", nil, 2}, {"linen-napkins", nil, 1}}},
-	{3, 15, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"a5-notebook", nil, 3}, {"leather-card-holder", nil, 1}}},
-	{4, 13, OrderCancelled, PaymentPending, []sampleOrderLine{{"wool-beanie", []string{"Yellow"}, 1}}},
-	{5, 10, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"cotton-crew-tee", []string{"L", "White"}, 1}, {"wool-beanie", []string{"Grey"}, 1}}},
-	{0, 8, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"leather-card-holder", nil, 1}}},
-	{1, 6, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"ceramic-mug", nil, 1}, {"a5-notebook", nil, 1}}},
-	{2, 5, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"hooded-sweatshirt", []string{"M"}, 1}, {"canvas-tote-bag", nil, 1}}},
-	{3, 3, OrderConfirmed, PaymentPending, []sampleOrderLine{{"cotton-crew-tee", []string{"S", "Black"}, 1}}},
-	{4, 2, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"linen-napkins", nil, 2}}},
-	{5, 1, OrderConfirmed, PaymentPending, []sampleOrderLine{{"wool-beanie", []string{"Grey"}, 2}, {"ceramic-mug", nil, 1}}},
+	{0, 27, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"printed-anarkali-kurta", []string{"Rose", "M"}, 1}, {"satin-saree", []string{"Magenta", "Free size"}, 1}}},
+	{1, 23, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"mens-embroidered-kurta", []string{"Yellow", "L"}, 1}, {"mens-nehru-jacket", []string{"Silver", "L"}, 1}}},
+	{2, 19, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"floral-co-ord-set", []string{"Orchid", "S"}, 1}}},
+	{3, 15, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"mens-kurta-pyjama-set", []string{"Royal blue", "M"}, 2}}},
+	{4, 13, OrderCancelled, PaymentPending, []sampleOrderLine{{"embroidered-lehenga-set", []string{"Wine", "M"}, 1}}},
+	{5, 10, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"paisley-print-jumpsuit", []string{"Rust", "M"}, 1}, {"floral-tiered-maxi-dress", []string{"Blush", "M"}, 1}}},
+	{0, 8, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"ikat-print-co-ord-set", []string{"Aqua", "M"}, 1}}},
+	{1, 6, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"printed-yoke-kurta", []string{"Maroon", "M"}, 1}}},
+	{2, 5, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"embroidered-lehenga-set", []string{"Rani pink", "S"}, 1}}},
+	{3, 3, OrderConfirmed, PaymentPending, []sampleOrderLine{{"mens-embroidered-kurta", []string{"White", "XL"}, 1}}},
+	{4, 2, OrderConfirmed, PaymentPaid, []sampleOrderLine{{"printed-yoke-kurta", []string{"Bottle green", "L"}, 1}, {"floral-tiered-maxi-dress", []string{"Sage", "S"}, 1}}},
+	{5, 1, OrderConfirmed, PaymentPending, []sampleOrderLine{{"satin-saree", []string{"Royal blue", "Free size"}, 1}}},
 }
 
 // AddSampleShop gives the store ctx is bound to the sample shop and reports
@@ -216,8 +205,8 @@ func (a *App) AddSampleShop(ctx context.Context) (SampleCounts, error) {
 	}
 	shop := &SampleShop{}
 	bySlug := map[string]*Product{}
-	for _, s := range sampleCatalogue {
-		p, err := a.catalog.GetProductBySlug(ctx, s.slug)
+	for _, s := range sampleCatalogue.Products {
+		p, err := a.catalog.GetProductBySlug(ctx, s.Slug)
 		if errors.Is(err, ErrNotFound) {
 			continue
 		}
@@ -229,7 +218,7 @@ func (a *App) AddSampleShop(ctx context.Context) (SampleCounts, error) {
 		if !p.Sample {
 			continue
 		}
-		bySlug[s.slug] = p
+		bySlug[s.Slug] = p
 		shop.Products = append(shop.Products, SampleItem{ID: p.ID, Slug: p.Slug, Title: p.Title})
 	}
 
@@ -267,31 +256,48 @@ func (a *App) sampleRowID(ctx context.Context, table, column, value string) (id 
 	return id, sample, true, nil
 }
 
+// addSampleCategories adds the catalogue's categories, each under its parent,
+// and files each sample product in its own. Each has a picture where a
+// storefront reads a category's (metadata.image), so a page of category tiles
+// is not a row of blanks. The catalogue lists a parent before its children. A
+// category whose parent the store has as its own, not a sample, is added at
+// the top instead: the merchant's tree is theirs to arrange.
 func (a *App) addSampleCategories(ctx context.Context, shop *SampleShop, products map[string]*Product) (SampleCounts, error) {
 	added := SampleCounts{}
-	for _, c := range sampleCategories {
-		id, sample, ok, err := a.sampleRowID(ctx, "categories", "slug", c.slug)
+	ids := map[string]int64{}
+	for _, c := range sampleCatalogue.Categories {
+		id, sample, ok, err := a.sampleRowID(ctx, "categories", "slug", c.Slug)
 		if err != nil {
 			return added, err
 		}
 		if ok && !sample {
 			continue // the merchant's own; their products are not ours to file
 		}
+		parent, nested := ids[c.Parent]
 		if !ok {
-			cat, err := a.Categories().Create(ctx, CategoryInput{
-				Slug: c.slug, Title: c.title, sample: true,
-				Metadata: Metadata{"image": samplePhotoPrefix + c.picture + ".webp"},
-			})
+			in := CategoryInput{
+				Slug: c.Slug, Title: c.Title, sample: true,
+				Metadata: Metadata{"image": SampleMediaPrefix + c.Picture + ".webp"},
+			}
+			if nested {
+				in.ParentID = &parent
+			}
+			cat, err := a.Categories().Create(ctx, in)
 			if err != nil {
 				return added, err
 			}
 			id = cat.ID
 			added["categories"]++
 		}
-		shop.Categories = append(shop.Categories, SampleItem{ID: id, Slug: c.slug, Title: c.title})
-		for _, s := range sampleCatalogue {
-			p := products[s.slug]
-			if p == nil || s.productType != c.productType || p.Category != nil {
+		ids[c.Slug] = id
+		item := SampleItem{ID: id, Slug: c.Slug, Title: c.Title}
+		if nested {
+			item.Parent = c.Parent
+		}
+		shop.Categories = append(shop.Categories, item)
+		for _, s := range sampleCatalogue.Products {
+			p := products[s.Slug]
+			if p == nil || s.Category != c.Slug || p.Category != nil {
 				continue
 			}
 			if _, err := a.catalog.UpdateProduct(ctx, p.ID, ProductPatch{CategoryID: SetID(id)}); err != nil {
@@ -304,8 +310,8 @@ func (a *App) addSampleCategories(ctx context.Context, shop *SampleShop, product
 
 func (a *App) addSampleCollections(ctx context.Context, shop *SampleShop, products map[string]*Product) (SampleCounts, error) {
 	added := SampleCounts{}
-	for _, c := range sampleCollections {
-		id, sample, ok, err := a.sampleRowID(ctx, "collections", "slug", c.slug)
+	for _, c := range sampleCatalogue.Collections {
+		id, sample, ok, err := a.sampleRowID(ctx, "collections", "slug", c.Slug)
 		if err != nil {
 			return added, err
 		}
@@ -313,26 +319,26 @@ func (a *App) addSampleCollections(ctx context.Context, shop *SampleShop, produc
 			// A sample one from before is still the shop's to link to; the
 			// merchant's own under the same address is not.
 			if sample {
-				shop.Collections = append(shop.Collections, SampleItem{ID: id, Slug: c.slug, Title: c.title})
+				shop.Collections = append(shop.Collections, SampleItem{ID: id, Slug: c.Slug, Title: c.Title})
 			}
 			continue
 		}
 		col, err := a.Collections().Create(ctx, CollectionInput{
-			Slug: c.slug, Title: c.title, Description: c.description, sample: true,
+			Slug: c.Slug, Title: c.Title, Description: c.Description, sample: true,
 		})
 		if err != nil {
 			return added, err
 		}
 		var ids []int64
-		for _, slug := range c.products {
-			if p := products[slug]; p != nil {
+		for _, s := range sampleCatalogue.Products {
+			if p := products[s.Slug]; p != nil && slices.Contains(s.Collections, c.Slug) {
 				ids = append(ids, p.ID)
 			}
 		}
 		if err := a.Collections().SetCollectionProducts(ctx, col.ID, ids); err != nil {
 			return added, err
 		}
-		shop.Collections = append(shop.Collections, SampleItem{ID: col.ID, Slug: c.slug, Title: c.title})
+		shop.Collections = append(shop.Collections, SampleItem{ID: col.ID, Slug: c.Slug, Title: c.Title})
 		added["collections"]++
 	}
 	return added, nil
@@ -347,7 +353,11 @@ func (a *App) addSampleDiscounts(ctx context.Context, shop *SampleShop, _ map[st
 	for _, p := range shop.Products {
 		ids = append(ids, p.ID)
 	}
-	scale := currencyScale(a.Currency(ctx))
+	currency := a.Currency(ctx)
+	pick := 1
+	if currency == sampleCatalogue.Currency {
+		pick = 0
+	}
 	for _, d := range sampleDiscounts {
 		// Codes are unique whatever their case, as a shopper types them.
 		var taken bool
@@ -359,11 +369,11 @@ func (a *App) addSampleDiscounts(ctx context.Context, shop *SampleShop, _ map[st
 			continue
 		}
 		in := DiscountInput{
-			Code: d.code, Title: d.title, Kind: DiscountPercentage, ValueBP: d.percent * 100,
+			Code: d.code, Title: d.title[pick], Kind: DiscountPercentage, ValueBP: d.percent * 100,
 			Scope: DiscountScopeProducts, TargetIDs: ids, sample: true,
 		}
-		if d.minimum > 0 {
-			minimum := d.minimum * scale
+		if d.minimum[pick] > 0 {
+			minimum := d.minimum[pick] * currencyScale(currency)
 			in.MinSubtotalMinor = &minimum
 		}
 		if _, err := a.discounts.Create(ctx, in); err != nil {
@@ -531,15 +541,25 @@ func (a *App) EraseSampleShop(ctx context.Context) (SampleCounts, error) {
 	if err != nil {
 		return erased, err
 	}
-	ids, err := a.listIDs(ctx, `SELECT id FROM categories WHERE sample ORDER BY id`, "sample categories")
+	// Deepest first, since a category with another under it cannot go: a
+	// sample one under a sample one goes before its parent, and whatever is
+	// left under a parent then is the merchant's.
+	ids, err := a.listIDs(ctx, `
+		WITH RECURSIVE tree AS (
+			SELECT id, sample, 0 AS depth FROM categories WHERE parent_id IS NULL
+			UNION ALL
+			SELECT c.id, c.sample, t.depth + 1 FROM categories c JOIN tree t ON c.parent_id = t.id
+		)
+		SELECT id FROM tree WHERE sample ORDER BY depth DESC, id`, "sample categories")
 	if err != nil {
 		return erased, err
 	}
 	for _, id := range ids {
 		err := a.Categories().Delete(ctx, id)
 		if errors.Is(err, ErrConflict) {
-			// The merchant has filed their own product in it, so it is theirs
-			// from now on rather than a sample the next erase cannot take.
+			// The merchant has filed their own product or category in it, so
+			// it is theirs from now on rather than a sample the next erase
+			// cannot take.
 			if _, err := a.db.ExecContext(ctx, `UPDATE categories SET sample = false WHERE id = $1`, id); err != nil {
 				return erased, Internalf(err, "hand over a sample category")
 			}

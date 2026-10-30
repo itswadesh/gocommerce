@@ -1,10 +1,11 @@
 {
   "name": "gocommerce-fashion-images",
   "private": true,
-  "description": "Downloads the fashion sample catalogue's photographs (free stock, see CREDITS.md). Dev tooling only; nothing here ships in the engine.",
+  "description": "Downloads the fashion sample catalogue's photographs (free stock, see CREDITS.md) and builds the engine's smaller copies of them for the sample shop. Dev tooling; only build-sample.mjs's output, core/sample/2/, ships in the engine.",
   "type": "module",
   "scripts": {
-    "fetch": "node fetch-photos.mjs"
+    "fetch": "node fetch-photos.mjs",
+    "build": "node build-sample.mjs"
   },
   "dependencies": {
     "sharp": "0.35.5"

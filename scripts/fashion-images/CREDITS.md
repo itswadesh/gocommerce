@@ -1,6 +1,6 @@
 # Photo credits
 
-Written by `fetch-photos.mjs` from `catalogue.json`; edit the catalogue, not this file.
+Written by `fetch-photos.mjs` from `core/sample/catalogue.json`; edit the catalogue, not this file.
 
 Each product was photographed in its first colour. Its other colours are colour
 variants edited with ChatGPT from the original photo, which both licences allow.
@@ -33,6 +33,3 @@ variants edited with ChatGPT from the original photo, which both licences allow.
 | Men's embroidered Nehru jacket | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c](https://unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c) | [Unsplash License](https://unsplash.com/license) |
 | Men's embroidered Nehru jacket | standing | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4](https://unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4) | [Unsplash License](https://unsplash.com/license) |
 | Men's kurta pyjama set | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY](https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY) | [Unsplash License](https://unsplash.com/license) |
-| Men's cotton shirt | front | [Jibin Yesudasan](https://www.pexels.com/@jibin-yesudasan-2153859944/) | [pexels.com/photo/38947237/](https://www.pexels.com/photo/38947237/) | [Pexels License](https://www.pexels.com/license/) |
-| Men's cotton shirt | standing | [Jibin Yesudasan](https://www.pexels.com/@jibin-yesudasan-2153859944/) | [pexels.com/photo/38947236/](https://www.pexels.com/photo/38947236/) | [Pexels License](https://www.pexels.com/license/) |
-| Men's cotton shirt | leaning | [Jibin Yesudasan](https://www.pexels.com/@jibin-yesudasan-2153859944/) | [pexels.com/photo/38947235/](https://www.pexels.com/photo/38947235/) | [Pexels License](https://www.pexels.com/license/) |

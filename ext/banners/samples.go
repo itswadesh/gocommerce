@@ -11,21 +11,19 @@ import (
 // its categories: a storefront's home page has a category section of its own,
 // which the sample categories' pictures fill, and the same tiles twice would
 // read as a mistake. The pictures are the sample shop's photographs, which the
-// engine serves from its own binary at /sample-media/1/ and credits in
-// docs/admin-panel.md.
-
-const sampleMedia = "/sample-media/1/"
+// engine serves from its own binary (gocommerce.SampleMediaPrefix) and credits
+// in docs/admin-panel.md; each slide's is a row of the goods it links to.
 
 var sampleSlides = []struct{ title, kind, slug, picture string }{
-	{"New in", "collections", "new-in", "banner-new-in"},
-	{"Apparel", "categories", "apparel", "banner-apparel"},
-	{"For the home", "categories", "home", "banner-home"},
+	{"Festive edit", "collections", "festive-edit", "banner-festive"},
+	{"Women", "categories", "women", "banner-women"},
+	{"Men", "categories", "men", "banner-men"},
 }
 
 // The tile for each sample collection is a photograph of one of its products.
 var sampleTiles = map[string]string{
-	"new-in": "hooded-sweatshirt",
-	"gifts":  "ceramic-mug",
+	"new-arrivals": "floral-co-ord-set-orchid-front",
+	"festive-edit": "satin-saree-magenta-front",
 }
 
 const sampleGrid = "Shop by collection"
@@ -64,7 +62,8 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		}
 		ins = append(ins, BannerInput{
 			Placement: PlacementSlide, Title: s.title, Link: "/" + s.kind + "/" + s.slug,
-			ImageURL: sampleMedia + s.picture + "-wide.webp", MobileImageURL: sampleMedia + s.picture + "-phone.webp",
+			ImageURL:       gocommerce.SampleMediaPrefix + s.picture + "-wide.webp",
+			MobileImageURL: gocommerce.SampleMediaPrefix + s.picture + "-phone.webp",
 		})
 	}
 	for _, c := range shop.Collections {
@@ -74,7 +73,7 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		}
 		ins = append(ins, BannerInput{
 			Placement: PlacementGrid, GroupTitle: sampleGrid, Title: c.Title, Link: "/collections/" + c.Slug,
-			ImageURL: sampleMedia + picture + ".webp",
+			ImageURL: gocommerce.SampleMediaPrefix + picture + ".webp",
 		})
 	}
 	added := 0

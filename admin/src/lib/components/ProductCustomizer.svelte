@@ -1,6 +1,6 @@
 <script>
     /**
-     * A product's Customizer card (D159): whether shoppers may design their
+     * A product's Customizer card (D160): whether shoppers may design their
      * own print on it, and the editor they are given. The mockup is drawn
      * with the print area over it; the area is dragged, drawn anew or resized
      * by its corner, or typed into the boxes below, which is also the way in
