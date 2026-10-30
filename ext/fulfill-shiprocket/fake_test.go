@@ -32,6 +32,13 @@ type fakeShiprocket struct {
 	dropCreateAnswer bool
 	// refuseAWB makes assign/awb refuse with this message.
 	refuseAWB string
+	// dropAWB hangs up on assign/awb, after assigning when assignThenDrop.
+	dropAWB, assignThenDrop bool
+	// cancelledOnCreate makes the next order created arrive cancelled, as one
+	// cancelled in Shiprocket's dashboard would.
+	cancelledOnCreate bool
+	// refuseOrderCancel makes orders/cancel fail.
+	refuseOrderCancel bool
 }
 
 type fakeAccount struct {
@@ -169,15 +176,14 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 		f.nextID++
 		o := &fakeOrder{ID: f.nextID, ShipmentID: f.nextID + 500000, Channel: channel, Payload: body}
 		a.orders[channel] = o
+		if f.cancelledOnCreate {
+			f.cancelledOnCreate = false
+			o.Cancelled = true
+		}
 		if f.dropCreateAnswer {
 			f.dropCreateAnswer = false
 			// Shiprocket made the order; the answer never arrived.
-			hj, ok := w.(http.Hijacker)
-			if !ok {
-				f.t.Fatal("cannot drop the connection")
-			}
-			conn, _, _ := hj.Hijack()
-			_ = conn.Close()
+			f.hangUp(w)
 			return
 		}
 		writeJSON(w, 200, map[string]any{"order_id": o.ID, "shipment_id": o.ShipmentID, "status": "NEW", "status_code": 1})
@@ -187,13 +193,22 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 		data := []any{}
 		for _, o := range a.orders {
 			if o.Channel == search || (o.AWB != "" && o.AWB == search) {
-				data = append(data, map[string]any{"id": o.ID, "channel_order_id": o.Channel,
+				status := "NEW"
+				if o.Cancelled {
+					status = "CANCELED"
+				}
+				data = append(data, map[string]any{"id": o.ID, "channel_order_id": o.Channel, "status": status,
 					"shipments": []any{map[string]any{"id": o.ShipmentID, "awb": o.AWB, "courier": ""}}})
 			}
 		}
 		writeJSON(w, 200, map[string]any{"data": data})
 
 	case path == "/v1/external/courier/assign/awb":
+		if f.dropAWB && !f.assignThenDrop {
+			f.dropAWB = false
+			f.hangUp(w)
+			return
+		}
 		if f.refuseAWB != "" {
 			writeJSON(w, 400, map[string]any{"message": f.refuseAWB, "status_code": 400})
 			return
@@ -213,6 +228,11 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 			o.CourierID = int(c)
 		}
 		o.AWB = fmt.Sprintf("1904%010d", o.ShipmentID)
+		if f.dropAWB {
+			f.dropAWB = false
+			f.hangUp(w)
+			return
+		}
 		writeJSON(w, 200, map[string]any{"awb_assign_status": 1, "response": map[string]any{"data": map[string]any{
 			"courier_company_id": o.CourierID, "awb_code": o.AWB, "shipment_id": o.ShipmentID,
 			"courier_name":          map[int]string{43: "Delhivery Surface", 1: "Blue Dart"}[o.CourierID],
@@ -261,6 +281,10 @@ func (f *fakeShiprocket) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"message": "Bulk Shipment cancellation is in progress. Please wait for some time."})
 
 	case path == "/v1/external/orders/cancel":
+		if f.refuseOrderCancel {
+			writeJSON(w, 500, map[string]any{"message": "Trying to get property of non-object", "status_code": 500})
+			return
+		}
 		for _, o := range a.orders {
 			if o.ID == firstID(body["ids"]) {
 				o.Cancelled = true
@@ -289,4 +313,14 @@ func firstID(v any) int64 {
 		}
 	}
 	return 0
+}
+
+// hangUp is the answer that never arrives.
+func (f *fakeShiprocket) hangUp(w http.ResponseWriter) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		f.t.Fatal("cannot drop the connection")
+	}
+	conn, _, _ := hj.Hijack()
+	_ = conn.Close()
 }
