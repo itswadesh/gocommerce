@@ -118,3 +118,24 @@ func TestParcelIsWhatTheShipmentWouldWeigh(t *testing.T) {
 		t.Errorf("parcel = %+v, want 1200 g measured: three units of 400 g", parcel)
 	}
 }
+
+// Removing a parcel already cancelled says nothing new: its units were
+// announced as owed again when it was cancelled.
+func TestRemovingACancelledParcelAnnouncesNothingTwice(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := confirmedOrder(t, app, orderSpec{"CANCEL-C", 1})
+	shipped, err := app.Ship().Create(ctx, order.ID, ProviderManual, ShipRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Ship().Cancel(ctx, shipped.Fulfillments[0].ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Ship().Delete(ctx, shipped.Fulfillments[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(unshippedEvents(t, app, order.ID)); n != 1 {
+		t.Errorf("%d order.unshipped events, want 1", n)
+	}
+}

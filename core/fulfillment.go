@@ -520,9 +520,9 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 
 		// Read before the delete, because the rows go with it and the event has
 		// to be able to say which parcel came back.
-		var carrier string
+		var carrier, status string
 		if err := tx.QueryRowContext(ctx,
-			`SELECT carrier FROM fulfillments WHERE id = $1`, id).Scan(&carrier); err != nil {
+			`SELECT carrier, status FROM fulfillments WHERE id = $1`, id).Scan(&carrier, &status); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return transitionResult{}, NotFoundf("fulfillment not found")
 			}
@@ -548,13 +548,19 @@ func (f *Fulfillments) Delete(ctx context.Context, id int64) (*Order, error) {
 		if err != nil {
 			return transitionResult{}, err
 		}
+		event := EventOrderUnshipped
+		if status == "cancelled" {
+			// Its units were announced as owed again when it was cancelled;
+			// removing the record of it is news to nobody.
+			event = ""
+		}
 		payload := f.app.orders.eventPayload(o)
 		payload.Shipment = &ShipmentEvent{
 			FulfillmentID: id, Carrier: carrier,
 			RemainingUnits: remaining, Lines: held,
 		}
 		return transitionResult{
-			Event: EventOrderUnshipped, Payload: payload,
+			Event: event, Payload: payload,
 			Action:  AuditOrderShipmentDelete,
 			Summary: "Removed a shipment from order " + o.Number,
 		}, nil
