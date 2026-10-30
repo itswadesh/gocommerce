@@ -134,7 +134,8 @@ func (m *Module) apply(ctx context.Context, row *shipment, u srUpdate) error {
 		// stops offering to cancel it and the next booking takes a new id.
 		set["cancelled_at"] = time.Now()
 	}
-	if status != "" {
+	// A return's waybill is never a shipment of the order.
+	if status != "" && !row.Return {
 		if err := m.tell(ctx, row, status, u); err != nil {
 			return err
 		}
@@ -235,6 +236,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		CurrentTimestamp string `json:"current_timestamp"`
 		ETD              string `json:"etd"`
 		Scans            []scan `json:"scans"`
+		IsReturn         number `json:"is_return"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&ev); err != nil || ev.AWB == "" {
 		m.log.Warn("shiprocket: a tracking call this module could not read", "store", store)
@@ -248,6 +250,10 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	row, err := m.shipmentByAWB(ctx, ev.AWB)
 	if err != nil {
 		m.log.Info("shiprocket: tracking for a waybill this store did not book here", "store", store, "awb", ev.AWB)
+		return
+	}
+	if row.Return != (ev.IsReturn == 1) {
+		m.log.Warn("shiprocket: a tracking call whose is_return does not match the waybill's booking", "store", store, "awb", ev.AWB)
 		return
 	}
 	at, err := time.ParseInLocation("02 01 2006 15:04:05", ev.CurrentTimestamp, ist)
