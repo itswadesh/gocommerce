@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
+	ads "github.com/itswadesh/gocommerce/ext/ads"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/banners"
@@ -263,6 +264,7 @@ environment:
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
 		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withCatAI  = fs.Bool("catalog-ai", false, "install the catalog-ai module: \"Improve with AI\" on a product's page proposes a better title, description, highlights, tags, category, SEO copy and alt text, field by field, for the shop to apply and save (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
+		withAds    = fs.Bool("ads", false, "install ads intelligence: a report of orders, sales, profit after product cost and ad spend by source, medium and campaign, spend entered by hand or imported from Google Ads and Meta Ads Manager, and an AI summary (brings -ai-gateway with it)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY when -ai-gateway is not installed, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -393,7 +395,7 @@ environment:
 		var modules []gocommerce.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI || *withPhotos || *withCatAI {
+		if *withAI || *withPhotos || *withCatAI || *withAds {
 			// The platform's own Anthropic key and what its calls cost (D151):
 			// a store with no key of its own runs on it, paid from its AI
 			// credit. The Amazon importer, below, reads it only without a gateway.
@@ -412,6 +414,9 @@ environment:
 		}
 		if *withCatAI {
 			modules = append(modules, catalogai.New(catalogai.Config{Gateway: gateway}))
+		}
+		if *withAds {
+			modules = append(modules, ads.New(ads.Config{Gateway: gateway}))
 		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.

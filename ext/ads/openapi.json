@@ -1,0 +1,279 @@
+{
+  "paths": {
+    "/api/admin/x/ads/report": {
+      "get": {
+        "tags": ["admin:ads"],
+        "summary": "Orders, sales, profit and ad spend by source, medium and campaign",
+        "security": [{"adminToken": []}],
+        "description": "The sales placed in the window (the statuses the sales report counts), grouped by where the shopper came from, as the order's metadata.attribution records it: the first or the last visit with a source in the 30 days before checkout. A tagged link is its utm_source, utm_medium and utm_campaign; an untagged ad click is its platform (gclid, gbraid or wbraid is google / cpc, msclkid bing / cpc, ttclid tiktok / cpc, fbclid facebook / social); otherwise the referring domain, a search engine as organic, or (direct). An order with no attribution is (not recorded). Gross profit is net sales less the tax in them and less the variant's cost now for the units that were not returned; units without a cost are counted, not costed. Spend matches a row by source, medium and campaign, ignoring case, in the same currency, and spend with no orders is a row of its own. Each currency is its own block; nothing is added across currencies. ROAS and profit per unit of spend are ratios to two decimals, null where no spend was entered.",
+        "parameters": [
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}, "description": "First day, inclusive. Default 29 days before to."},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}, "description": "Last day, inclusive. Default today (UTC)."},
+          {"name": "tz", "in": "query", "schema": {"type": "string"}, "description": "IANA zone the days are cut in. Default UTC."},
+          {"name": "touch", "in": "query", "schema": {"type": "string", "enum": ["last", "first"]}, "description": "Credit the order to the first or the last visit. Default last."}
+        ],
+        "responses": {
+          "200": {"description": "The report.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/AdsReport"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "422": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/ads/orders": {
+      "get": {
+        "tags": ["admin:ads"],
+        "summary": "The orders behind one row of the ads report",
+        "security": [{"adminToken": []}],
+        "description": "Takes the report's window, plus currency, source, medium and campaign naming the row (an empty value for an empty one). Newest first.",
+        "parameters": [
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "tz", "in": "query", "schema": {"type": "string"}},
+          {"name": "touch", "in": "query", "schema": {"type": "string", "enum": ["last", "first"]}},
+          {"name": "currency", "in": "query", "required": true, "schema": {"type": "string"}},
+          {"name": "source", "in": "query", "schema": {"type": "string"}},
+          {"name": "medium", "in": "query", "schema": {"type": "string"}},
+          {"name": "campaign", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "The orders.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/AdsOrder"}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "422": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/ads/spend": {
+      "get": {
+        "tags": ["admin:ads"],
+        "summary": "Ad spend, day by day",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"name": "from", "in": "query", "schema": {"type": "string", "format": "date"}},
+          {"name": "to", "in": "query", "schema": {"type": "string", "format": "date"}}
+        ],
+        "responses": {
+          "200": {"description": "Up to 1,000 days of spend, newest first.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/AdsSpend"}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["admin:ads"],
+        "summary": "Enter spend for a campaign over a period",
+        "security": [{"adminToken": []}],
+        "description": "Spread evenly over the period's days, the remainder a minor unit at a time to the first days. A day already holding spend for the same source, medium, campaign (ignoring case) and currency is replaced.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "required": ["source", "campaign", "from", "amount_minor"],
+          "properties": {
+            "source": {"type": "string", "description": "What the ads put in utm_source."},
+            "medium": {"type": "string", "description": "What the ads put in utm_medium."},
+            "campaign": {"type": "string"},
+            "from": {"type": "string", "format": "date"},
+            "to": {"type": "string", "format": "date", "description": "Default from. At most 366 days."},
+            "amount_minor": {"type": "integer", "minimum": 0},
+            "currency": {"type": "string", "description": "Default the store's."}
+          }
+        }}}},
+        "responses": {
+          "201": {"description": "How many days were written.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"type": "object", "properties": {"days": {"type": "integer"}}}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "422": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/ads/spend/import": {
+      "post": {
+        "tags": ["admin:ads"],
+        "summary": "Import spend from a Google Ads or Meta Ads Manager export",
+        "security": [{"adminToken": []}],
+        "description": "Columns are found by name, never by position, and a file without one it needs is refused naming it. google: a report downloaded with the Day segment; the title and date-range rows above the column names and the Total rows below are skipped; Day, Campaign, Cost, and Currency code when present. meta: the table export; Campaign name and \"Amount spent (XXX)\", whose brackets give the currency, with Day, or else Reporting starts and Reporting ends, over whose days the row's spend is spread. Comma- or tab-separated. Rows for the same day and campaign are added together, and each day replaces what was there.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "required": ["format", "csv", "source"],
+          "properties": {
+            "format": {"type": "string", "enum": ["google", "meta"]},
+            "csv": {"type": "string", "description": "The file's text."},
+            "source": {"type": "string", "description": "What this platform's ads put in utm_source."},
+            "medium": {"type": "string", "description": "What they put in utm_medium."},
+            "currency": {"type": "string", "description": "Used only when the file does not say. Default the store's."}
+          }
+        }}}},
+        "responses": {
+          "200": {"description": "What was written.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"type": "object", "properties": {
+              "days": {"type": "integer"}, "campaigns": {"type": "integer"},
+              "totals": {"type": "array", "items": {"$ref": "#/components/schemas/Money"}}
+            }}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "422": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/ads/spend/{id}": {
+      "delete": {
+        "tags": ["admin:ads"],
+        "summary": "Delete one day of spend",
+        "security": [{"adminToken": []}],
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {
+          "204": {"description": "Deleted."},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/ads/summary": {
+      "get": {
+        "tags": ["admin:ads"],
+        "summary": "The latest AI summary of the ads report",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "The summary, or null when none has been made.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/AdsSummary"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "post": {
+        "tags": ["admin:ads"],
+        "summary": "Summarise the ads report in plain words",
+        "security": [{"adminToken": []}],
+        "description": "Runs the AI gateway's ads.summarise task on the report's figures for the window (at most 30 rows, the most spend first, each with its three best-selling products and whether they are out of stock), sent as order lines; no shopper is named. The answer may use only numbers that appear in those figures: one that states any other is refused and goes to the strong model, and from there the run is refused. It draws AI credit on the platform's key (D151). Refusals: ai_not_ready, ai_budget_exhausted, ai_credit_exhausted, ai_policy_blocked (order lines kept in), ai_provider_failed, ai_no_summary. With no orders and no spend no model is called.",
+        "requestBody": {"content": {"application/json": {"schema": {
+          "type": "object",
+          "properties": {
+            "from": {"type": "string", "format": "date"}, "to": {"type": "string", "format": "date"},
+            "tz": {"type": "string"}, "touch": {"type": "string", "enum": ["last", "first"]}
+          }
+        }}}},
+        "responses": {
+          "200": {"description": "The summary beside its figures.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/AdsSummary"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"$ref": "#/components/responses/Validation"},
+          "502": {"description": "The provider failed, or no answer kept to the figures."}
+        }
+      }
+    },
+    "/api/admin/x/ads/settings": {
+      "get": {
+        "tags": ["admin:ads"],
+        "summary": "The ads settings",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {"description": "The settings.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/AdsSettings"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "put": {
+        "tags": ["admin:ads"],
+        "summary": "Change the ads settings",
+        "security": [{"adminToken": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AdsSettings"}}}},
+        "responses": {
+          "200": {"description": "The settings.", "content": {"application/json": {"schema": {
+            "type": "object", "properties": {"data": {"$ref": "#/components/schemas/AdsSettings"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdsRow": {
+        "type": "object",
+        "properties": {
+          "source": {"type": "string"}, "medium": {"type": "string"}, "campaign": {"type": "string"},
+          "orders": {"type": "integer"},
+          "revenue": {"$ref": "#/components/schemas/Money"},
+          "average_order": {"$ref": "#/components/schemas/Money"},
+          "refunded": {"$ref": "#/components/schemas/Money"},
+          "net": {"$ref": "#/components/schemas/Money"},
+          "returns": {"type": "integer", "description": "Orders with goods received back."},
+          "product_cost": {"$ref": "#/components/schemas/Money"},
+          "gross_profit": {"$ref": "#/components/schemas/Money"},
+          "uncosted_units": {"type": "integer", "description": "Units sold whose variant has no cost; the profit does not take them off."},
+          "new_customers": {"type": "integer"}, "returning_customers": {"type": "integer"},
+          "spend": {"oneOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]},
+          "roas": {"type": ["number", "null"]},
+          "poas": {"type": ["number", "null"], "description": "Gross profit per unit of spend."},
+          "cost_per_order": {"oneOf": [{"$ref": "#/components/schemas/Money"}, {"type": "null"}]}
+        }
+      },
+      "AdsReport": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string", "format": "date"}, "to": {"type": "string", "format": "date"},
+          "time_zone": {"type": "string"}, "touch": {"type": "string"},
+          "currencies": {"type": "array", "items": {"type": "object", "properties": {
+            "currency": {"type": "string"},
+            "totals": {"$ref": "#/components/schemas/AdsRow"},
+            "rows": {"type": "array", "items": {"$ref": "#/components/schemas/AdsRow"}}
+          }}}
+        }
+      },
+      "AdsOrder": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"}, "number": {"type": "string"}, "created_at": {"type": "string", "format": "date-time"},
+          "total": {"$ref": "#/components/schemas/Money"}, "refunded": {"$ref": "#/components/schemas/Money"},
+          "gross_profit": {"$ref": "#/components/schemas/Money"}, "uncosted_units": {"type": "integer"},
+          "returned": {"type": "boolean"}, "customer": {"type": "string", "enum": ["new", "returning"]}
+        }
+      },
+      "AdsSpend": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"}, "day": {"type": "string", "format": "date"},
+          "source": {"type": "string"}, "medium": {"type": "string"}, "campaign": {"type": "string"},
+          "amount": {"$ref": "#/components/schemas/Money"},
+          "origin": {"type": "string", "enum": ["manual", "google", "meta"]}
+        }
+      },
+      "AdsSummary": {
+        "type": ["object", "null"],
+        "properties": {
+          "id": {"type": "integer"}, "kind": {"type": "string", "enum": ["manual", "weekly"]},
+          "from": {"type": "string", "format": "date"}, "to": {"type": "string", "format": "date"},
+          "touch": {"type": "string"}, "headline": {"type": "string"},
+          "points": {"type": "array", "items": {"type": "object", "properties": {
+            "row": {"type": "integer", "description": "The figure row it is about."},
+            "kind": {"type": "string", "enum": ["working", "wasting", "watch"]},
+            "text": {"type": "string"}
+          }}},
+          "figures": {"type": "array", "description": "The figures the model was given, amounts written out with their currency.", "items": {"type": "object"}},
+          "execution_id": {"type": "integer"},
+          "created_at": {"type": "string", "format": "date-time"}
+        }
+      },
+      "AdsSettings": {
+        "type": "object",
+        "properties": {
+          "weekly_summary": {"type": "boolean", "description": "Make last week's summary each Monday (UTC). Off by default: each draws AI credit."}
+        }
+      }
+    }
+  }
+}
