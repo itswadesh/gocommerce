@@ -1038,6 +1038,49 @@ func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	}
 }
 
+func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: 1})
+	decodeWait, uploadIdle = 300*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { decodeWait, uploadIdle = 30*time.Second, 15*time.Second })
+	srv := h.server(0, 0)
+	body, contentType := form("file", jpegRedTop(40, 30))
+	post := func() int {
+		resp, err := srv.Client().Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	c, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		contentType, len(body))
+	_, _ = c.Write(body[:len(body)/2])
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	h.mod.decodes <- struct{}{}
+	busy := post()
+	<-h.mod.decodes
+	if resp.StatusCode != http.StatusBadRequest || busy != http.StatusServiceUnavailable {
+		t.Fatalf("an upload that stalled = %d, then one with no turn = %d; want 400 and 503", resp.StatusCode, busy)
+	}
+	if got := post(); got != http.StatusCreated {
+		t.Errorf("the one upload an hour, after one turned away busy and one too slow = %d, want 201", got)
+	}
+	if got := post(); got != http.StatusTooManyRequests {
+		t.Errorf("a second decoded upload in the hour = %d, want 429", got)
+	}
+}
+
 func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	srv := h.server(0, time.Second)
