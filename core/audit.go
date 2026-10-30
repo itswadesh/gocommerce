@@ -159,6 +159,10 @@ const (
 	// one out is a row saying who asked for it and when. See
 	// Orders.RevealAccessToken.
 	AuditOrderTokenReveal = "order.token_reveal"
+	// AuditOrderMessage is a message to or from the shopper about the order,
+	// recorded by the module that carried it: a WhatsApp update delivered or
+	// read, a cash-on-delivery order confirmed by reply (Orders.RecordMessage).
+	AuditOrderMessage = "order.message"
 
 	AuditProductCreate         = "product.create"
 	AuditProductUpdate         = "product.update"
@@ -265,7 +269,7 @@ var AllAuditActions = []string{
 	AuditOrderDeliver, AuditOrderUndeliver,
 	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete, AuditOrderShipmentCancel,
 	AuditOrderReturn, AuditOrderReturnWithdraw,
-	AuditOrderTokenReveal,
+	AuditOrderTokenReveal, AuditOrderMessage,
 
 	AuditProductCreate, AuditProductUpdate, AuditProductDelete,
 	AuditProductOptionAdd, AuditProductOptionsSet, AuditProductMediaSet,

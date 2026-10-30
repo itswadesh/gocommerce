@@ -18326,6 +18326,10 @@
           "email": {
             "type": "string"
           },
+          "phone": {
+            "type": "string",
+            "description": "A number the shopper gave this basket for messages about it, in E.164, set by a module that holds their consent (the WhatsApp opt-in). Absent on most baskets."
+          },
           "verified_email": {
             "type": "string",
             "description": "The address this basket is priced as: a customer group's prices reach it only through this field. Set by an operator, a signed-in account whose address is confirmed, or a module — never by the public cart routes, which take any address from anybody. Absent when nothing has vouched for the basket."
@@ -18575,6 +18579,10 @@
           },
           "email": {
             "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "The number the shopper gave this basket for messages, in E.164, when a module recorded one with their consent."
           },
           "verified_email": {
             "type": "string",

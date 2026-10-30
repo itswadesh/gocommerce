@@ -266,6 +266,16 @@ func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) err
 		})); err != nil {
 			failures = append(failures, fmt.Errorf("sms: %w", err))
 		}
+		// Only where a backend takes it: WhatsApp needs the shopper's consent
+		// and an approved template for the event, and a store without either
+		// should not log a row per order for a channel it does not use. The
+		// module queues and returns, so a Meta outage is never this event's.
+		wa := Notification{Event: event, Channel: ChannelWhatsApp, To: ev.Phone, Language: lang, Data: data}
+		if a.notifier.carries(ctx, wa) {
+			if err := worthRetrying(a.notifier.send(ctx, wa)); err != nil {
+				failures = append(failures, fmt.Errorf("whatsapp: %w", err))
+			}
+		}
 	}
 	return errors.Join(failures...)
 }
@@ -341,6 +351,11 @@ func OrderNotificationData(ev *OrderEvent) map[string]string {
 		data["shipment_items_summary"] = parcel
 		data["shipment_item_count"] = strconv.Itoa(len(ev.Shipment.Lines))
 		data["shipment_remaining_units"] = strconv.Itoa(ev.Shipment.RemainingUnits)
+		// What the carrier last said, on order.shipment_updated: the one fact
+		// that tells "out for delivery" apart from any other tracking update.
+		if ev.Shipment.TrackingStatus != "" {
+			data["tracking_status"] = ev.Shipment.TrackingStatus
+		}
 		// Present only when units are actually still owed. This map is
 		// map[string]string and text/template treats every non-empty string as
 		// true, so a key holding "0" would tell a customer the rest follows
