@@ -52,7 +52,7 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 | `PaymentStatusReader` | `Status` | *optional, detected* | stripe, razorpay, cashfree — it reads back what became of an order's payment, for `POST /api/admin/orders/{id}/check-payment` (D112); the settings mark such a method `checks_payments` |
 | `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-{shiprocket,delhivery,nimbuspost,indiapost,shippo,shipstation,easyship,shippit,usps,onfleet,veeqo}`. A carrier quotes on `Ship().Parcel` before booking and reports a parcel it called off with `Ship().Cancel`, which keeps the shipment on the order as cancelled; `ext/fulfill-shiprocket` does both |
 | `TrackingReceiver` | `TrackingHook`, `Tracking` | *optional on a `FulfillmentProvider`, detected* | `ext/fulfill-shiprocket` (hook `courier-aggregator`). Served at `POST /api/tracking-updates/{hook}` with no store bound: the handler binds the store from what authenticates the call, then reports through `Ship().Track`, which records the carrier's status, delivers the order with its last parcel and cancels a parcel the carrier called off |
-| `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS) |
+| `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS); `ext/notify-whatsapp` (WhatsApp) |
 | *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
 | `Translator` | `Translate` | `RegisterTranslator` | `ext/translations` — products, and the names of categories and collections, in the language a shopper asked for (kinds `product`, `category`, `collection`, D87) |
 
@@ -249,6 +249,18 @@ unready backend as absent: the funnel skips it, the settings and the doctor
 say the channel does not deliver, and the moment the key is typed in the
 next message goes out. `ext/notify-sendgrid` and `ext/notify-msg91` are the
 worked examples.
+
+### A channel that needs consent: WhatsApp
+
+`ChannelWhatsApp` is addressed to a phone, like SMS, but the engine offers an
+order's message on it only when `App.Carries` says a backend would take it.
+`ext/notify-whatsapp` is a `ScopedNotifier` whose `Serves` is the whole rule:
+a template mapped for the moment, and the number's owner opted in to that kind
+of message (order updates or marketing) and has not replied STOP. `Notify`
+queues and returns; the module's worker talks to Meta. A module that sends on
+it — `ext/cart-recovery`'s WhatsApp step — asks `Carries` first and skips
+rather than sends into nothing. What happens to a message afterwards goes on
+the order through `Orders.RecordMessage`, never by writing `admin_audit`.
 
 ### Sending while somebody waits: `NotifyNow`
 

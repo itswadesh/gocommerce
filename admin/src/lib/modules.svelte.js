@@ -88,6 +88,7 @@ const PROBES = {
     // notifications.read beside the module's own right for cart-recovery's
     // reason: in a binary without the module nobody holds alerts.read, and a
     // typed /dash/notifications/telegram should say the module is missing.
+    "notify-whatsapp": { path: "/api/admin/x/notify-whatsapp/status", right: "notifications.read" },
     "telegram-alerts": { path: "/api/admin/x/telegram-alerts/alerts", right: ["alerts.read", "notifications.read"] },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.
