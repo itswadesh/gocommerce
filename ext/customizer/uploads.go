@@ -117,6 +117,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !m.allow(w, r, m.uploads, "uploads") {
 		return
 	}
+	counted := time.Now()
 	rc := http.NewResponseController(w)
 	body := &arriving{ReadCloser: r.Body, rc: rc, start: time.Now()}
 	if err := body.extend(); err != nil && !errors.Is(err, http.ErrNotSupported) {
@@ -131,7 +132,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
 		if errors.Is(err, errTooSlow) {
-			m.uploads.refund(throttleKey(r))
+			m.uploads.refund(throttleKey(r), counted)
 		}
 		gocommerce.RespondError(w, r, err)
 		return
@@ -145,7 +146,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	up, err := m.keep(ctx, file)
 	if errors.Is(err, errBusy) {
-		m.uploads.refund(throttleKey(r))
+		m.uploads.refund(throttleKey(r), counted)
 		m.busy(w)
 		return
 	}
@@ -820,10 +821,10 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	return 0, true
 }
 
-func (t *throttle) refund(key string) {
+func (t *throttle) refund(key string, counted time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if w := t.seen[key]; w != nil && w.count > 0 {
+	if w := t.seen[key]; w != nil && !w.start.After(counted) && w.count > 0 {
 		w.count--
 	}
 }

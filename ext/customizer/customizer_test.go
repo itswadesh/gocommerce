@@ -1108,6 +1108,24 @@ func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	}
 }
 
+func TestAnAttemptIsGivenBackOnlyToTheHourThatCountedIt(t *testing.T) {
+	limit := newThrottle(1, time.Hour)
+	counted := time.Unix(0, 0)
+	limit.allow("shop 192.0.2.1", counted)
+	nextHour := counted.Add(time.Hour)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour); !ok {
+		t.Fatal("the first upload of the next hour was refused")
+	}
+	limit.refund("shop 192.0.2.1", counted)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour.Add(time.Minute)); ok {
+		t.Error("an upload counted in one hour and given back in the next made room for a second upload in the next")
+	}
+	limit.refund("shop 192.0.2.1", nextHour)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour.Add(2*time.Minute)); !ok {
+		t.Error("an upload given back in the hour that counted it left no room for another")
+	}
+}
+
 func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: 1})
 	decodeWait, uploadIdle = 300*time.Millisecond, 300*time.Millisecond
