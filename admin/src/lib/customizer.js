@@ -8,9 +8,7 @@
 export const MIN_DPI = 72;
 export const MAX_DPI = 600;
 export const MAX_PRINT_MM = 1000;
-/** The engine's maxPrintPixels: the largest print file whose PNG still fits a
- *  shopper's upload (15 MB), at about 2.5 bytes a pixel for a photo. */
-export const MAX_PRINT_PIXELS = 6_000_000;
+export const MAX_PRINT_PIXELS = 4_000_000;
 export const MAX_STICKERS = 30;
 export const MAX_MIN_PHOTO = 10000;
 export const ASPECT_TOLERANCE = 0.02;
@@ -135,7 +133,7 @@ export function formProblem(f) {
     if (!Number.isInteger(dpi) || dpi < MIN_DPI || dpi > MAX_DPI) return `The resolution must be ${MIN_DPI} to ${MAX_DPI} dpi.`;
     const px = printPixels(size);
     if (px && px.width * px.height > MAX_PRINT_PIXELS) {
-        return `The print file would be ${px.width} × ${px.height} pixels, over ${MAX_PRINT_PIXELS / 1e6} megapixels, which is more than a shopper's upload can carry. Lower the resolution.`;
+        return `The print file would be ${px.width} × ${px.height} pixels, over ${MAX_PRINT_PIXELS / 1e6} megapixels. Larger prints are not supported yet, so lower the resolution or the print size.`;
     }
     const min = Number(f.min_photo_px);
     if (!Number.isInteger(min) || min < 0 || min > MAX_MIN_PHOTO) return `The smallest photo must be 0 to ${MAX_MIN_PHOTO} pixels.`;
