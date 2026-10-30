@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
@@ -69,7 +70,12 @@ func (m *Module) handleReturn(w http.ResponseWriter, r *http.Request) {
 		m.fail(w, r, err)
 		return
 	}
-	if err := returnable(order, in); err != nil {
+	rows, err := m.shipmentsOf(ctx, order.ID)
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	if err := returnable(order, rows, in); err != nil {
 		m.fail(w, r, err)
 		return
 	}
@@ -98,8 +104,11 @@ func (m *Module) handleReturn(w http.ResponseWriter, r *http.Request) {
 	m.respondRow(w, r, row)
 }
 
-// returnable checks a request against what the order actually shipped.
-func returnable(order *gocommerce.Order, in returnRequest) error {
+// returnable checks a request against what the customer actually has: units
+// in parcels delivered to them, less what has been recorded back and what
+// another live pickup is already fetching. A courier sent for more is a
+// courier sent for nothing.
+func returnable(order *gocommerce.Order, rows []*shipment, in returnRequest) error {
 	if len(in.Lines) == 0 {
 		return gocommerce.Validationf("name what is coming back: at least one line")
 	}
@@ -109,6 +118,24 @@ func returnable(order *gocommerce.Order, in returnRequest) error {
 	byID := map[int64]gocommerce.OrderLine{}
 	for _, l := range order.Lines {
 		byID[l.ID] = l
+	}
+	delivered := map[int64]int{}
+	for _, f := range order.Fulfillments {
+		if f.Status == "delivered" {
+			for _, fl := range f.Lines {
+				delivered[fl.OrderLineID] += fl.Quantity
+			}
+		}
+	}
+	coming := map[int64]int{}
+	for _, s := range rows {
+		// Booked, not cancelled, not yet back: a row with no waybill is a
+		// request being retried, which is this one or is refused as another.
+		if s.Return && s.AWB != "" && s.CancelledAt == nil && !slices.Contains(terminal, s.StatusCode) {
+			for id, q := range parseContents(s.contents) {
+				coming[id] += q
+			}
+		}
 	}
 	seen := map[int64]bool{}
 	for _, want := range in.Lines {
@@ -120,11 +147,31 @@ func returnable(order *gocommerce.Order, in returnRequest) error {
 			return gocommerce.Validationf("line %d is named twice", l.ID)
 		}
 		seen[l.ID] = true
-		if want.Quantity < 1 || want.Quantity > l.ShippedQuantity {
-			return gocommerce.Validationf("%s: %d went out, so between 1 and %d can come back", l.SKU, l.ShippedQuantity, l.ShippedQuantity)
+		left := delivered[l.ID] - l.ReturnedQuantity - coming[l.ID]
+		if want.Quantity < 1 || want.Quantity > left {
+			return gocommerce.Validationf("%s: %d delivered, %d recorded back and %d on a pickup already, so %d can be collected",
+				l.SKU, delivered[l.ID], l.ReturnedQuantity, coming[l.ID], max(left, 0))
 		}
 	}
 	return nil
+}
+
+// parseContents reads back what contentsOf wrote: order line id:quantity.
+func parseContents(contents string) map[int64]int {
+	out := map[int64]int{}
+	lines, _, _ := strings.Cut(contents, "|")
+	for _, part := range strings.Split(lines, ",") {
+		id, q, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		lineID, err1 := strconv.ParseInt(id, 10, 64)
+		n, err2 := strconv.Atoi(q)
+		if err1 == nil && err2 == nil {
+			out[lineID] += n
+		}
+	}
+	return out
 }
 
 // createReturn creates the return order. "Return & Exchange Orders › Create a

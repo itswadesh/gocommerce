@@ -38,6 +38,7 @@ func TestAReversePickupIsBookedFromTheCustomer(t *testing.T) {
 	app, fake := newApp(t, Config{})
 	variant := measuredProduct(t, app, "SR-RET")
 	order := placeAndShip(t, app, variant.ID, 2, nil)
+	deliver(t, app, order)
 
 	rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1))
 	if rec.Code != http.StatusOK {
@@ -63,7 +64,7 @@ func TestAReversePickupIsBookedFromTheCustomer(t *testing.T) {
 	}
 	// The order itself is untouched: goods come back on the order's own return.
 	after, _ := app.Order().Get(context.Background(), order.ID)
-	if after.Status != gocommerce.OrderShipped || len(after.Fulfillments) != 1 {
+	if after.Status != gocommerce.OrderDelivered || len(after.Fulfillments) != 1 {
 		t.Errorf("order = %s with %d parcels after booking a reverse pickup", after.Status, len(after.Fulfillments))
 	}
 }
@@ -73,6 +74,7 @@ func TestAReversePickupRetriesOnceAndRefusesADuplicate(t *testing.T) {
 	app, fake := newApp(t, Config{})
 	variant := measuredProduct(t, app, "SR-RET2")
 	order := placeAndShip(t, app, variant.ID, 1, nil)
+	deliver(t, app, order)
 
 	fake.refuseAWB = "Insufficient balance"
 	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusUnprocessableEntity {
@@ -85,8 +87,8 @@ func TestAReversePickupRetriesOnceAndRefusesADuplicate(t *testing.T) {
 	if n := len(fake.returns(testEmail)); n != 1 {
 		t.Fatalf("Shiprocket has %d return orders after a retry, want 1", n)
 	}
-	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusConflict {
-		t.Errorf("the same items again = %d, want 409", rec.Code)
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusBadRequest {
+		t.Errorf("the one unit again = %d, want 400: it is already being collected", rec.Code)
 	}
 }
 
@@ -94,6 +96,7 @@ func TestMoreBackThanWentOutIsRefused(t *testing.T) {
 	app, fake := newApp(t, Config{})
 	variant := measuredProduct(t, app, "SR-RET3")
 	order := placeAndShip(t, app, variant.ID, 1, nil)
+	deliver(t, app, order)
 	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 2)); rec.Code != http.StatusBadRequest {
 		t.Errorf("two back of one shipped = %d %s", rec.Code, rec.Body)
 	}
@@ -109,6 +112,7 @@ func TestAReturnsTrackingLeavesTheOrderAlone(t *testing.T) {
 	_, token := webhookToken(t, app, "")
 	variant := measuredProduct(t, app, "SR-RET4")
 	order := placeAndShip(t, app, variant.ID, 1, nil)
+	deliver(t, app, order)
 	var row shipment
 	gctest.DecodeData(t, gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)), &row)
 
@@ -116,7 +120,7 @@ func TestAReturnsTrackingLeavesTheOrderAlone(t *testing.T) {
 	ev["is_return"] = 1
 	post(t, app, token, ev)
 	status, tracked := trackingOf(t, app, context.Background(), order.ID)
-	if status != gocommerce.OrderShipped || tracked != "" {
+	if status != gocommerce.OrderDelivered || tracked != "" {
 		t.Errorf("after the return arrived: order %s, forward parcel %q", status, tracked)
 	}
 	var rows []shipment
@@ -126,5 +130,60 @@ func TestAReturnsTrackingLeavesTheOrderAlone(t *testing.T) {
 		if r.Return && r.StatusCode != 7 {
 			t.Errorf("the return's row = %+v, want Shiprocket's delivered status on it", r)
 		}
+	}
+}
+
+func deliver(t *testing.T, app *gocommerce.App, order *gocommerce.Order) {
+	t.Helper()
+	if _, err := app.Order().MarkDelivered(context.Background(), order.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A courier is sent only for goods the customer has: delivered, less what
+// already came back and what another pickup is already fetching.
+func TestAReturnCountsWhatIsAlreadyComingBack(t *testing.T) {
+	app, fake := newApp(t, Config{})
+	variant := measuredProduct(t, app, "SR-RET5")
+	order := placeAndShip(t, app, variant.ID, 3, nil)
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusBadRequest {
+		t.Errorf("a return of goods still on their way = %d, want 400", rec.Code)
+	}
+	deliver(t, app, order)
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusOK {
+		t.Fatalf("first pickup = %d %s", rec.Code, rec.Body)
+	}
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 1)); rec.Code != http.StatusConflict {
+		t.Errorf("the same pickup again = %d, want 409: two couriers for one request", rec.Code)
+	}
+	// One is already coming back; three were delivered.
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 3)); rec.Code != http.StatusBadRequest {
+		t.Errorf("three more of three = %d, want 400: one is on its way back", rec.Code)
+	}
+	if _, _, err := app.Order().Return(context.Background(), order.ID, gocommerce.ReturnInput{
+		Lines: []gocommerce.ReturnLineInput{{LineID: order.Lines[0].ID, Quantity: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	// One recorded back, one on its way: one left at the customer's.
+	if rec := gctest.AdminRequest(t, app, http.MethodPost, returnPath(order.ID), returnBody(order, 2)); rec.Code != http.StatusBadRequest {
+		t.Errorf("two more = %d, want 400: only one is still with the customer", rec.Code)
+	}
+	if n := len(fake.returns(testEmail)); n != 1 {
+		t.Errorf("%d return orders reached Shiprocket, want 1", n)
+	}
+}
+
+// A webhook that says it is about a return, for a waybill that is not one,
+// is not believed.
+func TestAReturnWebhookForAForwardParcelIsIgnored(t *testing.T) {
+	app, _ := newApp(t, Config{})
+	_, token := webhookToken(t, app, "")
+	variant := measuredProduct(t, app, "SR-RET6")
+	order := placeAndShip(t, app, variant.ID, 1, nil)
+	ev := event(order.Fulfillments[0].Tracking, 7, "DELIVERED", "03 11 2026 10:00:00")
+	ev["is_return"] = 1
+	post(t, app, token, ev)
+	if status, _ := trackingOf(t, app, context.Background(), order.ID); status != gocommerce.OrderShipped {
+		t.Errorf("a return's delivery delivered the order: %s", status)
 	}
 }
