@@ -651,7 +651,7 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 	if err != nil {
 		return 0, err
 	}
-	hs, err := normalizeHSCode(in.HSCode)
+	hs, err := normalizeHSCode("hs_code", in.HSCode)
 	if err != nil {
 		return 0, err
 	}
@@ -1117,7 +1117,7 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 		add("origin_country", origin)
 	}
 	if patch.HSCode != nil {
-		hs, err := normalizeHSCode(*patch.HSCode)
+		hs, err := normalizeHSCode("hs_code", *patch.HSCode)
 		if err != nil {
 			return nil, err
 		}
@@ -2035,7 +2035,9 @@ func normalizeOriginCountry(in string) (string, error) {
 // checked after that: 6 digits is the international part, and an importing
 // country extends it to 8 or 10. Four is allowed too, because India's GST
 // asks a business under ₹5 crore turnover for the 4-digit HSN on its invoices.
-func normalizeHSCode(in string) (string, error) {
+// field names the box in the refusal: a variant's hs_code or a category's
+// hsn_code, which are the same kind of number.
+func normalizeHSCode(field, in string) (string, error) {
 	var digits strings.Builder
 	for _, r := range strings.TrimSpace(in) {
 		switch {
@@ -2044,7 +2046,7 @@ func normalizeHSCode(in string) (string, error) {
 		case r == '.' || r == ' ' || r == '-':
 			// A separator, not a digit and not an error.
 		default:
-			return "", Validationf("hs_code must be digits, like 610910 or 6109.10.00")
+			return "", Validationf("%s must be digits, like 610910 or 6109.10.00", field)
 		}
 	}
 	code := digits.String()
@@ -2052,7 +2054,7 @@ func normalizeHSCode(in string) (string, error) {
 		return "", nil
 	}
 	if len(code) < 4 || len(code) > 10 {
-		return "", Validationf("hs_code must be 4 to 10 digits, like 7113 or 711319")
+		return "", Validationf("%s must be 4 to 10 digits, like 7113 or 711319", field)
 	}
 	return code, nil
 }

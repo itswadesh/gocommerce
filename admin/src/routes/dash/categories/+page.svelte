@@ -464,7 +464,7 @@
         // Empty rather than 0: the engine puts a new category at the end of its
         // siblings when no position is sent, and 0 would silently put every new
         // one first instead.
-        form = { title: "", slug: "", position: "", parent_id: parentID };
+        form = { title: "", slug: "", position: "", parent_id: parentID, hsn_code: "" };
         attributes = [];
         errors = {};
         editorOpen = true;
@@ -477,6 +477,7 @@
             slug: category.slug,
             position: String(category.position ?? 0),
             parent_id: category.parent_id ?? null,
+            hsn_code: category.hsn_code ?? "",
         };
         attributes = (category.metadata?.attributes ?? []).map((a) => ({
             key: a.key ?? "",
@@ -605,6 +606,12 @@
         if (position === undefined && fieldText(form.position) !== "") {
             errors.position = "A position is a whole number, 0 or more.";
         }
+        // The engine's rule, said before the round trip: dots, spaces and
+        // dashes are separators, and what is left is 4 to 10 digits or nothing.
+        const hsn = fieldText(form.hsn_code).replace(/[.\s-]/g, "");
+        if (hsn !== "" && !/^[0-9]{4,10}$/.test(hsn)) {
+            errors.hsn_code = "An HSN code is 4 to 10 digits, like 7113 or 7113.19.";
+        }
         if (Object.keys(errors).length) return;
 
         saving = true;
@@ -619,6 +626,7 @@
                     // undefined is "leave the order alone"; a number is a move.
                     position,
                     parent_id: form.parent_id,
+                    hsn_code: fieldText(form.hsn_code),
                     // metadata is replaced whole, so whatever else is on the
                     // category rides along — `taxonomy_gid` is written by the
                     // importer and would be lost by a bare {attributes}.
@@ -631,6 +639,7 @@
                     slug: form.slug.trim() || undefined,
                     position,
                     parent_id: form.parent_id,
+                    hsn_code: fieldText(form.hsn_code),
                     metadata: { attributes: cleanedAttributes() },
                 });
                 toast.success("Category created");
@@ -1248,6 +1257,25 @@
             in. Leave it empty on a new category and it goes last.
         </div>
         {#if errors.position}<div class="field-help error">{errors.position}</div>{/if}
+
+        <div class="field m-t-sm" class:error={!!errors.hsn_code}>
+            <label for="cat_hsn">HSN code</label>
+            <input
+                id="cat_hsn"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="7113"
+                aria-describedby="cat_hsn_help"
+                aria-invalid={errors.hsn_code ? "true" : undefined}
+                bind:value={form.hsn_code}
+            />
+        </div>
+        <div class="field-help" id="cat_hsn_help">
+            Used on GST invoices for products in this category that have no HSN of their own.
+            Subcategories without a code use this one too.
+        </div>
+        {#if errors.hsn_code}<div class="field-help error">{errors.hsn_code}</div>{/if}
 
         <!--
             The fields products in this category are asked for. Shopify gets
