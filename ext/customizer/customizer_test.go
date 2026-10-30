@@ -718,6 +718,15 @@ func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 		http.StatusCreated)
 	refused("progressive, 100 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 100, nil, []byte{0xFF, 0xFF, 0x00}),
 		http.StatusUnprocessableEntity)
+	refining := func(b []byte, from, to byte) []byte {
+		return bytes.ReplaceAll(b, segment(jpegScan, []byte{1, 1, 0x00, 1, 63, 0}), segment(jpegScan, []byte{1, 1, 0x00, from, to, 0x10}))
+	}
+	refused("progressive, a DC scan and 19 refining all 63 coefficients", refining(scanBomb(512, 512, 20, nil, nil), 1, 63), http.StatusCreated)
+	refused("progressive, a DC scan and 20 refining all 63 coefficients", refining(scanBomb(512, 512, 21, nil, nil), 1, 63),
+		http.StatusUnprocessableEntity)
+	refused("progressive, a DC scan and 98 refining 5 coefficients", refining(scanBomb(512, 512, 99, nil, nil), 1, 5), http.StatusCreated)
+	refused("progressive, 25 scans refining all 63 coefficients behind fill bytes and a zero at a restart",
+		refining(scanBomb(512, 512, 26, nil, []byte{0xFF, 0xFF, 0x00}), 1, 63), http.StatusUnprocessableEntity)
 
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() { done <- h.uploadRaw("", "file", scanBomb(16384, 2441, 10_000, nil, nil)) }()
@@ -890,6 +899,18 @@ func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
 		}
 		withinItsReckoning(t, b)
 	})
+}
+
+func FuzzAMutatedJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
+		f.Add(jpegOf(jpegSpec{w: 64, h: 48, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 64, h: 48, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
+	}
+	f.Add(withExif(jpegRedTop(24, 16), 6, ""))
+	f.Add(scanBomb(64, 64, 6, []byte{0xFF, 0xFF}, []byte{0xFF, 0xFF, 0x00}))
+	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
+	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
+	f.Fuzz(withinItsReckoning)
 }
 
 func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
