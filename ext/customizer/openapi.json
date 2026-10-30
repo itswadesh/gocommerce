@@ -24,7 +24,7 @@
           "404": {"$ref": "#/components/responses/NotFound"},
           "413": {"description": "Over 15 MB.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "415": {"description": "Not a JPEG or a PNG.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
-          "422": {"description": "Over 40 megapixels.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "422": {"description": "Over 40 megapixels, or more than 256 MB to decode: a 16-bit PNG or a progressive JPEG that large; the message says how to save it instead.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
           "429": {"$ref": "#/components/responses/RateLimited"}
         }
       }

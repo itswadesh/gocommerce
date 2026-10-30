@@ -93,16 +93,26 @@ func withExif(j []byte, orientation uint16, secret string) []byte {
 	return append(out, j[2:]...)
 }
 
-func pngBomb(w, h uint32) []byte {
+// pngBomb is a PNG header claiming a w × h picture of colour and alpha at
+// depth bits a channel, with no picture behind it.
+func pngBomb(w, h uint32, depth byte) []byte {
 	ihdr := make([]byte, 13)
 	binary.BigEndian.PutUint32(ihdr[0:], w)
 	binary.BigEndian.PutUint32(ihdr[4:], h)
-	ihdr[8], ihdr[9] = 8, 6
+	ihdr[8], ihdr[9] = depth, 6
 	chunk := append([]byte("IHDR"), ihdr...)
 	out := []byte("\x89PNG\r\n\x1a\n")
 	out = binary.BigEndian.AppendUint32(out, 13)
 	out = append(out, chunk...)
 	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(chunk))
+}
+
+// jpegBomb is a JPEG header claiming a w × h colour photo, its brightness
+// sampled as luma says (0x22 for 4:2:0, 0x11 for full resolution), with no
+// picture behind it.
+func jpegBomb(w, h uint16, marker, luma byte) []byte {
+	return []byte{0xFF, 0xD8, 0xFF, marker, 0, 17, 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 3,
+		1, luma, 0, 2, 0x11, 1, 3, 0x11, 1, 0xFF, 0xDA, 0, 2}
 }
 
 func (h *harness) media(ctx context.Context, name, mime string, body []byte) *gocommerce.MediaItem {
@@ -376,7 +386,7 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 }
 
 func TestUploadsAreRewrittenAndLimited(t *testing.T) {
-	h := newHarness(t, Config{UploadsPerHour: 7})
+	h := newHarness(t, Config{UploadsPerHour: 11})
 
 	photo := withExif(jpegRedTop(40, 80), 6, "GPS 12.9716N 77.5946E")
 	up := h.upload("", photo)
@@ -414,15 +424,27 @@ func TestUploadsAreRewrittenAndLimited(t *testing.T) {
 		"text":        {"file", []byte("<html><script>alert(1)</script></html>"), http.StatusUnsupportedMediaType},
 		"gif":         {"file", gif, http.StatusUnsupportedMediaType},
 		"broken jpeg": {"file", []byte("\xff\xd8\xff\xe0 not really a jpeg"), http.StatusUnsupportedMediaType},
-		"bomb":        {"file", pngBomb(8000, 6000), http.StatusUnprocessableEntity},
+		"bomb":        {"file", pngBomb(8000, 6000, 8), http.StatusUnprocessableEntity},
 		"no file":     {"photo", jpegRedTop(10, 10), http.StatusBadRequest},
+		// 36 megapixels at eight bytes a pixel is over the decode budget and
+		// at four is not, so that one gets as far as decoding, which finds no
+		// picture. The same for 24 megapixels at 15 bytes and at 1.5.
+		"16-bit PNG":                   {"file", pngBomb(6000, 6000, 16), http.StatusUnprocessableEntity},
+		"8-bit PNG":                    {"file", pngBomb(6000, 6000, 8), http.StatusUnsupportedMediaType},
+		"progressive full-colour JPEG": {"file", jpegBomb(6000, 4000, jpegProgressive, 0x11), http.StatusUnprocessableEntity},
+		"baseline 4:2:0 JPEG":          {"file", jpegBomb(6000, 4000, jpegBaseline, 0x22), http.StatusUnsupportedMediaType},
 	} {
-		if rec := h.uploadRaw("", tc.field, tc.body); rec.Code != tc.want {
+		rec := h.uploadRaw("", tc.field, tc.body)
+		if rec.Code != tc.want {
 			t.Errorf("%s = %d %s, want %d", name, rec.Code, rec.Body, tc.want)
+		}
+		if advice := map[string]string{"16-bit PNG": "8-bit", "progressive full-colour JPEG": "ordinary JPEG"}[name]; advice != "" &&
+			!strings.Contains(errorCode(t, rec), advice) {
+			t.Errorf("%s = %s, want it told to save the picture another way", name, errorCode(t, rec))
 		}
 	}
 	if rec := h.uploadRaw("", "file", make([]byte, maxUploadBytes+1)); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("the eighth upload this hour = %d, want 429", rec.Code)
+		t.Errorf("the twelfth upload this hour = %d, want 429", rec.Code)
 	}
 
 	big := newHarness(t, Config{})

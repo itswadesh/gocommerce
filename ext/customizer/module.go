@@ -65,6 +65,7 @@ type Module struct {
 	db      *sql.DB
 	uploads *throttle
 	designs *throttle
+	bodies  chan struct{}
 	decodes chan struct{}
 }
 
@@ -80,7 +81,8 @@ func New(cfg Config) *Module {
 		cfg:     cfg,
 		uploads: newThrottle(cfg.UploadsPerHour, time.Hour),
 		designs: newThrottle(cfg.DesignsPerHour, time.Hour),
-		decodes: make(chan struct{}, decodeSlots),
+		bodies:  make(chan struct{}, bodySlots),
+		decodes: make(chan struct{}, 1),
 	}
 }
 

@@ -27,17 +27,28 @@ const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
 	uploadQuality   = 92
-	// Each decode holds up to four bytes a pixel at maxUploadPixels.
-	decodeSlots = 2
+	// decodeBudget is the most memory one picture may take to read, turn and
+	// write again, as decodeCost reckons it from the file's header, and one
+	// picture is decoded at a time. A 12-megapixel phone photo passes in any
+	// common encoding: the dearest, a progressive JPEG with full-resolution
+	// colour held on its side, comes to 232 MB.
+	decodeBudget = 256 << 20
+	// bodySlots is how many uploads are held in memory at once, each up to
+	// maxUploadBytes; the rest wait with their bodies unread. Reading one is
+	// bounded by the server's ReadTimeout (15 s, core/gocommerce.go), which
+	// covers the whole request, so a slow body holds a slot no longer.
+	bodySlots = 4
 )
 
-// The JPEG and EXIF markers jpegOrientation walks.
+// The JPEG and EXIF markers jpegSegments walks.
 const (
 	jpegMarker      = 0xFF
 	jpegStart       = 0xD8
 	jpegApp1        = 0xE1
 	jpegScan        = 0xDA
 	jpegEnd         = 0xD9
+	jpegBaseline    = 0xC0
+	jpegProgressive = 0xC2
 	exifOrientation = 0x0112
 )
 
@@ -66,6 +77,12 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !m.allow(w, r, m.uploads, "uploads") {
+		return
+	}
+	select {
+	case m.bodies <- struct{}{}:
+		defer func() { <-m.bodies }()
+	case <-r.Context().Done():
 		return
 	}
 	body, err := readFilePart(w, r)
@@ -142,8 +159,16 @@ func (m *Module) Store(ctx context.Context, body []byte) (*Upload, error) {
 	if err != nil {
 		return nil, errNotAPicture
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if cfg.Width <= 0 || cfg.Height <= 0 || pixels > maxUploadPixels {
 		return nil, errTooManyPixels
+	}
+	orientation := 1
+	if kind == "image/jpeg" {
+		orientation = jpegOrientation(body)
+	}
+	if perPixel, advice := decodeCost(body, kind, orientation); float64(pixels)*perPixel > decodeBudget {
+		return nil, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
 	}
 
 	select {
@@ -159,7 +184,7 @@ func (m *Module) Store(ctx context.Context, body []byte) (*Upload, error) {
 	var out bytes.Buffer
 	ext, mime := ".png", "image/png"
 	if kind == "image/jpeg" {
-		img = orient(img, jpegOrientation(body))
+		img = orient(img, orientation)
 		ext, mime = ".jpg", "image/jpeg"
 		err = jpeg.Encode(&out, img, &jpeg.Options{Quality: uploadQuality})
 	} else {
@@ -205,33 +230,123 @@ func validID(s string) bool {
 	return err == nil
 }
 
+// decodeCost is about how many bytes each pixel of a picture holds while it
+// is decoded, turned and written again, read from its header, and what to
+// tell a shopper whose picture holds too many. It follows what the standard
+// library allocates. A PNG decodes to one byte a pixel (grey, a palette) or
+// four (colour), twice that at 16 bits, and an interlaced one keeps each pass
+// beside the whole. A JPEG decodes to a byte a sample, so 1.5 a pixel for the
+// usual 4:2:0 colour and 3 for full-resolution colour; a progressive one also
+// keeps every coefficient, four bytes a sample, until its last scan; CMYK is
+// copied into a picture of its own; and turning it takes four bytes a pixel.
+func decodeCost(body []byte, kind string, orientation int) (float64, string) {
+	if kind == "image/png" {
+		// IHDR, which DecodeConfig has read: the signature, the chunk's length
+		// and type, the width and height, then the bit depth, the colour type,
+		// the compression and filter methods, and the interlace method.
+		depth, colour, interlaced := body[24], body[25], body[28] == 1
+		cost := 4.0
+		if colour == 0 || colour == 3 {
+			cost = 1
+		}
+		if interlaced {
+			cost *= 2
+		}
+		if depth == 16 {
+			return cost * 2, "this picture is a 16-bit PNG too large to read; save it as an ordinary 8-bit picture"
+		}
+		return cost, "this picture is too large to read; make it smaller"
+	}
+	progressive, components, samples := jpegFrame(body)
+	cost := samples
+	if progressive {
+		cost += 4 * samples
+	}
+	if components == 4 {
+		cost += 4
+	}
+	if orientation >= 2 {
+		cost += 4
+	}
+	if progressive {
+		return cost, "this photo is a progressive JPEG too large to read; save it as an ordinary JPEG, or make it smaller"
+	}
+	return cost, "this photo is too large to read; make it smaller"
+}
+
+// jpegSegments calls fn with each marker segment of a JPEG before its first
+// scan, until fn returns false.
+func jpegSegments(b []byte, fn func(marker byte, seg []byte) bool) {
+	if len(b) < 4 || b[0] != jpegMarker || b[1] != jpegStart {
+		return
+	}
+	for i := 2; i+4 <= len(b); {
+		if b[i] != jpegMarker {
+			return
+		}
+		marker := b[i+1]
+		if marker == jpegMarker { // a fill byte before the marker
+			i++
+			continue
+		}
+		if marker == jpegScan || marker == jpegEnd {
+			return
+		}
+		size := int(binary.BigEndian.Uint16(b[i+2:]))
+		if size < 2 || i+2+size > len(b) {
+			return
+		}
+		if !fn(marker, b[i+4:i+2+size]) {
+			return
+		}
+		i += 2 + size
+	}
+}
+
 // jpegOrientation reads the EXIF orientation of a JPEG, 1 (as stored) when it
 // has none. A phone saves a photo the way the sensor sits and records how it
 // was held; throwing the EXIF away without applying it would turn every
 // portrait photo on its side.
 func jpegOrientation(b []byte) int {
-	if len(b) < 4 || b[0] != jpegMarker || b[1] != jpegStart {
-		return 1
-	}
-	for i := 2; i+4 <= len(b); {
-		if b[i] != jpegMarker {
-			return 1
-		}
-		marker := b[i+1]
-		if marker == jpegScan || marker == jpegEnd {
-			return 1
-		}
-		size := int(binary.BigEndian.Uint16(b[i+2:]))
-		if size < 2 || i+2+size > len(b) {
-			return 1
-		}
-		seg := b[i+4 : i+2+size]
+	o := 1
+	jpegSegments(b, func(marker byte, seg []byte) bool {
 		if marker == jpegApp1 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
-			return tiffOrientation(seg[6:])
+			o = tiffOrientation(seg[6:])
+			return false
 		}
-		i += 2 + size
-	}
-	return 1
+		return true
+	})
+	return o
+}
+
+// jpegFrame reads a JPEG's frame header: whether it is progressive, how many
+// components it has, and how many samples a pixel carries once each
+// component's subsampling is counted. A frame it cannot read counts as the
+// dearest the standard library decodes: progressive, full-resolution colour.
+func jpegFrame(b []byte) (progressive bool, components int, samples float64) {
+	progressive, components, samples = true, 3, 3
+	jpegSegments(b, func(marker byte, seg []byte) bool {
+		if marker < jpegBaseline || marker > jpegProgressive {
+			return true
+		}
+		n := 0
+		if len(seg) >= 6 {
+			n = int(seg[5])
+		}
+		if n == 0 || len(seg) < 6+3*n {
+			return false
+		}
+		var hmax, vmax, blocks int
+		for c := range n {
+			h, v := int(seg[7+3*c]>>4), int(seg[7+3*c]&15)
+			hmax, vmax, blocks = max(hmax, h), max(vmax, v), blocks+h*v
+		}
+		if hmax > 0 && vmax > 0 {
+			progressive, components, samples = marker == jpegProgressive, n, float64(blocks)/float64(hmax*vmax)
+		}
+		return false
+	})
+	return progressive, components, samples
 }
 
 func tiffOrientation(t []byte) int {
@@ -265,15 +380,17 @@ func orient(src image.Image, o int) image.Image {
 		return src
 	}
 	b := src.Bounds()
-	in := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(in, in.Bounds(), src, b.Min, draw.Src)
 	w, h := b.Dx(), b.Dy()
 	dw, dh := w, h
 	if o >= 5 {
 		dw, dh = h, w
 	}
 	out := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	// One row at a time through a row of RGBA, so turning the picture costs
+	// one copy of it rather than two.
+	in := image.NewRGBA(image.Rect(0, 0, w, 1))
 	for y := 0; y < h; y++ {
+		draw.Draw(in, in.Bounds(), src, image.Pt(b.Min.X, b.Min.Y+y), draw.Src)
 		for x := 0; x < w; x++ {
 			var dx, dy int
 			switch o {
@@ -292,7 +409,7 @@ func orient(src image.Image, o int) image.Image {
 			case 8:
 				dx, dy = y, w-1-x
 			}
-			copy(out.Pix[dy*out.Stride+dx*4:dy*out.Stride+dx*4+4], in.Pix[y*in.Stride+x*4:y*in.Stride+x*4+4])
+			copy(out.Pix[dy*out.Stride+dx*4:dy*out.Stride+dx*4+4], in.Pix[x*4:x*4+4])
 		}
 	}
 	return out
