@@ -26,6 +26,7 @@ import (
 	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
+	"github.com/itswadesh/gocommerce/ext/customizer"
 	"github.com/itswadesh/gocommerce/ext/faq"
 	"github.com/itswadesh/gocommerce/ext/feeds"
 	delhivery "github.com/itswadesh/gocommerce/ext/fulfill-delhivery"
@@ -249,6 +250,7 @@ environment:
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
 		withWishlist = fs.Bool("wishlist", false, "install the wishlist module: shoppers save products, and the Wishlists screen shows what is wanted most")
+		withCustom   = fs.Bool("customizer", false, "install the customizer module idle: a shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; each store switches it on under Plugins and sets each product up on its page")
 		withB2B      = fs.Bool("b2b", false, "install the b2b module: companies, buyer roles, orders on account against a credit limit, approvals and quotes (implies -identity)")
 		withAI       = fs.Bool("ai-gateway", false, "install the AI gateway module: every model call recorded, held to a monthly cap and limited to the data the owner lets leave, and the queue where a person approves what an agent proposes; with ANTHROPIC_API_KEY every store runs on the platform's key, paid from its AI credit (AI_PLATFORM_* set the models, prices and rates), otherwise a store sets a key, a cap and prices under Settings › Plugins")
 		// A store is found by host as well as by header and cookie: a request
@@ -546,6 +548,9 @@ environment:
 		}
 		if *withWishlist {
 			modules = append(modules, wishlist.New(wishlist.Config{}))
+		}
+		if *withCustom {
+			modules = append(modules, customizer.New(customizer.Config{}))
 		}
 		if *withAmazon {
 			// With the gateway installed, ANTHROPIC_API_KEY is the platform's,

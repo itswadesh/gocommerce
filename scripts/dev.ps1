@@ -128,7 +128,7 @@ $serveArgs = @('-addr', "127.0.0.1:$Port", '-admin-token', $Token, '-allow-priva
 if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
-        '-resend', '-sendgrid', '-twilio', '-msg91', '-telegram', '-invoices', '-cms', '-faq', '-translations', '-showcases', '-banners', '-layouts', '-wishlist',
+        '-resend', '-sendgrid', '-twilio', '-msg91', '-telegram', '-invoices', '-cms', '-faq', '-translations', '-showcases', '-banners', '-layouts', '-wishlist', '-customizer',
         '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b', '-recovery', '-ai-gateway', '-photo-products', '-catalog-ai'
     )
 } else {

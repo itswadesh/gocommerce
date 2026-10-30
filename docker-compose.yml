@@ -46,6 +46,7 @@ services:
       - -banners
       - -layouts
       - -wishlist
+      - -customizer
       - -gateways
       - -carriers
       - -feeds

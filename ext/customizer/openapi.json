@@ -1,0 +1,212 @@
+{
+  "paths": {
+    "/x/customizer/products/{product_id}": {
+      "parameters": [{"name": "product_id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
+      "get": {
+        "tags": ["customizer"],
+        "summary": "A product's design editor",
+        "description": "What the storefront's editor draws and offers for one product: the mockup, the overlay drawn above the design, the print area in the mockup's pixels, the print's real size, the tools, the fonts and stickers, the smallest photo that prints sharp, and the line to show before a photo is chosen. 404 while the plugin is off, and for a product that is not set up, switched off, not active, or whose mockup has left the media library.",
+        "responses": {
+          "200": {"description": "The editor's setup.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/CustomizerPublicSetup"}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/x/customizer/uploads": {
+      "post": {
+        "tags": ["customizer"],
+        "summary": "Upload a photo, a preview or a print file",
+        "description": "One file in a multipart field called `file`: a JPEG or a PNG, at most 15 MB and 40 megapixels. The engine decodes it, turns it the way its EXIF orientation says the camera was held, and writes it again, so EXIF, its GPS position and anything else that is not the picture are gone; a JPEG stays a JPEG and a PNG a PNG, transparency kept. WebP and HEIC are refused: the standard library cannot decode them, so the editor converts them in the browser first. The file is kept in the store's media storage under a random name, not in the media library, and is deleted after 30 days unless a design that is in a basket or on an order names it. 30 uploads an hour per address. 404 while the plugin is off.",
+        "requestBody": {"required": true, "content": {"multipart/form-data": {"schema": {"type": "object", "required": ["file"], "properties": {"file": {"type": "string", "format": "binary"}}}}}},
+        "responses": {
+          "201": {"description": "The stored file.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/CustomizerUpload"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "413": {"description": "Over 15 MB.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "415": {"description": "Not a JPEG or a PNG.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "422": {"description": "Over 40 megapixels.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}},
+          "429": {"$ref": "#/components/responses/RateLimited"}
+        }
+      }
+    },
+    "/x/customizer/designs": {
+      "post": {
+        "tags": ["customizer"],
+        "summary": "Save a design",
+        "description": "A finished design for one variant: its document, and the uploads of its preview (shown on the basket line and the order) and its print file (the design rendered at the print size). The document is checked against the product's setup: only its tools, fonts and stickers, every photo an upload of this store's, at most 50 layers and 64 KB. A design is never edited; a changed design is saved again. Add it to the basket with `POST /api/carts/{cartId}/line-items` and `design_id`. A design nobody ordered is deleted 30 days after a basket last held it. 30 designs an hour per address. 404 while the plugin is off or the product cannot be designed.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CustomizerDesignInput"}}}},
+        "responses": {
+          "201": {"description": "The saved design.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"design_id": {"type": "string"}, "preview_url": {"type": "string"}}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "429": {"$ref": "#/components/responses/RateLimited"}
+        }
+      }
+    },
+    "/api/admin/x/customizer/fonts": {
+      "get": {
+        "tags": ["customizer"],
+        "summary": "Fonts a customizer can offer",
+        "security": [{"adminToken": []}],
+        "description": "Every font the storefront can load, by key, and the ones a product offers until the shop chooses. Needs customizer.read.",
+        "responses": {
+          "200": {"description": "The fonts.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {
+            "fonts": {"type": "array", "items": {"$ref": "#/components/schemas/CustomizerFont"}},
+            "default": {"type": "array", "items": {"type": "string"}}
+          }}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/customizer/products/{product_id}": {
+      "parameters": [{"name": "product_id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64"}}],
+      "get": {
+        "tags": ["customizer"],
+        "summary": "A product's customizer setup",
+        "security": [{"adminToken": []}],
+        "description": "The setup as the shop saved it, or the defaults for a product never set up: off, no mockup or print area, every tool but stickers, five fonts, 300 dpi and a 1000-pixel smallest photo. Needs customizer.read.",
+        "responses": {
+          "200": {"description": "The setup.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/CustomizerSetup"}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      },
+      "put": {
+        "tags": ["customizer"],
+        "summary": "Set a product's customizer up",
+        "security": [{"adminToken": []}],
+        "description": "Replaces the setup. Tools, fonts, the resolution and the smallest photo left out take their defaults. The mockup, the overlay and the stickers must be pictures in the store's media library, JPEG or PNG, and their sizes are read from the files: the mockup's must match what is sent, and the overlay must be a PNG of the mockup's size. The print area lies inside the mockup with a corner radius of at most half its shorter side, and has the print size's shape within 2%. 1 to 1000 mm a side, 72 to 600 dpi, at most 20 000 pixels a side, at most 30 stickers. Switching it on needs the mockup, the print area, the print size and a tool. Needs customizer.write.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CustomizerSetup"}}}},
+        "responses": {
+          "200": {"description": "The saved setup.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/CustomizerSetup"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CustomizerPicture": {
+        "type": "object",
+        "properties": {
+          "url": {"type": "string"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"}
+        }
+      },
+      "CustomizerPrintArea": {
+        "type": "object",
+        "description": "Where the design goes, in the mockup's pixels.",
+        "properties": {
+          "x": {"type": "integer"}, "y": {"type": "integer"},
+          "width": {"type": "integer"}, "height": {"type": "integer"},
+          "radius": {"type": "integer", "description": "The corners' radius."}
+        }
+      },
+      "CustomizerPrintSize": {
+        "type": "object",
+        "description": "The print's real size. The print file is width_mm / 25.4 × dpi pixels wide.",
+        "properties": {
+          "width_mm": {"type": "number"}, "height_mm": {"type": "number"},
+          "dpi": {"type": "integer", "minimum": 72, "maximum": 600}
+        }
+      },
+      "CustomizerTools": {
+        "type": "object",
+        "properties": {
+          "upload": {"type": "boolean"}, "text": {"type": "boolean"}, "shapes": {"type": "boolean"},
+          "background": {"type": "boolean"}, "stickers": {"type": "boolean"}
+        }
+      },
+      "CustomizerFont": {
+        "type": "object",
+        "properties": {"key": {"type": "string"}, "family": {"type": "string"}}
+      },
+      "CustomizerSetup": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "mockup": {"allOf": [{"$ref": "#/components/schemas/CustomizerPicture"}], "nullable": true, "description": "Null until chosen."},
+          "overlay_url": {"type": "string", "nullable": true, "description": "A transparent PNG of the mockup's size, drawn above the design."},
+          "print_area": {"allOf": [{"$ref": "#/components/schemas/CustomizerPrintArea"}], "nullable": true, "description": "Null until marked."},
+          "print_size": {"$ref": "#/components/schemas/CustomizerPrintSize"},
+          "tools": {"$ref": "#/components/schemas/CustomizerTools"},
+          "fonts": {"type": "array", "items": {"type": "string"}, "description": "Font keys, from GET /api/admin/x/customizer/fonts."},
+          "sticker_media_ids": {"type": "array", "items": {"type": "integer", "format": "int64"}},
+          "min_photo_px": {"type": "integer", "description": "A photo's shorter side below this is likely to print soft; the editor warns."}
+        }
+      },
+      "CustomizerPublicSetup": {
+        "type": "object",
+        "properties": {
+          "product_id": {"type": "integer", "format": "int64"},
+          "mockup": {"$ref": "#/components/schemas/CustomizerPicture"},
+          "overlay_url": {"type": "string", "nullable": true},
+          "print_area": {"$ref": "#/components/schemas/CustomizerPrintArea"},
+          "print_size": {"$ref": "#/components/schemas/CustomizerPrintSize"},
+          "tools": {"$ref": "#/components/schemas/CustomizerTools"},
+          "fonts": {"type": "array", "items": {"$ref": "#/components/schemas/CustomizerFont"}},
+          "stickers": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "integer", "format": "int64"}, "url": {"type": "string"},
+            "width": {"type": "integer"}, "height": {"type": "integer"}
+          }}},
+          "min_photo_px": {"type": "integer"},
+          "consent": {"type": "string", "description": "The line to show before a photo is chosen; the shop's own, or the default."}
+        }
+      },
+      "CustomizerUpload": {
+        "type": "object",
+        "properties": {
+          "upload_id": {"type": "string"},
+          "url": {"type": "string"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"}
+        }
+      },
+      "CustomizerDesignInput": {
+        "type": "object",
+        "required": ["product_id", "variant_id", "document", "preview_upload_id", "print_upload_id"],
+        "properties": {
+          "product_id": {"type": "integer", "format": "int64"},
+          "variant_id": {"type": "integer", "format": "int64"},
+          "preview_upload_id": {"type": "string"},
+          "print_upload_id": {"type": "string"},
+          "document": {
+            "type": "object",
+            "description": "Version 1. Coordinates are in the mockup's pixels from the print area's top left corner; layers are drawn in order, bottom first.",
+            "required": ["version", "layers"],
+            "properties": {
+              "version": {"type": "integer", "enum": [1]},
+              "background": {"type": "string", "nullable": true, "pattern": "^#[0-9a-fA-F]{6}$"},
+              "layers": {"type": "array", "maxItems": 50, "items": {
+                "type": "object",
+                "required": ["id", "type", "x", "y", "width", "height", "rotation", "opacity"],
+                "properties": {
+                  "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+                  "type": {"type": "string", "enum": ["image", "text", "shape", "sticker"]},
+                  "x": {"type": "number"}, "y": {"type": "number"},
+                  "width": {"type": "number"}, "height": {"type": "number"},
+                  "rotation": {"type": "number", "description": "Degrees, -360 to 360."},
+                  "opacity": {"type": "number", "minimum": 0, "maximum": 1},
+                  "upload_id": {"type": "string", "description": "image only."},
+                  "sticker_media_id": {"type": "integer", "format": "int64", "description": "sticker only."},
+                  "text": {"type": "string", "maxLength": 200, "description": "text only."},
+                  "font": {"type": "string", "description": "text only: one of the product's font keys."},
+                  "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "text and shape."},
+                  "font_size": {"type": "number", "description": "text only."},
+                  "align": {"type": "string", "enum": ["left", "center", "right"], "description": "text only."},
+                  "shape": {"type": "string", "enum": ["rect", "circle", "heart", "star"], "description": "shape only."}
+                }
+              }}
+            }
+          }
+        }
+      }
+    }
+  }
+}

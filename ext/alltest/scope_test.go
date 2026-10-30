@@ -14,6 +14,7 @@ import (
 	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
 	cms "github.com/itswadesh/gocommerce/ext/cms"
 	contact "github.com/itswadesh/gocommerce/ext/contact"
+	customizer "github.com/itswadesh/gocommerce/ext/customizer"
 	faq "github.com/itswadesh/gocommerce/ext/faq"
 	feeds "github.com/itswadesh/gocommerce/ext/feeds"
 	delhivery "github.com/itswadesh/gocommerce/ext/fulfill-delhivery"
@@ -123,6 +124,7 @@ func everyModule() []gocommerce.Module {
 		translations.New(),
 		webhooks.New(webhooks.Config{}),
 		wishlist.New(wishlist.Config{}),
+		customizer.New(customizer.Config{}),
 	}
 }
 
