@@ -411,13 +411,28 @@ account is used for another's. A store owner does this once:
 2. In the panel, Settings › Shipping providers › Shiprocket › Configure: type
    the API user's email and password, press **Test connection**, and choose
    the pickup location from the ones the account lists. Save, then Activate.
+3. For tracking, press **Generate token** in the same drawer. In Shiprocket,
+   Settings › API › Webhooks: add the address it shows
+   (`https://<this server>/api/tracking-updates/courier-aggregator`), switch
+   it on, and paste the token as the security token. Shiprocket refuses an
+   address containing "shiprocket", "kartrocket", "sr" or "kr", which is why
+   the path is neutral and why the panel warns when this server's own host
+   name contains one; the token, not the address, says which store it is.
+   Without the webhook the store asks Shiprocket about every parcel on its
+   way every thirty minutes, so tracking is late rather than missing.
 
 From then on the ship dialog on an order offers Shiprocket with every courier
 that serves the order's pincode, its rate and Shiprocket's delivery estimate,
 and books the chosen one: the Shiprocket order, its waybill, the pickup and
 the label. The order's Shiprocket card has the label, manifest and invoice,
 asks for a pickup again when the first request failed, and cancels a booking
-until the parcel is out for pickup.
+until the parcel is out for pickup. It shows each parcel's journey as
+Shiprocket reports it, and a failed delivery's reason with Shiprocket's two
+answers: try again, or send it back. On the order, a parcel delivered is
+delivered (the order with its last parcel, which sends the delivered email),
+and in transit, out for delivery, a failed attempt, returning and returned
+are `order.shipment_updated` events for webhooks; a status Shiprocket's docs do
+not list is logged and kept as in transit.
 
 The password is sealed with the other secrets (see Secrets at rest) and never
 shown again; the login token Shiprocket gives for it is kept in memory only.
