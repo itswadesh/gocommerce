@@ -22,6 +22,10 @@ func (m *Module) routes(app *gocommerce.App) {
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/documents/{kind}", m.handleDocument, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/pickup", m.handlePickup, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/cancel", m.handleCancel, gocommerce.RightOrdersFulfill)
+	app.HandleAdminFunc("POST "+base+"/shipments/{id}/track", m.handleTrack, gocommerce.RightOrdersRead)
+	app.HandleAdminFunc("GET "+base+"/shipments/{id}/ndr", m.handleNDR, gocommerce.RightOrdersRead)
+	app.HandleAdminFunc("POST "+base+"/shipments/{id}/ndr", m.handleNDRAction, gocommerce.RightOrdersFulfill)
+	app.HandleAdminFunc("POST "+base+"/webhook", m.handleWebhookToken, gocommerce.RightPluginsWrite)
 }
 
 // fail answers with what went wrong, in the words an operator can act on. A
@@ -304,4 +308,58 @@ func (m *Module) respondRow(w http.ResponseWriter, r *http.Request, row *shipmen
 		row.FulfillmentID = recordedAs(order, row)
 	}
 	gocommerce.Respond(w, http.StatusOK, row)
+}
+
+// handleTrack asks Shiprocket about one parcel now, rather than waiting for
+// its webhook or the next poll.
+func (m *Module) handleTrack(w http.ResponseWriter, r *http.Request) {
+	row, ok := m.booked(w, r, true)
+	if !ok {
+		return
+	}
+	if _, err := m.track(r.Context(), []*shipment{row}); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	fresh, err := m.shipmentByID(r.Context(), row.ID)
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	m.respondRow(w, r, fresh)
+}
+
+func (m *Module) handleNDR(w http.ResponseWriter, r *http.Request) {
+	row, ok := m.booked(w, r, true)
+	if !ok {
+		return
+	}
+	ndr, err := m.ndr(r.Context(), row.AWB)
+	if err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, ndr)
+}
+
+// handleNDRAction answers a failed delivery: try again, or send it back.
+func (m *Module) handleNDRAction(w http.ResponseWriter, r *http.Request) {
+	var in NDRAction
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if err := in.validate(); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	row, ok := m.booked(w, r, true)
+	if !ok {
+		return
+	}
+	if err := m.call(r.Context(), http.MethodPost, "/v1/external/ndr/"+row.AWB+"/action", nil, in, nil); err != nil {
+		m.fail(w, r, err)
+		return
+	}
+	m.respondRow(w, r, row)
 }

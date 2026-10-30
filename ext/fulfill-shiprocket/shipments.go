@@ -3,6 +3,7 @@ package shiprocket
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -59,6 +60,21 @@ CREATE INDEX shiprocket_shipments_order_idx ON shiprocket_shipments (order_id, i
 `,
 	},
 	gocommerce.ScopeMigration("0002_store_scope", "shiprocket_shipments"),
+	{
+		ID: "0003_tracking",
+		SQL: `
+-- What Shiprocket last said about the parcel, as it said it: its status code
+-- and label, its scans newest first, its delivery estimate, and when it said
+-- it, which is what puts a late event behind a newer one.
+ALTER TABLE shiprocket_shipments
+    ADD COLUMN status_code integer,
+    ADD COLUMN status      text        NOT NULL DEFAULT '',
+    ADD COLUMN scans       jsonb       NOT NULL DEFAULT '[]',
+    ADD COLUMN etd         text        NOT NULL DEFAULT '',
+    ADD COLUMN tracked_at  timestamptz;
+CREATE INDEX shiprocket_shipments_awb_idx ON shiprocket_shipments (store_id, awb) WHERE awb <> '';
+`,
+	},
 }
 
 // shipment is one row, as the panel reads it.
@@ -81,6 +97,13 @@ type shipment struct {
 	InvoiceURL      string     `json:"invoice_url,omitempty"`
 	CancelledAt     *time.Time `json:"cancelled_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	// StatusCode and Status are Shiprocket's own (Tracking › Shipment Status
+	// Codes), Scans its journey newest first and ETD its delivery estimate.
+	StatusCode int    `json:"status_code,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Scans      []scan `json:"scans"`
+	ETD        string `json:"etd,omitempty"`
+	trackedAt  *time.Time
 	// FulfillmentID is the engine's record of this parcel, once it has one:
 	// the order's fulfillment carrying this waybill. Zero means booked at
 	// Shiprocket and not (yet) recorded on the order.
@@ -89,14 +112,19 @@ type shipment struct {
 
 const shipmentColumns = `id, order_id, channel_order_id, contents, create_sent, awb_sent,
 	coalesce(sr_order_id, 0), coalesce(shipment_id, 0), awb, coalesce(courier_id, 0), courier_name,
-	pickup_requested, pickup_scheduled, label_url, manifest_url, invoice_url, cancelled_at, created_at`
+	pickup_requested, pickup_scheduled, label_url, manifest_url, invoice_url, cancelled_at, created_at,
+	coalesce(status_code, 0), status, scans, etd, tracked_at`
 
 func scanShipment(row interface{ Scan(...any) error }) (*shipment, error) {
 	var s shipment
+	var scans []byte
 	err := row.Scan(&s.ID, &s.OrderID, &s.ChannelOrderID, &s.contents, &s.createSent, &s.awbSent,
 		&s.SROrderID, &s.ShipmentID, &s.AWB, &s.CourierID, &s.CourierName,
 		&s.PickupRequested, &s.PickupScheduled, &s.LabelURL, &s.ManifestURL, &s.InvoiceURL,
-		&s.CancelledAt, &s.CreatedAt)
+		&s.CancelledAt, &s.CreatedAt, &s.StatusCode, &s.Status, &scans, &s.ETD, &s.trackedAt)
+	if err == nil {
+		err = json.Unmarshal(scans, &s.Scans)
+	}
 	return &s, err
 }
 
@@ -116,6 +144,16 @@ func (m *Module) shipmentsOf(ctx context.Context, orderID int64) ([]*shipment, e
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// shipmentByAWB is this store's row for a waybill.
+func (m *Module) shipmentByAWB(ctx context.Context, awb string) (*shipment, error) {
+	s, err := scanShipment(m.app.DB().QueryRowContext(ctx,
+		`SELECT `+shipmentColumns+` FROM shiprocket_shipments WHERE awb = $1 ORDER BY id DESC LIMIT 1`, awb))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, gocommerce.NotFoundf("no Shiprocket shipment has waybill %s", awb)
+	}
+	return s, err
 }
 
 func (m *Module) shipmentByID(ctx context.Context, id int64) (*shipment, error) {
