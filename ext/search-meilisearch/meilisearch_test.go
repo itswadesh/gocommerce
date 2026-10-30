@@ -159,6 +159,11 @@ func TestTheCatalogueIsSyncedAndSearched(t *testing.T) {
 	if doc == nil || doc["title"] != widget.Title || doc["price_minor"] != float64(1999) || doc["in_stock"] != true {
 		t.Errorf("widget document = %v", doc)
 	}
+	// Present on a plain product too, so a card can tell plain from an index
+	// built before the flag existed.
+	if designable, there := doc["designable"]; !there || designable != false {
+		t.Errorf("widget document's designable = %v (present %v), want false", designable, there)
+	}
 	if _, there := fake.docs[jsonID(float64(draft.ID))]; there {
 		t.Errorf("the draft reached the index")
 	}
