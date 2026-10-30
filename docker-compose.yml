@@ -49,6 +49,7 @@ services:
       - -gateways
       - -carriers
       - -feeds
+      - -meta-capi
       - -sitemaps
       - -b2b
       - -recovery
