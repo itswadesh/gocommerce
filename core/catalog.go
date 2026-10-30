@@ -57,7 +57,9 @@ type Product struct {
 	// Designable is a product sold only made to a shopper's design (D174): a
 	// storefront opens the design editor for it and offers no quick add. Filled
 	// in on every read from the module that makes designs, never stored.
-	Designable bool `json:"designable,omitempty"`
+	// Always sent, false included: a storefront tells an engine that predates
+	// it, where the key is absent, from a product that is plain.
+	Designable bool `json:"designable"`
 
 	// Media is the product's pictures and videos in order, and SoldAtLeast
 	// the sold count rounded down (D134). Both are on the public product only,

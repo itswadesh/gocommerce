@@ -17985,7 +17985,7 @@
           },
           "designable": {
             "type": "boolean",
-            "description": "Sold only made to a shopper's design (the product customizer, D174): open the design editor and offer no quick add, since a plain basket line is refused with design_required. Absent means false."
+            "description": "Sold only made to a shopper's design (the product customizer, D174): open the design editor and offer no quick add, since a plain basket line is refused with design_required. Always present; false is a plain product, so a storefront skips asking for its setup. An engine that predates it leaves the key out."
           },
           "variants": {
             "type": "array",

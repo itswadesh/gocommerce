@@ -1097,6 +1097,11 @@ func TestAProductSaysItIsDesignable(t *testing.T) {
 		}
 		return p.Designable
 	}
+	// Sent for a plain product too, so a storefront can tell it from an
+	// engine that predates the key.
+	if rec := h.do(http.MethodGet, "/api/products/"+strconv.FormatInt(plain.product.ID, 10), "", "", nil, ""); !strings.Contains(rec.Body.String(), `"designable":false`) {
+		t.Errorf("a plain product leaves designable out: %s", rec.Body)
+	}
 	if !designable(c.product.ID) || designable(plain.product.ID) {
 		t.Fatalf("designable = %v / %v, want the set-up case only", designable(c.product.ID), designable(plain.product.ID))
 	}
