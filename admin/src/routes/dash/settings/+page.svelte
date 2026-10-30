@@ -21,7 +21,7 @@
      */
     import { base } from "$app/paths";
     import { settings, loadSettings, loadProfile as refreshProfile } from "$lib/settings.svelte.js";
-    import { storeProfile, can, stores as storesAPI } from "$lib/api.js";
+    import { storeProfile, can, stores as storesAPI, gst } from "$lib/api.js";
     import { forgetStores, loadStores, myStores } from "$lib/stores.svelte.js";
     import { formatMoney, pluralize } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
@@ -91,7 +91,9 @@
         { key: "address_line1", label: "Address" },
         { key: "address_line2", label: "Address line 2" },
         { key: "city", label: "City" },
-        { key: "state", label: "State or region" },
+        // A list of GST states for an Indian store (D170), whose GSTIN has to
+        // agree with it; a text box anywhere else.
+        { key: "state", label: "State or region", kind: "select" },
         { key: "postal_code", label: "Postal code" },
         { key: "country", label: "Country", kind: "select", hint: "Where the business is registered." },
         { key: "tax_id", label: "Tax registration", hint: "VAT, GSTIN or equivalent." },
@@ -125,8 +127,27 @@
         }
     })();
 
+    /*
+     * The GST states, fetched the first time the country is India. The name
+     * is what is stored, as the text box stored it; a saved spelling that is
+     * not on the list ("Orissa", "MP") stays a choice rather than being
+     * blanked by the next save.
+     */
+    let gstStates = $state([]);
+    $effect(() => {
+        if (draft?.country !== "IN" || gstStates.length) return;
+        gst.states()
+            .then((r) => (gstStates = (r?.data ?? []).map((st) => ({ value: st.name, label: `${st.name} (${st.code})` }))))
+            .catch(() => {});
+    });
+    function stateOptions(saved) {
+        if (!gstStates.length || !saved || gstStates.some((o) => o.value === saved)) return gstStates;
+        return [{ value: saved, label: saved }, ...gstStates];
+    }
+
     function optionsFor(key) {
         if (key === "timezone") return zones;
+        if (key === "state") return draft?.country === "IN" ? stateOptions(draft?.state) : [];
         if (key === "country") return countryOptions(draft?.country);
         if (key === "currency") return currencyOptions(draft?.currency);
         return [];
@@ -147,7 +168,7 @@
                           label:
                               key === "timezone"
                                   ? "UTC (nothing set)"
-                                  : key === "country"
+                                  : key === "country" || key === "state"
                                     ? "Not set"
                                     : "The binary's default",
                       },
