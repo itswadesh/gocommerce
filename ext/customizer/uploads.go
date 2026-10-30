@@ -371,14 +371,14 @@ func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, er
 		int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
 		return "", bounds, errTooManyPixels
 	}
+	var f jpegHead
 	orientation := 1
 	if mime == "image/jpeg" {
-		var f jpegHead
 		if f, orientation = jpegHeader(body); f.scans > f.scanLimit() {
 			return "", bounds, errTooManyScans
 		}
 	}
-	if cost, advice := decodeCost(body, mime, cfg, orientation); cost > decodeBudget {
+	if cost, advice := decodeCost(body, mime, cfg, f, orientation); cost > decodeBudget {
 		return "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
 	}
 
@@ -443,7 +443,7 @@ func validID(s string) bool {
 	return err == nil
 }
 
-func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (cost int64, advice string) {
+func decodeCost(body []byte, mime string, cfg image.Config, f jpegHead, orientation int) (cost int64, advice string) {
 	w, h := int64(cfg.Width), int64(cfg.Height)
 	if mime == "image/png" {
 		advice = "this picture is too large to read; make it smaller"
@@ -452,7 +452,6 @@ func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (co
 		}
 		return int64(len(body)) + pngCost(body, w, h), advice
 	}
-	f, _ := jpegHeader(body)
 	if f.scans == 0 || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
 		f = dearestFrame(cfg)
 	}

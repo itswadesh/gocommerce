@@ -815,11 +815,12 @@ func withinItsReckoning(t *testing.T, b []byte) {
 		return
 	}
 	mime := http.DetectContentType(b)
+	var f jpegHead
 	orientation := 1
 	if mime == "image/jpeg" {
-		_, orientation = jpegHeader(b)
+		f, orientation = jpegHeader(b)
 	}
-	cost, _ := decodeCost(b, mime, cfg, orientation)
+	cost, _ := decodeCost(b, mime, cfg, f, orientation)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	_, _, err = redraw(b, io.Discard)
