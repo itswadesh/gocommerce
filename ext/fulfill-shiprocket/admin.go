@@ -26,6 +26,7 @@ func (m *Module) routes(app *gocommerce.App) {
 	app.HandleAdminFunc("GET "+base+"/shipments/{id}/ndr", m.handleNDR, gocommerce.RightOrdersRead)
 	app.HandleAdminFunc("POST "+base+"/shipments/{id}/ndr", m.handleNDRAction, gocommerce.RightOrdersFulfill)
 	app.HandleAdminFunc("POST "+base+"/webhook", m.handleWebhookToken, gocommerce.RightPluginsWrite)
+	app.HandleAdminFunc("POST "+base+"/orders/{id}/returns", m.handleReturn, gocommerce.RightOrdersFulfill)
 }
 
 // fail answers with what went wrong, in the words an operator can act on. A

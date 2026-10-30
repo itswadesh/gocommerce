@@ -79,6 +79,14 @@ ALTER TABLE shiprocket_shipments
 CREATE INDEX shiprocket_shipments_awb_idx ON shiprocket_shipments (store_id, awb) WHERE awb <> '';
 `,
 	},
+	{
+		ID: "0004_returns",
+		SQL: `
+-- A reverse pickup: a parcel coming back from the customer, booked as a
+-- Shiprocket return order. Never a shipment of the order.
+ALTER TABLE shiprocket_shipments ADD COLUMN is_return boolean NOT NULL DEFAULT false;
+`,
+	},
 }
 
 // shipment is one row, as the panel reads it.
@@ -108,6 +116,8 @@ type shipment struct {
 	Scans      []scan `json:"scans"`
 	ETD        string `json:"etd,omitempty"`
 	trackedAt  *time.Time
+	// Return is a reverse pickup, coming back from the customer.
+	Return bool `json:"return"`
 	// FulfillmentID is the engine's record of this parcel, once it has one:
 	// the order's fulfillment carrying this waybill. Zero means booked at
 	// Shiprocket and not (yet) recorded on the order.
@@ -117,7 +127,7 @@ type shipment struct {
 const shipmentColumns = `id, order_id, channel_order_id, contents, create_sent, awb_sent,
 	coalesce(sr_order_id, 0), coalesce(shipment_id, 0), awb, coalesce(courier_id, 0), courier_name,
 	pickup_requested, pickup_scheduled, label_url, manifest_url, invoice_url, cancelled_at, created_at,
-	coalesce(status_code, 0), status, scans, etd, tracked_at`
+	coalesce(status_code, 0), status, scans, etd, tracked_at, is_return`
 
 func scanShipment(row interface{ Scan(...any) error }) (*shipment, error) {
 	var s shipment
@@ -125,7 +135,7 @@ func scanShipment(row interface{ Scan(...any) error }) (*shipment, error) {
 	err := row.Scan(&s.ID, &s.OrderID, &s.ChannelOrderID, &s.contents, &s.createSent, &s.awbSent,
 		&s.SROrderID, &s.ShipmentID, &s.AWB, &s.CourierID, &s.CourierName,
 		&s.PickupRequested, &s.PickupScheduled, &s.LabelURL, &s.ManifestURL, &s.InvoiceURL,
-		&s.CancelledAt, &s.CreatedAt, &s.StatusCode, &s.Status, &scans, &s.ETD, &s.trackedAt)
+		&s.CancelledAt, &s.CreatedAt, &s.StatusCode, &s.Status, &scans, &s.ETD, &s.trackedAt, &s.Return)
 	if err == nil {
 		err = json.Unmarshal(scans, &s.Scans)
 	}
@@ -210,7 +220,12 @@ func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents st
 		return nil, time.Time{}, err
 	}
 	var pending *shipment
+	forward := 0
 	for _, s := range rows {
+		if s.Return {
+			continue
+		}
+		forward++
 		if s.CancelledAt == nil && recordedAs(order, s) == 0 {
 			pending = s
 		}
@@ -227,22 +242,31 @@ func (m *Module) claim(ctx context.Context, order *gocommerce.Order, contents st
 		// sequence counts cancelled rows, because Shiprocket refuses an id it
 		// has seen.
 		channel := fmt.Sprintf("%s_%d", order.Number, order.ID)
-		if seq := len(rows) + 1; seq > 1 {
+		if seq := forward + 1; seq > 1 {
 			channel = fmt.Sprintf("%s-%d", channel, seq)
 		}
-		pending, err = scanShipment(m.app.DB().QueryRowContext(ctx, `
-			INSERT INTO shiprocket_shipments (order_id, channel_order_id, contents)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (store_id, channel_order_id) DO UPDATE SET updated_at = shiprocket_shipments.updated_at
-			RETURNING `+shipmentColumns, order.ID, channel, contents))
-		if err != nil {
+		if pending, err = m.insertRow(ctx, order, channel, contents, false); err != nil {
 			return nil, time.Time{}, err
-		}
-		if pending.OrderID != order.ID || pending.contents != contents {
-			return nil, time.Time{}, gocommerce.Conflictf("Shiprocket order id %s is already taken by another booking", channel)
 		}
 	}
 	return m.lease(ctx, pending.ID)
+}
+
+// insertRow writes a booking's row before anything is asked of Shiprocket.
+// Two presses at once both reach the one row; the lease then admits one.
+func (m *Module) insertRow(ctx context.Context, order *gocommerce.Order, channel, contents string, isReturn bool) (*shipment, error) {
+	row, err := scanShipment(m.app.DB().QueryRowContext(ctx, `
+		INSERT INTO shiprocket_shipments (order_id, channel_order_id, contents, is_return)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (store_id, channel_order_id) DO UPDATE SET updated_at = shiprocket_shipments.updated_at
+		RETURNING `+shipmentColumns, order.ID, channel, contents, isReturn))
+	if err != nil {
+		return nil, err
+	}
+	if row.OrderID != order.ID || row.contents != contents || row.Return != isReturn {
+		return nil, gocommerce.Conflictf("Shiprocket order id %s is already taken by another booking", channel)
+	}
+	return row, nil
 }
 
 // lease takes a row for one booking or cancellation at a time, and returns the

@@ -502,6 +502,11 @@ func (m *Module) assignAWB(ctx context.Context, row *shipment, courierID string)
 	row.awbSent = true
 
 	payload := map[string]any{"shipment_id": row.ShipmentID}
+	if row.Return {
+		// "Return & Exchange Orders › Generate AWB for Return Shipment":
+		// the same call, with is_return required.
+		payload["is_return"] = 1
+	}
 	if courierID != "" {
 		// The operator chose a courier in the ship dialog, which sends it
 		// through the ship request's meta — exactly what that pass-through
