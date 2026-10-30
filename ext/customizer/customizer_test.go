@@ -709,8 +709,9 @@ func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 		"a comment":          segment(jpegComment, []byte("x")),
 		"the AC table again": segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), 0xE0)),
 	} {
-		refused("progressive, 99 scans with "+name+" between them", scanBomb(512, 512, 99, between, nil), http.StatusCreated)
-		refused("progressive, 100 scans with "+name+" between them", scanBomb(512, 512, 100, between, nil), http.StatusUnprocessableEntity)
+		refused("progressive, a DC scan and 97 more with "+name+" between them", scanBomb(512, 512, 98, between, nil), http.StatusCreated)
+		refused("progressive, a DC scan and 98 more with "+name+" between them", scanBomb(512, 512, 99, between, nil),
+			http.StatusUnprocessableEntity)
 	}
 	// image/jpeg's findRST skips "\xff\xff\x00" in a scan where a restart is
 	// due, where the walk takes it for a marker.
@@ -724,9 +725,19 @@ func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
 	refused("progressive, a DC scan and 19 refining all 63 coefficients", refining(scanBomb(512, 512, 20, nil, nil), 1, 63), http.StatusCreated)
 	refused("progressive, a DC scan and 20 refining all 63 coefficients", refining(scanBomb(512, 512, 21, nil, nil), 1, 63),
 		http.StatusUnprocessableEntity)
-	refused("progressive, a DC scan and 49 refining 5 coefficients", refining(scanBomb(512, 512, 50, nil, nil), 1, 5), http.StatusCreated)
-	refused("progressive, a DC scan and 50 refining 5 coefficients", refining(scanBomb(512, 512, 51, nil, nil), 1, 5),
+	refused("progressive, a DC scan and 48 refining 5 coefficients", refining(scanBomb(512, 512, 49, nil, nil), 1, 5), http.StatusCreated)
+	refused("progressive, a DC scan and 49 refining 5 coefficients", refining(scanBomb(512, 512, 50, nil, nil), 1, 5),
 		http.StatusUnprocessableEntity)
+	dcScans := func(n int) []byte {
+		one := scanBomb(512, 512, 1, nil, nil)
+		b := bytes.Clone(one[:len(one)-2])
+		for range n - 1 {
+			b = append(b, one[bytes.Index(one, []byte{0xFF, jpegScan}):len(one)-2]...)
+		}
+		return append(b, 0xFF, jpegEnd)
+	}
+	refused("progressive, 49 DC scans", dcScans(49), http.StatusCreated)
+	refused("progressive, 50 DC scans", dcScans(50), http.StatusUnprocessableEntity)
 	refused("progressive, 25 scans refining all 63 coefficients behind fill bytes and a zero at a restart",
 		refining(scanBomb(512, 512, 26, nil, []byte{0xFF, 0xFF, 0x00}), 1, 63), http.StatusUnprocessableEntity)
 
