@@ -15,7 +15,7 @@
     import { tick, untrack } from "svelte";
     import { auth, events, can, session, stores, errors as errorReports } from "$lib/api.js";
     import { installErrorReporting } from "$lib/error-reporting.js";
-    import { clearProfile, clearSettings } from "$lib/settings.svelte.js";
+    import { clearProfile, clearSettings, profile } from "$lib/settings.svelte.js";
     import { forgetModules, hasModule } from "$lib/modules.svelte.js";
     import { forgetScreens } from "$lib/screens.svelte.js";
     import { applyEntry, ensureStore, forgetStores, isSuperseded, markStores, myStores } from "$lib/stores.svelte.js";
@@ -645,12 +645,21 @@
         size the stylesheet already had a class for. The mark is remixicon, the
         icon set every other glyph in this panel comes from.
 
-        The word is the brand of the address the panel is opened on (D114),
-        and a brand with a logo of its own shows it in the mark's place.
+        Inside a store it is the store: its name and logo, as the owner set
+        them in Store details (D167). Before a store is open, and for a store
+        that has set neither, it is the brand of the address the panel is
+        opened on (D114), and a brand with a logo shows it in the mark's place.
     -->
-    <a href="{base}/dash" class="app-brand" aria-label={brand.name || "Home"}>
-        {#if brand.logo_url}
-            <img class="app-brand-logo" src={brand.logo_url} alt="" height="20" />
+    {@const own = authenticated && profile.loaded}
+    {@const name = (own && profile.name) || brand.name}
+    {@const logo = own && profile.all.logo_url ? profile.all.logo_url : brand.logo_url}
+    {@const logoDark = own && profile.all.logo_dark_url ? profile.all.logo_dark_url : ""}
+    <a href="{base}/dash" class="app-brand" aria-label={name || "Home"}>
+        {#if logo}
+            <img class="app-brand-logo" class:has-dark={!!logoDark} src={logo} alt="" height="20" />
+            {#if logoDark}
+                <img class="app-brand-logo app-brand-logo-dark" src={logoDark} alt="" height="20" />
+            {/if}
         {:else}
             <!-- kitcommerce.store's mark, drawn as the site draws it: from parts,
                  in currentColor, so it takes the theme like the text beside it. -->
@@ -660,7 +669,7 @@
                 <path d="M9.6 12h4.4l5.8 8h-4.4z" />
             </svg>
         {/if}
-        <span class="app-brand-name">{brand.name}</span>
+        <span class="app-brand-name">{name}</span>
     </a>
 {/snippet}
 
