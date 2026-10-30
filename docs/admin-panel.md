@@ -1081,7 +1081,7 @@ Turning it on is not always enough, and `gocommerce doctor` says when:
 **Limits:**
 - One client address (an IPv6 /64) may try 20 times an hour. An attempt
   refused for its shape, such as a short password, costs nothing. Behind a
-  proxy that does not pass the client's address through, that is the whole
+  proxy missing from `GOCOMMERCE_TRUSTED_PROXIES`, that is the whole
   install's 20.
 - One person may open 10 stores a day.
 - The addresses a platform keeps for itself (`www`, `admin`, `api`, `mail` and

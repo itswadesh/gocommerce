@@ -172,6 +172,13 @@ environment:
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
                     server itself: one business's own store, or development
+  GOCOMMERCE_TRUSTED_PROXIES
+                    used when -trusted-proxies is not given: the proxies in
+                    front of the engine, such as the storefront's server,
+                    comma-separated CIDR ranges or addresses. A request from
+                    one counts against the address in its X-Forwarded-For,
+                    so limits per address count shoppers, not the proxy;
+                    unset, nobody is trusted and that header is ignored
   GOCOMMERCE_DEMO   same as -demo. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_DEMO_ACCOUNT
@@ -220,6 +227,7 @@ environment:
 		demo         = fs.Bool("demo", false, "public demo: mask every email address and phone number on admin responses and freeze operators, keys and roles; with $GOCOMMERCE_DEMO_ACCOUNT set, any email and password sign in as that account (default $GOCOMMERCE_DEMO)")
 		signup       = fs.Bool("signup", false, "anybody may make an account on the sign-in screen and open a store with it, for an install that hosts stores for other people (default $GOCOMMERCE_SIGNUP)")
 		allowPrivate = fs.Bool("allow-private-urls", false, "let the addresses a store sets — webhook endpoints, provider API base URLs, a search host — be private or loopback ones, and new webhook endpoints plain http; never on an install that hosts stores for other people (default $GOCOMMERCE_ALLOW_PRIVATE_URLS)")
+		trustedProxy = fs.String("trusted-proxies", "", "proxies in front of the engine whose X-Forwarded-For is believed, comma-separated CIDR ranges or addresses (a storefront's server, a load balancer); unset, nobody is trusted, loopback included (default $GOCOMMERCE_TRUSTED_PROXIES)")
 		verbose      = fs.Bool("v", false, "verbose (debug) logging")
 		jsonOut      = fs.Bool("json", false, "machine-readable output (doctor)")
 		mediaDir     = fs.String("media-dir", "", "directory for uploaded media (default $GOCOMMERCE_MEDIA_DIR; empty disables uploads)")
@@ -367,6 +375,14 @@ environment:
 	}
 	cfg.MediaDir = *mediaDir
 	cfg.PostcodesFile = os.Getenv("GOCOMMERCE_POSTCODES_FILE")
+	if *trustedProxy == "" {
+		*trustedProxy = os.Getenv("GOCOMMERCE_TRUSTED_PROXIES")
+	}
+	proxies, err := gocommerce.ParseTrustedProxies(*trustedProxy)
+	if err != nil {
+		return fmt.Errorf("-trusted-proxies (GOCOMMERCE_TRUSTED_PROXIES): %w", err)
+	}
+	cfg.TrustedProxies = proxies
 	if len(languages) > 0 {
 		cfg.DefaultLanguage = languages[0]
 	}

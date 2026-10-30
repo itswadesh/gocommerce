@@ -226,9 +226,11 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	return 0, true
 }
 
-// peerAddr is the connection's address without its port. Never
-// X-Forwarded-For: behind no proxy that header is whatever the client wrote,
-// and trusting it would let anyone reset their own count at will.
+// peerAddr is the connection's address without its port, which the engine
+// has already made the client's when the request came through one of its
+// trusted proxies. Never X-Forwarded-For here: from anyone but a trusted
+// proxy that header is whatever the client wrote, and trusting it would let
+// anyone reset their own count at will.
 func peerAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

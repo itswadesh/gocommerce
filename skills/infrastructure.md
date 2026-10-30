@@ -297,9 +297,9 @@ store under `GOCOMMERCE_SECRETS_KEY` and moves what
 is served with, or the modules left out are named and their secrets not reached
 ([operations](../docs/operations.md#secrets-at-rest)).
 Flags: `-db`,
-`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-allow-private-urls` (the addresses a store sets may be private ones; see below), `-v`,
+`-addr`, `-admin-token`, `-currency`, `-languages` (what a store sells in until it chooses its own, D87), `-dev`, `-demo`, `-signup` (anybody may make an account and open a store), `-allow-private-urls` (the addresses a store sets may be private ones; see below), `-trusted-proxies` (the proxies whose `X-Forwarded-For` is believed; see below), `-v`,
 `-json`, and for `platform` `-base-domain`, `-platform-host`, `-api-host`,
-`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`, `GOCOMMERCE_ALLOW_PRIVATE_URLS`,
+`-platform-token` and `-namespace`. `DATABASE_URL`, `GOCOMMERCE_ADMIN_TOKEN`, `GOCOMMERCE_DEMO`, `GOCOMMERCE_SIGNUP`, `GOCOMMERCE_ALLOW_PRIVATE_URLS`, `GOCOMMERCE_TRUSTED_PROXIES`,
 `GOCOMMERCE_DEMO_ACCOUNT`, `GOCOMMERCE_ADMIN_EMAIL` and
 `GOCOMMERCE_ADMIN_PASSWORD` are the environment equivalents.
 `GOCOMMERCE_PANEL_URL`, `GOCOMMERCE_BASE_DOMAIN` and `GOCOMMERCE_BRANDS` (a
@@ -327,6 +327,18 @@ check warns while it is on. The guarded client ignores `HTTP_PROXY` and
 `HTTPS_PROXY`: through a proxy it could not see where a request really goes.
 The install's own addresses (`MEILI_HOST`, `IMPORT_AMAZON_LLM_URL`, the
 browser import-amazon drives) are the server owner's and use ordinary clients.
+
+**Limits per address count the shopper behind a listed proxy** (D161). Sign-in,
+sign-up, password reset, invitations, order lookup and the modules' public
+forms count by `r.RemoteAddr`. `-trusted-proxies` / `GOCOMMERCE_TRUSTED_PROXIES`
+(CIDR ranges or addresses, comma-separated; a bad entry stops the engine at
+start) names the proxies in front of the engine. For a request from one of
+them, `Handler` rewrites `RemoteAddr` on a shallow copy to the rightmost
+`X-Forwarded-For` entry that is not a listed proxy, so `clientIP` and every
+module's copy of it need no change. Unset, nobody is trusted, loopback
+included, and the header is never read. A storefront that proxies shoppers
+must set the header to the shopper's address, never pass the browser's on
+([operations](../docs/operations.md#behind-a-proxy)).
 
 ## Running a public demo
 

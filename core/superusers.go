@@ -1249,9 +1249,11 @@ func (t *loginThrottle) gc() {
 	}
 }
 
-// clientIP is the peer address with the port stripped. It deliberately does
-// not read X-Forwarded-For: behind no proxy that header is attacker-supplied,
-// and trusting it would let anyone reset their own throttle bucket at will.
+// clientIP is the peer address with the port stripped. Behind a proxy in
+// Config.TrustedProxies that is already the client's, resolved once in
+// Handler (trusted_proxies.go). It never reads X-Forwarded-For itself: from
+// anyone but a trusted proxy that header is attacker-supplied, and trusting
+// it would let anyone reset their own throttle bucket at will.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

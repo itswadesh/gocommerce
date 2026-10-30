@@ -29,6 +29,7 @@ Only `DBURL` and one admin token are required.
 | `SecretsKey` / `SecretsKeyPrevious` | none | `GOCOMMERCE_SECRETS_KEY` / `GOCOMMERCE_SECRETS_KEY_PREVIOUS`, environment only. Seals the secrets the engine reads back; unset, they are stored readable. See [Secrets at rest](#secrets-at-rest). |
 | `CORSOrigins` | none | Browser origins allowed to call the API directly (`GOCOMMERCE_CORS_ORIGINS`, comma-separated, `*` for any). Unset, a storefront on another origin has to proxy. Credentials are never allowed. |
 | `Brands` | none | `GOCOMMERCE_BRANDS`, a JSON array. Several names on one install, each with its own admin domain and stores; see [Several brands](#several-brands). Unset, one brand made of `PanelURL` and `BaseDomain`. |
+| `TrustedProxies` | none | The proxies in front of the engine whose `X-Forwarded-For` it believes (`GOCOMMERCE_TRUSTED_PROXIES` or `-trusted-proxies`, comma-separated CIDR ranges or addresses). Unset, nobody is trusted, loopback included; see [Behind a proxy](#behind-a-proxy). |
 | `AllowPrivateURLs` | `false` | Lets the addresses a store sets — webhook endpoints, provider API base URLs — be private ones (`GOCOMMERCE_ALLOW_PRIVATE_URLS`). Only where every store operator runs the server; see [Addresses a store sets](#addresses-a-store-sets). |
 | `CartTTL` | 720h | How long an untouched cart survives. |
 | `CartRetention` | 720h | How long an abandoned cart is kept before deletion, measured from `abandoned_at`. |
@@ -400,6 +401,35 @@ While the rule is on, those requests do not go through `HTTP_PROXY` or
 `HTTPS_PROXY`: through a proxy the server cannot see where a request really
 goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
 are set by whoever runs the server and are not held to it.
+
+### Behind a proxy
+
+The engine counts several limits per address: sign-in and sign-up attempts,
+password resets, accepting an invitation, opening an order with its number,
+the contact and dealer forms, and a showcase's events. The address is the
+connection's. Behind a proxy, a storefront's server included, that is the
+proxy's for every shopper, so one shopper who reaches a limit reaches it for
+the whole store.
+
+List the proxies the engine should believe:
+
+| Variable | What it does |
+|---|---|
+| `GOCOMMERCE_TRUSTED_PROXIES` | Comma-separated CIDR ranges or addresses, such as `10.0.0.0/8, 192.0.2.10`; an address on its own is a range of one. A request from one of them counts against the address it forwarded for. Used when `-trusted-proxies` is not given. Unset, nobody is trusted, loopback included, and `X-Forwarded-For` is never read. An entry that does not read stops the engine at start. |
+
+List the storefront's server as the engine sees it, and every reverse proxy in
+front of the engine. The engine reads `X-Forwarded-For` from the right, passes
+the listed proxies, and counts the request against the first address that is
+not one of them. Anything to the left of that address was written by the
+client and is ignored. If every address is a listed proxy, the leftmost one is
+used. An entry that is not an address ends the walk at the last address before
+it.
+
+Each listed proxy must add the address it received the request from to
+`X-Forwarded-For`, or replace the header with that address. A proxy that
+passes the browser's header on unchanged lets a shopper choose the address
+they are counted as. List proxies only: a listed address can claim to be
+anybody.
 
 ### Several brands
 
@@ -839,6 +869,10 @@ rather than leaving a console window open.
   `GOCOMMERCE_ALLOW_PRIVATE_URLS` is on (see [Addresses a store
   sets](#addresses-a-store-sets)). Leave it off on any install where people
   you do not run the server with can open a store.
+- List the proxies in front of the engine in `GOCOMMERCE_TRUSTED_PROXIES`, and
+  nothing else ([Behind a proxy](#behind-a-proxy)). Unlisted, every shopper
+  behind them shares one sign-in and order-lookup limit; listed, an address
+  that is not a proxy can claim to be anybody.
 - Set `GOCOMMERCE_SECRETS_KEY`, so the payment keys and other credentials the
   database holds are sealed rather than readable by whoever holds a backup
   ([Secrets at rest](#secrets-at-rest)).

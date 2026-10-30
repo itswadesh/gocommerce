@@ -260,9 +260,10 @@ dealer and starts the lead again at `new`.
 - **Placing a repeat order at the old prices.** The old order may have been a
   quote's prices or a list since changed. Reorder builds a basket; the buyer
   checks it out.
-- **Leaving the lead limit at ten behind a proxy.** The form is limited per
-  peer address, never `X-Forwarded-For`, so behind a reverse proxy every
-  visitor shares one budget. Raise `Config.LeadsPerMinute`.
+- **Leaving the lead limit at ten behind a proxy the engine does not trust.**
+  The form is limited per peer address, so behind a reverse proxy missing from
+  `GOCOMMERCE_TRUSTED_PROXIES` every visitor shares one budget. List the proxy
+  (D161), or raise `Config.LeadsPerMinute`.
 - **Expecting a state-scoped territory to catch a form that asks no state.** A
   territory naming a state matches only an enquiry naming it.
 - **Expecting a state name outside the four known countries to match its
