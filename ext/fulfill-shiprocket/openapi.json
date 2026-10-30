@@ -1,0 +1,174 @@
+{
+  "paths": {
+    "/api/admin/x/fulfill-shiprocket/connect": {
+      "post": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "Try a Shiprocket API user and list its pickup locations",
+        "description": "Needs plugins.write. Logs in as the API user given — or as the store's saved one where a field is empty, and with the saved password where `password` is the mask — and lists the account's pickup addresses, which is where Settings › Shipping providers › Shiprocket chooses the pickup location from. Nothing is saved. The password never comes back. 422 when Shiprocket refuses the login or cannot be reached.",
+        "security": [{"adminToken": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {
+          "email": {"type": "string"},
+          "password": {"type": "string", "description": "The API user's password, or the mask (••••••••) for the one already saved."},
+          "base_url": {"type": "string", "description": "Empty for Shiprocket's production API."}
+        }}}}},
+        "responses": {
+          "200": {"description": "Connected.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {
+            "connected": {"type": "boolean"},
+            "pickup_locations": {"type": "array", "items": {"$ref": "#/components/schemas/ShiprocketPickupLocation"}}
+          }}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "422": {"description": "Shiprocket refused the login, or could not be reached.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/api/admin/x/fulfill-shiprocket/orders/{id}/couriers": {
+      "get": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "The couriers that will carry what an order still owes",
+        "description": "Needs orders.fulfill. Shiprocket's serviceability for a parcel of everything the order still owes, from the store's pickup location to the order's pincode: each courier's rate in paise, Shiprocket's delivery estimate as Shiprocket gave it (absent when it gave none), and whether it collects cash. A cash-on-delivery order lists only couriers that do. Cheapest first, with the recommended, cheapest and fastest named. Answers are kept ten minutes. The weight and size are the engine's measured figures unless overridden. 409 while Shiprocket is not set up; 422 when Shiprocket refuses (an unserved pincode) or cannot be reached.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/PathID"},
+          {"name": "weight_kg", "in": "query", "schema": {"type": "number"}, "description": "The parcel's weight, when the operator weighed it."},
+          {"name": "length_cm", "in": "query", "schema": {"type": "number"}},
+          {"name": "breadth_cm", "in": "query", "schema": {"type": "number"}},
+          {"name": "height_cm", "in": "query", "schema": {"type": "number"}}
+        ],
+        "responses": {
+          "200": {"description": "The quote.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ShiprocketQuote"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"description": "Shiprocket refused, or could not be reached.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/api/admin/x/fulfill-shiprocket/orders/{id}/shipments": {
+      "get": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "What an order has booked through Shiprocket",
+        "description": "Needs orders.read. Every Shiprocket order this store created for the order, oldest first, including one that was booked and never recorded on the order (`fulfillment_id` absent) so it can be cancelled rather than left live.",
+        "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The bookings.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/ShiprocketShipment"}}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/api/admin/x/fulfill-shiprocket/shipments/{id}/documents/{kind}": {
+      "post": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "Generate a booking's label, manifest or invoice",
+        "description": "Needs orders.fulfill. Asks Shiprocket for the document and keeps its address on the booking. A manifest needs the pickup requested, so it is requested first when it has not been. 409 for a cancelled booking or one with no waybill; 422 when Shiprocket refuses.",
+        "security": [{"adminToken": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/PathID"},
+          {"name": "kind", "in": "path", "required": true, "schema": {"type": "string", "enum": ["label", "manifest", "invoice"]}}
+        ],
+        "responses": {
+          "200": {"description": "The booking, with the document's address.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ShiprocketShipment"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"description": "Shiprocket refused, or could not be reached.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/api/admin/x/fulfill-shiprocket/shipments/{id}/pickup": {
+      "post": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "Ask the courier to collect a booking",
+        "description": "Needs orders.fulfill. Booking already asks for the pickup; this asks again when that failed. 409 for a cancelled booking or one with no waybill; 422 when Shiprocket refuses.",
+        "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The booking.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ShiprocketShipment"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"description": "Shiprocket refused, or could not be reached.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    },
+    "/api/admin/x/fulfill-shiprocket/shipments/{id}/cancel": {
+      "post": {
+        "tags": ["admin:fulfill-shiprocket"],
+        "summary": "Cancel a booking at Shiprocket and on the order",
+        "description": "Needs orders.fulfill. Cancels the waybill (Shiprocket allows it until the parcel is out for pickup) and the Shiprocket order, then the order's shipment, so what it held is owed again and `order.unshipped` fires. A booking already cancelled at Shiprocket is only cancelled on the order. 409 for a delivered parcel; 422 when Shiprocket refuses, in which case the order is left as it was.",
+        "security": [{"adminToken": []}],
+        "parameters": [{"$ref": "#/components/parameters/PathID"}],
+        "responses": {
+          "200": {"description": "The booking, cancelled.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"$ref": "#/components/schemas/ShiprocketShipment"}}}}}},
+          "400": {"$ref": "#/components/responses/Validation"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"description": "Shiprocket refused, or could not be reached.", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ShiprocketPickupLocation": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "The nickname a booking names it by."},
+          "address": {"type": "string"}, "address_2": {"type": "string"},
+          "city": {"type": "string"}, "state": {"type": "string"}, "country": {"type": "string"},
+          "pincode": {"type": "string"}, "phone": {"type": "string"}, "email": {"type": "string"},
+          "contact": {"type": "string"}, "primary": {"type": "boolean"}
+        }
+      },
+      "ShiprocketCourier": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer", "description": "Shiprocket's courier id; send it as `meta.courier_id` when shipping."},
+          "name": {"type": "string"},
+          "rate": {"$ref": "#/components/schemas/Money"},
+          "cod": {"type": "boolean", "description": "Whether it collects cash on delivery."},
+          "estimated_days": {"type": "integer", "description": "Shiprocket's estimate; absent when it gave none."},
+          "etd": {"type": "string", "description": "Shiprocket's estimated delivery date, as Shiprocket wrote it."},
+          "rating": {"type": "number"}
+        }
+      },
+      "ShiprocketQuote": {
+        "type": "object",
+        "properties": {
+          "pickup_postcode": {"type": "string"}, "delivery_postcode": {"type": "string"},
+          "cod": {"type": "boolean"}, "weight_kg": {"type": "number"},
+          "couriers": {"type": "array", "items": {"$ref": "#/components/schemas/ShiprocketCourier"}},
+          "recommended_id": {"type": "integer"}, "cheapest_id": {"type": "integer"}, "fastest_id": {"type": "integer"}
+        }
+      },
+      "ShiprocketShipment": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "integer"},
+          "order_id": {"type": "integer"},
+          "channel_order_id": {"type": "string", "description": "The order id Shiprocket knows it by: the order's number, then number-2, number-3 for later parcels."},
+          "sr_order_id": {"type": "integer"}, "shipment_id": {"type": "integer"},
+          "awb": {"type": "string"}, "courier_id": {"type": "integer"}, "courier_name": {"type": "string"},
+          "pickup_requested": {"type": "boolean"}, "pickup_scheduled": {"type": "string"},
+          "label_url": {"type": "string"}, "manifest_url": {"type": "string"}, "invoice_url": {"type": "string"},
+          "cancelled_at": {"type": "string", "format": "date-time"},
+          "created_at": {"type": "string", "format": "date-time"},
+          "fulfillment_id": {"type": "integer", "description": "The order's shipment for this booking; absent while it is not recorded on the order."}
+        }
+      }
+    }
+  }
+}

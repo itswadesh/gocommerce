@@ -401,6 +401,31 @@ While the rule is on, those requests do not go through `HTTP_PROXY` or
 goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
 are set by whoever runs the server and are not held to it.
 
+### Shipping through Shiprocket
+
+Each store connects its own Shiprocket account; nothing about one store's
+account is used for another's. A store owner does this once:
+
+1. In Shiprocket, Settings › API › Add New API User. The email must differ
+   from the account's own login. Copy the password Shiprocket shows.
+2. In the panel, Settings › Shipping providers › Shiprocket › Configure: type
+   the API user's email and password, press **Test connection**, and choose
+   the pickup location from the ones the account lists. Save, then Activate.
+
+From then on the ship dialog on an order offers Shiprocket with every courier
+that serves the order's pincode, its rate and Shiprocket's delivery estimate,
+and books the chosen one: the Shiprocket order, its waybill, the pickup and
+the label. The order's Shiprocket card has the label, manifest and invoice,
+asks for a pickup again when the first request failed, and cancels a booking
+until the parcel is out for pickup.
+
+The password is sealed with the other secrets (see Secrets at rest) and never
+shown again; the login token Shiprocket gives for it is kept in memory only.
+A cash-on-delivery order goes out in one parcel, collecting the order's total;
+an order not in rupees or not to India is refused, since this is Shiprocket's
+domestic service. An install that embeds the engine can pass an account in
+`shiprocket.Config`, which every store without its own falls back to.
+
 ### Several brands
 
 One install — one database, one deployment — can answer under several names,
