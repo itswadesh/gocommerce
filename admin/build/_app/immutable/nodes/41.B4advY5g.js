@@ -1,0 +1,1 @@
+import{r as o}from"../chunks/KpHSQ7nS.js";import{b as r}from"../chunks/D8S8_j2n.js";function t({url:e}){o(308,`${r}/dash/themes/homepage${e.search}`)}const i=Object.freeze(Object.defineProperty({__proto__:null,load:t},Symbol.toStringTag,{value:"Module"}));export{i as universal};
