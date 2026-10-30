@@ -89,6 +89,10 @@ type CartLine struct {
 	// product, and once on its own.
 	AddOnID  int64 `json:"add_on_id,omitempty"`
 	AddOnFor int64 `json:"add_on_for,omitempty"`
+	// DesignID is the shopper's own design this line is made to (D159), and
+	// DesignPreviewURL its picture; both empty on a line sold as it is.
+	DesignID         string `json:"design_id,omitempty"`
+	DesignPreviewURL string `json:"design_preview_url,omitempty"`
 	// CompareAtPrice is the variant's "was" price, for a basket that shows
 	// what the shopper saves on it. Nil when the shop set none.
 	CompareAtPrice *Money `json:"compare_at_price,omitempty"`
@@ -267,7 +271,7 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active,
 		       coalesce(l.add_on_id, 0),
 		       coalesce((SELECT a.product_id FROM product_add_ons a WHERE a.id = l.add_on_id), 0),
-		       v.compare_at_price_minor
+		       v.compare_at_price_minor, coalesce(l.design_id, ''), coalesce(l.design_preview_url, '')
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
@@ -289,7 +293,8 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		var compareAt sql.NullInt64
 		if err := rows.Scan(&l.ID, &l.VariantID, &l.ProductID, &l.SKU, &l.Title,
 			&l.Quantity, &l.UnitPrice.AmountMinor, &currentPrice, &tracks,
-			&available, &active, &l.AddOnID, &l.AddOnFor, &compareAt); err != nil {
+			&available, &active, &l.AddOnID, &l.AddOnFor, &compareAt,
+			&l.DesignID, &l.DesignPreviewURL); err != nil {
 			return nil, 0, 0, err
 		}
 		if compareAt.Valid {
@@ -529,8 +534,6 @@ func (c *Carts) AddLine(ctx context.Context, tok string, variantID int64, qty in
 	return c.GetByToken(ctx, tok)
 }
 
-// addOrdinaryTx adds qty of a variant to its ordinary line, the one not
-// bought as an add-on, inside the caller's transaction.
 func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID int64, qty int) error {
 	var base int64
 	var active, tracks, oversell bool
@@ -558,13 +561,13 @@ func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID
 	// a statement about who is buying, and only the verified column has
 	// anything behind it.
 	err = tx.QueryRowContext(ctx, `
-		SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL), 0),
-		       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL),
-		       (SELECT agreed_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL),
+		SELECT coalesce((SELECT quantity FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL AND design_id IS NULL), 0),
+		       (SELECT unit_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL AND design_id IS NULL),
+		       (SELECT agreed_price_minor FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NULL AND design_id IS NULL),
 		       coalesce((SELECT verified_email FROM carts WHERE id = $1), ''),
 		       (SELECT channel_id FROM carts WHERE id = $1),
-		       -- The same variant bought as an add-on draws on the same shelf.
-		       coalesce((SELECT sum(quantity) FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2 AND add_on_id IS NOT NULL), 0)`,
+		       coalesce((SELECT sum(quantity) FROM cart_line_items WHERE cart_id = $1 AND variant_id = $2
+		                 AND (add_on_id IS NOT NULL OR design_id IS NOT NULL)), 0)`,
 		cartID, variantID).Scan(&existing, &storedPrice, &agreedPrice, &cartEmail, &cartChannel, &others)
 	if err != nil {
 		return err
@@ -622,7 +625,7 @@ func (c *Carts) addOrdinaryTx(ctx context.Context, tx *sql.Tx, cartID, variantID
 		-- The price moves when the quantity does, and only then — see the
 		-- rule above this statement, which decides whether the value bound
 		-- here is the newly resolved price or the one already stored.
-		ON CONFLICT (store_id, cart_id, variant_id) WHERE add_on_id IS NULL DO UPDATE
+		ON CONFLICT (store_id, cart_id, variant_id) WHERE add_on_id IS NULL AND design_id IS NULL DO UPDATE
 		SET quantity = cart_line_items.quantity + EXCLUDED.quantity,
 		    unit_price_minor = EXCLUDED.unit_price_minor,
 		    updated_at = now()`,

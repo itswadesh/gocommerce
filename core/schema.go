@@ -106,6 +106,7 @@ func coreMigrations() []Migration {
 		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
 		{ID: "0089_store_images", SQL: migration0089StoreImages},
 		{ID: "0090_store_contact_page", SQL: migration0090StoreContactPage},
+		{ID: "0091_line_designs", SQL: migration0091LineDesigns},
 	}
 }
 

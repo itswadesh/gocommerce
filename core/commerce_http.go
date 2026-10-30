@@ -87,7 +87,8 @@ func (a *App) handleAddLineItem(w http.ResponseWriter, r *http.Request) {
 		Quantity  int   `json:"quantity"`
 		// AddOnID adds an add-on at its offer price instead (D133); the
 		// add-on names its own variant.
-		AddOnID int64 `json:"add_on_id"`
+		AddOnID  int64  `json:"add_on_id"`
+		DesignID string `json:"design_id"`
 	}
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
@@ -98,9 +99,14 @@ func (a *App) handleAddLineItem(w http.ResponseWriter, r *http.Request) {
 	}
 	var cart *Cart
 	var err error
-	if in.AddOnID != 0 {
+	switch {
+	case in.AddOnID != 0 && in.DesignID != "":
+		err = Validationf("an add-on cannot be made to a design")
+	case in.AddOnID != 0:
 		cart, err = a.carts.AddAddOn(r.Context(), r.PathValue("cartId"), in.AddOnID, in.Quantity)
-	} else {
+	case in.DesignID != "":
+		cart, err = a.carts.AddDesignLine(r.Context(), r.PathValue("cartId"), in.VariantID, in.DesignID, in.Quantity)
+	default:
 		cart, err = a.carts.AddLine(r.Context(), r.PathValue("cartId"), in.VariantID, in.Quantity)
 	}
 	if err != nil {

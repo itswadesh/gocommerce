@@ -205,6 +205,13 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		dlines := make([]discountLine, len(lines))
 		for i := range lines {
 			l := &lines[i]
+			if l.DesignID != "" {
+				design, err := s.app.lineDesign(ctx, tx, l.DesignID, l.VariantID)
+				if err != nil {
+					return err
+				}
+				l.Metadata = Metadata{"design": design.Snapshot}
+			}
 			switch {
 			case !l.Active:
 				conflicts = append(conflicts, LineConflict{
@@ -469,15 +476,19 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		}
 
 		for i, l := range lines {
+			lineMeta, err := l.Metadata.value()
+			if err != nil {
+				return err
+			}
 			if _, err := tx.ExecContext(ctx, `
 				INSERT INTO order_lines (order_id, product_id, variant_id, sku, title,
 				                         variant_label, quantity, unit_price_minor, total_minor,
-				                         tax_minor, tax_rate_bp, tax_name, location_id)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+				                         tax_minor, tax_rate_bp, tax_name, location_id, metadata)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 				orderID, l.ProductID, l.VariantID, l.SKU, l.Title, l.Label,
 				l.Quantity, l.CurrentPrice, l.CurrentPrice*int64(l.Quantity),
 				lineTaxes[i].AmountMinor, lineTaxes[i].RateBP, lineTaxes[i].Name,
-				l.LocationID); err != nil {
+				l.LocationID, lineMeta); err != nil {
 				return err
 			}
 		}
@@ -628,6 +639,8 @@ type checkoutLine struct {
 	// read: it is the answer to "where did these come from", and there is no
 	// answer until something has actually been taken.
 	LocationID int64
+	DesignID   string
+	Metadata   Metadata
 }
 
 func lockCartForCheckout(ctx context.Context, tx *sql.Tx, tok string, ttl time.Duration) (int64, string, string, error) {
@@ -683,7 +696,8 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 		           JOIN product_option_values pov ON pov.id = vov.option_value_id
 		           JOIN product_options o ON o.id = pov.option_id
 		           WHERE vov.variant_id = v.id
-		       ), '')
+		       ), ''),
+		       coalesce(l.design_id, '')
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
@@ -700,7 +714,7 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 		var l checkoutLine
 		if err := rows.Scan(&l.VariantID, &l.ProductID, &l.SKU, &l.Title, &l.Quantity,
 			&l.SnapshotPrice, &l.CurrentPrice, &l.Agreed, &l.Active, &l.Taxable, &l.RequiresShipping, &l.Available,
-			&l.Label); err != nil {
+			&l.Label, &l.DesignID); err != nil {
 			return nil, err
 		}
 		lines = append(lines, l)

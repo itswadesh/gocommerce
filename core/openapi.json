@@ -857,6 +857,10 @@
                     "format": "int64",
                     "description": "Adds this add-on at its offer price instead of variant_id (D133). Refused while the product it is offered with is not in the basket, or would be outnumbered by it."
                   },
+                  "design_id": {
+                    "type": "string",
+                    "description": "Makes variant_id to the shopper's own design (D159), as the store's design module saved it: a line of its own, so two designs of one variant are two lines, and the same design again adds to its line. 404 for a design the store does not have, 400 for one made for another variant, 409 for one already on an order or a product no longer made to a design. Not with add_on_id."
+                  },
                   "quantity": {
                     "type": "integer",
                     "minimum": 1,
@@ -18481,6 +18485,14 @@
             "type": "integer",
             "format": "int64",
             "description": "The product the add-on is offered with."
+          },
+          "design_id": {
+            "type": "string",
+            "description": "The shopper's design this line is made to (D159); absent on a line sold as it is. Checkout copies the design onto the order line as metadata.design."
+          },
+          "design_preview_url": {
+            "type": "string",
+            "description": "The picture of the line made to its design."
           },
           "compare_at_price": {
             "$ref": "#/components/schemas/Money"

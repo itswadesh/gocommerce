@@ -153,6 +153,28 @@ products suggest and less what the basket holds. Off, or with the collection
 gone, the basket's suggestions are what they were; a storefront still falls
 back to related products when the answer is empty.
 
+## Lines made to a shopper's design
+
+A product the shop sets up in `ext/customizer` is bought made to the shopper's
+own design (D159, `docs/customizer.md`):
+
+```http
+POST /api/carts/<token>/line-items  {"variant_id": 97, "design_id": "…"}  → 200, the whole cart
+```
+
+A designed line is **keyed by its design** (`design_id` on the line, as an
+add-on line is by `add_on_id`): two designs of one variant are two lines, the
+same design added again adds to its line, and `UpdateLine` keeps the design.
+The ordinary line of a variant is the one with neither. The line's price is
+the variant's, and it counts as the product for an add-on's offer.
+
+Core does not know what a design is. `Carts.AddDesignLine` asks the module's
+`LineDesigner` (`app.RegisterLineDesigner`) inside the cart's transaction, and
+the line keeps the preview it returned as `design_preview_url`. 404 is a
+design the store does not have, 400 one made for another variant, 409 one
+already ordered, a product no longer made to a design, or a store with no
+designer.
+
 ## How to handle a price change before checkout
 
 Read the cart and act on the flags rather than waiting for the 409:
