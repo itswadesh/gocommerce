@@ -477,7 +477,13 @@ type document struct {
 	InStock       bool     `json:"in_stock"`
 	SKUs          []string `json:"skus"`
 	Options       []string `json:"options,omitempty"`
-	UpdatedAt     int64    `json:"updated_at"`
+	// Designable is the product's own flag (D174), so a search result card
+	// offers no quick add for a product made to a design. It is as fresh as
+	// the document: switching a product's customizer is not a product
+	// change, so the card can lag until the next edit or a reindex, and the
+	// add then answers design_required as it would anyway.
+	Designable bool  `json:"designable"`
+	UpdatedAt  int64 `json:"updated_at"`
 }
 
 var tagRE = regexp.MustCompile(`<[^>]*>`)
@@ -492,7 +498,7 @@ func (m *Module) document(ctx context.Context, p *gocommerce.Product) document {
 	d := document{
 		ID: p.ID, StoreID: m.storeOf(ctx), Slug: p.Slug, Title: p.Title, Description: plainText(p.Description),
 		Vendor: p.Vendor, ProductType: p.ProductType, Tags: p.Tags, Image: p.ImageURL,
-		Currency: p.Currency, UpdatedAt: p.UpdatedAt.Unix(),
+		Currency: p.Currency, Designable: p.Designable, UpdatedAt: p.UpdatedAt.Unix(),
 	}
 	if d.Tags == nil {
 		d.Tags = []string{}
