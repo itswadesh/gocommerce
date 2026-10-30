@@ -89,7 +89,7 @@ type CartLine struct {
 	// product, and once on its own.
 	AddOnID  int64 `json:"add_on_id,omitempty"`
 	AddOnFor int64 `json:"add_on_for,omitempty"`
-	// DesignID is the shopper's own design this line is made to (D160), and
+	// DesignID is the shopper's own design this line is made to (D162), and
 	// DesignPreviewURL its picture; both empty on a line sold as it is.
 	DesignID         string `json:"design_id,omitempty"`
 	DesignPreviewURL string `json:"design_preview_url,omitempty"`

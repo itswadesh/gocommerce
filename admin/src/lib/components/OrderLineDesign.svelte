@@ -1,6 +1,6 @@
 <script>
     /**
-     * A designed order line as the print operator needs it (D160): the
+     * A designed order line as the print operator needs it (D162): the
      * finished product's picture, larger on a press, the print file to
      * download, the shopper's original photos, and the words and fonts in it.
      * Everything is read from the copy the order line keeps

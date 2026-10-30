@@ -118,7 +118,7 @@ func (c *Carts) AddDesignLine(ctx context.Context, tok string, variantID int64, 
 // context is bound to, and deletes them itself.
 func (a *App) MediaStore() MediaStore { return a.mediaStore }
 
-// M91 — a basket line made to a shopper's design (D160).
+// M91 — a basket line made to a shopper's design (D162).
 //
 // design_id is not a foreign key, for add_on_id's reason: the module owns the
 // design and core must not.

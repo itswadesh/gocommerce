@@ -1,6 +1,6 @@
 // Package customizer lets a shopper design their own print on a product: a
 // photo, words, shapes, stickers and a background colour on a phone case's
-// printable area, bought as a line of its own (D160).
+// printable area, bought as a line of its own (D162).
 //
 // The shop sets each product up on its page in the panel: the picture of the
 // product the editor draws on (the mockup), an optional transparent picture

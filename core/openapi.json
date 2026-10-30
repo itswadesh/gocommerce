@@ -859,7 +859,7 @@
                   },
                   "design_id": {
                     "type": "string",
-                    "description": "Makes variant_id to the shopper's own design (D160), as the store's design module saved it: a line of its own, so two designs of one variant are two lines, and the same design again adds to its line. 404 for a design the store does not have, 400 for one made for another variant, 409 for one already on an order or a product no longer made to a design. Not with add_on_id."
+                    "description": "Makes variant_id to the shopper's own design (D162), as the store's design module saved it: a line of its own, so two designs of one variant are two lines, and the same design again adds to its line. 404 for a design the store does not have, 400 for one made for another variant, 409 for one already on an order or a product no longer made to a design. Not with add_on_id."
                   },
                   "quantity": {
                     "type": "integer",
@@ -18497,7 +18497,7 @@
           },
           "design_id": {
             "type": "string",
-            "description": "The shopper's design this line is made to (D160); absent on a line sold as it is. Checkout copies the design onto the order line as metadata.design."
+            "description": "The shopper's design this line is made to (D162); absent on a line sold as it is. Checkout copies the design onto the order line as metadata.design."
           },
           "design_preview_url": {
             "type": "string",
