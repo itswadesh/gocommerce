@@ -259,6 +259,17 @@ func (m *Module) codReply(ctx context.Context, acct account, phone string, msg i
 		return err
 	}
 
+	// Claimed before anything is done, so a redelivered webhook finds the
+	// answer already taken and a failure below is retried by nobody.
+	res, err := m.db.ExecContext(ctx, `
+		UPDATE whatsapp_messages SET reply = $2, updated_at = now() WHERE id = $1 AND reply IS NULL`, id, action)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+
 	reply, line, answer := "confirmed",
 		"The shopper confirmed this cash-on-delivery order on WhatsApp",
 		"Thank you, your order "+number+" is confirmed."
@@ -272,21 +283,18 @@ func (m *Module) codReply(ctx context.Context, acct account, phone string, msg i
 				reply, line = "cancelled", ""
 				answer = "Your order " + number + " is cancelled."
 			} else if !errors.Is(err, gocommerce.ErrConflict) {
+				// Let Meta's retry try again rather than leave the answer
+				// taken and nothing done about it.
+				_, _ = m.db.ExecContext(ctx, `UPDATE whatsapp_messages SET reply = NULL WHERE id = $1`, id)
 				return err
 			} else {
 				line = "The shopper asked on WhatsApp to cancel this order, but it could not be cancelled: " + err.Error()
 			}
 		}
 	}
-	// Claimed before anything is said, so a redelivered webhook finds the
-	// answer already taken.
-	res, err := m.db.ExecContext(ctx, `
-		UPDATE whatsapp_messages SET reply = $2, updated_at = now() WHERE id = $1 AND reply IS NULL`, id, reply)
-	if err != nil {
+	if _, err := m.db.ExecContext(ctx, `
+		UPDATE whatsapp_messages SET reply = $2, updated_at = now() WHERE id = $1`, id, reply); err != nil {
 		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil
 	}
 	if line != "" {
 		m.onOrder(ctx, &orderID, line)

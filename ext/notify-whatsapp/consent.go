@@ -89,10 +89,14 @@ type Consent struct {
 	Marketing    bool   `json:"marketing"`
 }
 
-// RecordConsent stores the shopper's answer to the boxes, the latest answer
-// for a number winning, and puts the number on the basket so a reminder about
-// it can reach them. An explicit yes after a STOP is a fresh opt-in, which is
-// what a shopper ticking the box again means.
+// RecordConsent stores a yes from the boxes, and puts the number on the basket
+// so a reminder about it can reach them. The route is public and anybody can
+// open a basket, so it only ever adds: an unticked box withdraws nothing, and
+// a number that replied STOP stays silent until it writes START itself —
+// otherwise a stranger could silence somebody's order updates, or undo their
+// STOP. Withdrawing is the number's own act, by reply.
+// ponytail: a stranger can still opt a number in; a one-time code sent to the
+// number would close that, add it if abuse shows up.
 func (m *Module) RecordConsent(ctx context.Context, in ConsentInput) (*Consent, error) {
 	phone, ok := m.normalize(ctx, in.Phone)
 	if !ok {
@@ -104,10 +108,11 @@ func (m *Module) RecordConsent(ctx context.Context, in ConsentInput) (*Consent, 
 	}
 	if _, err := m.db.ExecContext(ctx, `
 		INSERT INTO whatsapp_contacts (phone, order_updates, marketing, consent_at)
-		VALUES ($1, $2, $3, now())
+		VALUES ($1, $2, $3, CASE WHEN $2 OR $3 THEN now() END)
 		ON CONFLICT (store_id, phone) DO UPDATE
-		SET order_updates = $2, marketing = $3, consent_at = now(),
-		    opted_out_at = CASE WHEN $2 OR $3 THEN NULL ELSE whatsapp_contacts.opted_out_at END,
+		SET order_updates = whatsapp_contacts.order_updates OR $2,
+		    marketing = whatsapp_contacts.marketing OR $3,
+		    consent_at = CASE WHEN $2 OR $3 THEN now() ELSE whatsapp_contacts.consent_at END,
 		    updated_at = now()`, phone, in.OrderUpdates, in.Marketing); err != nil {
 		return nil, gocommerce.Internalf(err, "record whatsapp consent")
 	}
@@ -118,12 +123,16 @@ func (m *Module) RecordConsent(ctx context.Context, in ConsentInput) (*Consent, 
 	if in.Marketing {
 		keep = phone
 	}
-	if keep != cart.Phone {
+	if keep != cart.Phone && cart.Status != gocommerce.CartConverted {
 		if _, err := m.app.Cart().SetPhone(ctx, cart.Token, keep); err != nil {
 			return nil, err
 		}
 	}
-	return &Consent{Phone: phone, OrderUpdates: in.OrderUpdates, Marketing: in.Marketing}, nil
+	out := &Consent{Phone: phone}
+	_ = m.db.QueryRowContext(ctx, `
+		SELECT order_updates AND opted_out_at IS NULL, marketing AND opted_out_at IS NULL
+		FROM whatsapp_contacts WHERE phone = $1`, phone).Scan(&out.OrderUpdates, &out.Marketing)
+	return out, nil
 }
 
 // setOptOut records STOP (true) or START (false) from the number itself.

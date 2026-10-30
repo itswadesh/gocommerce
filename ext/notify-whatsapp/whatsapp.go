@@ -139,6 +139,9 @@ CREATE INDEX whatsapp_messages_claim ON whatsapp_messages (available_at) WHERE s
 CREATE INDEX whatsapp_messages_recent ON whatsapp_messages (id DESC);`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "whatsapp_contacts", "whatsapp_templates", "whatsapp_messages"),
+		// A reminder's payload carries the link that opens the shopper's
+		// basket, and an order update's the link that opens their order.
+		gocommerce.WithholdFromReports("0003_withhold_from_reports", "whatsapp_messages.payload"),
 	}
 }
 
