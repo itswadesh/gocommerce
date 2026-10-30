@@ -15,6 +15,10 @@ func (a *App) mountTaxRoutes() {
 	a.HandleAdminFunc("GET /api/admin/tax-rates/{id}", a.handleGetTaxRate, RightTaxesRead)
 	a.HandleAdminFunc("PATCH /api/admin/tax-rates/{id}", a.handleUpdateTaxRate, RightTaxesWrite)
 	a.HandleAdminFunc("DELETE /api/admin/tax-rates/{id}", a.handleDeleteTaxRate, RightTaxesWrite)
+
+	// India's GST schedule (D175), read with the rules it is used to fill.
+	a.HandleAdminFunc("GET /api/admin/gst-rates", a.handleGSTRates, RightTaxesRead)
+	a.HandleAdminFunc("GET /api/admin/gst-rates/catalog", a.handleGSTRateTargets, RightTaxesRead)
 }
 
 func (a *App) handleListTaxRates(w http.ResponseWriter, r *http.Request) {

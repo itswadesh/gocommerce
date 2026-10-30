@@ -16995,6 +16995,131 @@
           }
         }
       }
+    },
+    "/api/admin/gst-rates": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Look up India's GST rate for an HSN code",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every entry of CBIC's goods rate schedule (9/2025-Integrated Tax (Rate) as amended, embedded in the binary, D175) whose code covers `hsn`, longest first. Shorter entries are kept because a conditional one may still apply (chapter 64's footwear up to Rs 2,500 a pair beside 6403). When nothing covers the code, the entries under it come back marked `narrower`. No match is an empty list. Needs taxes.read.",
+        "parameters": [
+          {
+            "name": "hsn",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "An HSN code, dots and spaces ignored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code and its matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "hsn": { "type": "string" },
+                        "matches": { "type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                      "prefix": { "type": "string" },
+                      "rate_bp": { "type": "integer", "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST." },
+                      "description": { "type": "string" },
+                      "conditional": { "type": "boolean", "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion." },
+                      "source": { "type": "string", "description": "Notification, schedule and serial number." },
+                      "narrower": { "type": "boolean", "description": "An entry under the code asked about, offered because nothing covers the code itself." }
+                    }
+                  } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/gst-rates/catalog": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Categories and products the GST schedule could set a rule for",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Each category with an HSN code of its own, and each product with a variant whose code differs from the one its category gives it (D171), with the schedule's matches for its codes. Subcategories without a code are left out: they take their parent's rule as they take its code. Needs taxes.read; nothing is written.",
+        "responses": {
+          "200": {
+            "description": "Categories first, then products, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": { "type": "string", "enum": ["category", "product"] },
+                          "id": { "type": "integer" },
+                          "name": { "type": "string" },
+                          "codes": { "type": "array", "items": { "type": "string" } },
+                          "matches": { "type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                      "prefix": { "type": "string" },
+                      "rate_bp": { "type": "integer", "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST." },
+                      "description": { "type": "string" },
+                      "conditional": { "type": "boolean", "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion." },
+                      "source": { "type": "string", "description": "Notification, schedule and serial number." },
+                      "narrower": { "type": "boolean", "description": "An entry under the code asked about, offered because nothing covers the code itself." }
+                    }
+                  } }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
