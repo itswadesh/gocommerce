@@ -31,9 +31,10 @@ import (
 const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
-	// maxUploadSide is wider than any camera's photo (a 200-megapixel phone
-	// sensor is 16320 pixels) and any print file a setup may ask for. The
-	// rows a picture is read and written through grow with its width alone.
+	// maxUploadSide is wider than a 200-megapixel phone sensor's photo, 16320
+	// pixels, and any print file a setup may ask for; a panorama can be wider
+	// and is refused. The rows a picture is read and written through grow
+	// with its width alone.
 	maxUploadSide = 16384
 	// maxScans is the most scans Skia, which decodes JPEGs for Chrome and
 	// Android, reads (SkJpegDecoderMgr.cpp); libjpeg writes 6 to 18. The
@@ -255,8 +256,10 @@ func spool(part *multipart.Part) (*os.File, error) {
 
 // sweepSpool removes the files of uploads an engine was reading when it
 // stopped, as one killed for its memory leaves them in the temporary
-// directory. A live upload holds its file for five minutes at most, so one
-// untouched for an hour is nobody's, whichever engine on the host made it.
+// directory. A live upload holds its file under five minutes: three to
+// arrive, then a minute to wait its turn, be decoded, which the limits above
+// keep to seconds, and be kept. One untouched for an hour is nobody's,
+// whichever engine on the host made it.
 func sweepSpool() (removed int) {
 	dir := os.TempDir()
 	files, _ := os.ReadDir(dir)
