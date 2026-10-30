@@ -278,3 +278,24 @@ func TestAFailedDeliveryCanBeTriedAgainOrSentBack(t *testing.T) {
 		t.Errorf("Shiprocket was sent %+v", acts)
 	}
 }
+
+// Shiprocket calling a parcel off cancels it on the order and closes the
+// booking, so the card stops offering to cancel it again.
+func TestShiprocketsCancellationClosesTheBooking(t *testing.T) {
+	app, _ := newApp(t, Config{})
+	_, token := webhookToken(t, app, "")
+	variant := measuredProduct(t, app, "SR-SRCANCEL")
+	order := placeAndShip(t, app, variant.ID, 1, nil)
+	post(t, app, token, event(order.Fulfillments[0].Tracking, 8, "CANCELED", "02 11 2026 10:00:00"))
+
+	after, _ := app.Order().Get(context.Background(), order.ID)
+	if after.Status != gocommerce.OrderConfirmed || after.Fulfillments[0].Status != "cancelled" {
+		t.Errorf("order %s, parcel %s; want confirmed and cancelled", after.Status, after.Fulfillments[0].Status)
+	}
+	var rows []shipment
+	gctest.DecodeData(t, gctest.AdminRequest(t, app, http.MethodGet,
+		"/api/admin/x/fulfill-shiprocket/orders/"+itoa(order.ID)+"/shipments", nil), &rows)
+	if len(rows) != 1 || rows[0].CancelledAt == nil {
+		t.Errorf("booking = %+v, want it closed", rows)
+	}
+}
