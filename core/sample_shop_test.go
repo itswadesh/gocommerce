@@ -20,32 +20,51 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add the sample shop: %v", err)
 	}
-	want := SampleCounts{"products": 8, "categories": 4, "collections": 2, "discounts": 2, "orders": 12, "customers": 6}
+	want := SampleCounts{"products": 11, "categories": 8, "collections": 2, "discounts": 2, "orders": 12, "customers": 6}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
 		}
 	}
 
-	// Every sample product sits in a sample category that matches what it is.
-	tee, err := app.Products().GetProductBySlug(ctx, "cotton-crew-tee")
+	// Every sample product sits in the sample category the catalogue files
+	// it in, under Women or Men.
+	kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tee.Category == nil {
-		t.Fatal("the tee has no category")
+	if kurta.Category == nil {
+		t.Fatal("the kurta has no category")
 	}
-	var catSlug string
-	if err := app.DB().QueryRowContext(ctx,
-		`SELECT slug FROM categories WHERE id = $1 AND sample`, tee.Category.ID).Scan(&catSlug); err != nil || catSlug != "apparel" {
-		t.Fatalf("the tee's category = %q, %v; want the sample apparel category", catSlug, err)
+	var catPath string
+	if err := app.DB().QueryRowContext(ctx, `
+		SELECT p.slug || '/' || c.slug FROM categories c JOIN categories p ON p.id = c.parent_id
+		WHERE c.id = $1 AND c.sample AND p.sample`, kurta.Category.ID).Scan(&catPath); err != nil || catPath != "women/women-ethnic-wear" {
+		t.Fatalf("the kurta's category = %q, %v; want the sample ethnic wear category under women", catPath, err)
 	}
 	// Each sample category has a picture, which a storefront shows on its
-	// own category tiles (the connector reads metadata.image).
-	var pictured int
-	if err := app.DB().QueryRowContext(ctx,
-		`SELECT count(*) FROM categories WHERE sample AND metadata->>'image' LIKE '/sample-media/1/%.webp'`).Scan(&pictured); err != nil || pictured != 4 {
-		t.Fatalf("sample categories with a picture = %d (%v), want all 4", pictured, err)
+	// own category tiles (the connector reads metadata.image), and the
+	// engine serves it.
+	var pictures []string
+	rows, err := app.DB().QueryContext(ctx, `SELECT metadata->>'image' FROM categories WHERE sample ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		pictures = append(pictures, p)
+	}
+	rows.Close()
+	if len(pictures) != 8 {
+		t.Fatalf("sample categories with a picture = %d, want all 8", len(pictures))
+	}
+	for _, p := range pictures {
+		if rec := do(t, app, http.MethodGet, p); !strings.HasPrefix(p, SampleMediaPrefix) || rec.Code != http.StatusOK {
+			t.Fatalf("category picture %q = %d, want one of the sample set, served", p, rec.Code)
+		}
 	}
 	var uncategorised int
 	if err := app.DB().QueryRowContext(ctx,
@@ -53,18 +72,18 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 		t.Fatalf("%d sample products have no category (%v), want none", uncategorised, err)
 	}
 
-	// Each collection holds four products.
+	// New arrivals holds four products and the festive edit five.
 	var members int
 	if err := app.DB().QueryRowContext(ctx, `
 		SELECT count(*) FROM product_collections pc JOIN collections c ON c.id = pc.collection_id
-		WHERE c.sample`).Scan(&members); err != nil || members != 8 {
-		t.Fatalf("sample collections hold %d products (%v), want 8", members, err)
+		WHERE c.sample`).Scan(&members); err != nil || members != 9 {
+		t.Fatalf("sample collections hold %d products (%v), want 9", members, err)
 	}
 
 	// A sample discount can only ever take money off a sample product.
 	own := simpleProduct(t, app, "OWN-1", 1500, 3)
 	var scopes []string
-	rows, err := app.DB().QueryContext(ctx, `SELECT scope FROM discounts WHERE sample`)
+	rows, err = app.DB().QueryContext(ctx, `SELECT scope FROM discounts WHERE sample`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,11 +193,13 @@ func TestErasingTheSampleShopLeavesTheMerchantsOwn(t *testing.T) {
 	}
 	// The merchant filed their own product in a sample category: that one
 	// stays, because erasing it would take their product's category away.
-	var apparel int64
-	if err := app.DB().QueryRowContext(ctx, `SELECT id FROM categories WHERE slug = 'apparel'`).Scan(&apparel); err != nil {
+	// Its parent stays with it, since a category cannot go while another is
+	// under it.
+	var dresses int64
+	if err := app.DB().QueryRowContext(ctx, `SELECT id FROM categories WHERE slug = 'women-dresses'`).Scan(&dresses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.Products().UpdateProduct(ctx, own.ID, ProductPatch{CategoryID: SetID(apparel)}); err != nil {
+	if _, err := app.Products().UpdateProduct(ctx, own.ID, ProductPatch{CategoryID: SetID(dresses)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -186,7 +207,7 @@ func TestErasingTheSampleShopLeavesTheMerchantsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erase: %v", err)
 	}
-	want := SampleCounts{"products": 8, "categories": 3, "collections": 2, "discounts": 2, "orders": 12}
+	want := SampleCounts{"products": 11, "categories": 6, "collections": 2, "discounts": 2, "orders": 12}
 	for kind, n := range want {
 		if erased[kind] != n {
 			t.Errorf("erased %d %s, want %d (all: %v)", erased[kind], kind, n, erased)
@@ -213,8 +234,8 @@ func TestErasingTheSampleShopLeavesTheMerchantsOwn(t *testing.T) {
 		cats = append(cats, s)
 	}
 	rows.Close()
-	if strings.Join(cats, ",") != "apparel,"+cat.Slug {
-		t.Fatalf("categories left = %v, want the merchant's own and the sample one their product is in", cats)
+	if strings.Join(cats, ",") != cat.Slug+",women,women-dresses" {
+		t.Fatalf("categories left = %v, want the merchant's own, the sample one their product is in and its parent", cats)
 	}
 	var lines int
 	if err := app.DB().QueryRowContext(ctx, `SELECT count(*) FROM order_lines`).Scan(&lines); err != nil || lines != 1 {
@@ -246,8 +267,8 @@ func TestTheSampleShopOverTheAdminAPI(t *testing.T) {
 		Added SampleCounts `json:"added"`
 	}
 	decodeData(t, rec, &added)
-	if added.Added["products"] != 8 || added.Added["orders"] != 12 {
-		t.Fatalf("added = %v, want 8 products and 12 orders", added.Added)
+	if added.Added["products"] != 11 || added.Added["orders"] != 12 {
+		t.Fatalf("added = %v, want 11 products and 12 orders", added.Added)
 	}
 
 	var counted struct {
@@ -259,8 +280,8 @@ func TestTheSampleShopOverTheAdminAPI(t *testing.T) {
 		t.Fatalf("count as staff = %d: %s", rec.Code, rec.Body)
 	}
 	decodeData(t, rec, &counted)
-	if counted.Counts["products"] != 8 || counted.Total == 0 {
-		t.Fatalf("counts = %+v, want 8 products and a total", counted)
+	if counted.Counts["products"] != 11 || counted.Total == 0 {
+		t.Fatalf("counts = %+v, want 11 products and a total", counted)
 	}
 
 	if rec := do(t, app, http.MethodDelete, "/api/admin/sample-content", bearer(staff)); rec.Code != http.StatusForbidden {
@@ -273,6 +294,34 @@ func TestTheSampleShopOverTheAdminAPI(t *testing.T) {
 	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-content", withAdmin), &counted)
 	if counted.Total != 0 {
 		t.Fatalf("counts after the erase = %+v, want nothing left", counted)
+	}
+}
+
+// The basket discount's minimum is the shop's money, as the prices are: 5,000
+// in a store selling in rupees, a face value of 100 in any other.
+func TestTheSampleBasketDiscountIsInTheStoresCurrency(t *testing.T) {
+	for _, tc := range []struct {
+		currency, title string
+		minimum         int64
+	}{
+		{"INR", "15% off a basket of 5,000 or more", 500000},
+		{"USD", "15% off a basket of 100 or more", 10000},
+		{"JPY", "15% off a basket of 100 or more", 100},
+	} {
+		t.Run(tc.currency, func(t *testing.T) {
+			app := newTestApp(t)
+			ctx := withStoreCurrency(context.Background(), tc.currency)
+			if _, err := app.AddSampleShop(ctx); err != nil {
+				t.Fatal(err)
+			}
+			d, err := app.Discounts().GetByCode(ctx, "BUNDLE15")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d.Title != tc.title || d.MinSubtotalMinor == nil || *d.MinSubtotalMinor != tc.minimum {
+				t.Fatalf("BUNDLE15 = %q from %v, want %q from %d", d.Title, d.MinSubtotalMinor, tc.title, tc.minimum)
+			}
+		})
 	}
 }
 

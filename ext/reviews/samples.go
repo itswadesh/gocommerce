@@ -23,14 +23,17 @@ var sampleReviews = map[string]struct {
 	rating      int
 	title, body string
 }{
-	"cotton-crew-tee":     {5, "My new everyday tee", "Soft, holds its shape after washing, and the fit is just as described."},
-	"hooded-sweatshirt":   {4, "Warm and comfortable", "Thick, cosy fleece. The sleeves run a little long, so I would size down."},
-	"canvas-tote-bag":     {5, "Fits everything", "Strong straps and the inside pocket keeps my keys from getting lost."},
-	"ceramic-mug":         {5, "Lovely mug", "A good weight in the hand and it keeps tea hot for a while."},
-	"wool-beanie":         {4, "Warm, not itchy", "Keeps my ears warm on cold mornings and does not itch at all."},
-	"linen-napkins":       {5, "Better with every wash", "They soften up nicely and look good on the table."},
-	"leather-card-holder": {4, "Slim and well made", "Fits my cards without bulk. The leather was stiff at first but has softened."},
-	"a5-notebook":         {5, "Lies flat", "The paper takes ink without bleeding through and the binding lies flat."},
+	"printed-anarkali-kurta":   {5, "Beautiful flare", "The skirt flares nicely when I walk and the side ties sit neatly. The print is just as in the photos."},
+	"printed-yoke-kurta":       {4, "Easy everyday kurta", "Comfortable, and the embroidery on the yoke is neat. The sleeves are a touch long on me."},
+	"floral-co-ord-set":        {5, "Wore it all weekend", "Soft fabric, and the elasticated waist makes the trousers easy to wear. The lace on the placket is a nice touch."},
+	"ikat-print-co-ord-set":    {5, "Love the print", "A bold print, wide trousers that move well, and the collar keeps it looking smart."},
+	"paisley-print-jumpsuit":   {4, "Comfortable and smart", "The tie belt gives it shape. I would size down if you are between sizes."},
+	"satin-saree":              {5, "Lovely sheen", "It drapes well and the border catches the light. The blouse piece matches perfectly."},
+	"embroidered-lehenga-set":  {5, "Wore it to a wedding", "The embroidery is fine and even, the dupatta is light, and the skirt has a lovely flare."},
+	"floral-tiered-maxi-dress": {4, "Pretty and light", "The tiers sit nicely and it is easy to wear on a warm day. A little long, so I wear it with heels."},
+	"mens-embroidered-kurta":   {5, "Smart for festivals", "The tonal embroidery looks rich without being loud, and the straight fit is as described."},
+	"mens-nehru-jacket":        {5, "Lifts a plain kurta", "Well finished, with a soft lining. It dresses up a plain kurta for an evening out."},
+	"mens-kurta-pyjama-set":    {4, "Comfortable set", "Easy to wear, and the colour is just as shown. The pyjama waist is comfortable all day."},
 }
 
 // SampleRights implements gocommerce.SampleSeeder: the samples are published
