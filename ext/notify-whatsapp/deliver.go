@@ -23,8 +23,10 @@ import (
 const (
 	maxAttempts  = 12
 	maxBackoff   = 15 * time.Minute
-	visibility   = 60 * time.Second
 	deliverBatch = 20
+	// visibility outlasts a whole batch sent one by one at the client's
+	// timeout, so a second worker never claims a message still in flight.
+	visibility = deliverBatch*15*time.Second + time.Minute
 )
 
 // queue writes one message for the worker. A message the outbox delivers
@@ -116,6 +118,14 @@ func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 		// refused by Meta; it is given up here with the reason instead.
 		if p.slot == slotReply && !m.windowOpen(ctx, p.phone) {
 			if err := m.fail(ctx, p, errors.New("outside the 24-hour customer service window")); err != nil {
+				return len(batch), err
+			}
+			continue
+		}
+		// Consent again at sending: a STOP that arrived while this waited,
+		// or Meta was down, wins over what was true when it was queued.
+		if s := slotByKey(p.slot); s != nil && !m.consented(ctx, p.phone, s.Marketing) {
+			if err := m.fail(ctx, p, errors.New("the shopper withdrew consent before it was sent")); err != nil {
 				return len(batch), err
 			}
 			continue
