@@ -184,6 +184,15 @@ stored)` when it reads (a value never sealed comes back as it is), and
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.
 
+The ad and analytics tags — Google Analytics, Meta pixel, Microsoft Clarity,
+Hotjar, the TikTok, Pinterest and Snap pixels — are core descriptors with one
+public ID each (D160). The engine holds the switch; the storefront owns the
+vendor's snippet, when it loads, the shopper's consent and which shopping
+events it hears. `ext/meta-capi` is the one with code behind it: it reads the
+pixel ID off `meta-pixel` with `app.Plugins().String` rather than asking for
+it twice, so the browser and the server can never name different pixels, and
+it delivers through a queue of its own like `ext/webhooks`.
+
 Not every descriptor is an add-on (D132). A plugin on the Plugins screen is an
 optional third-party integration or extra: an analytics or chat tag, a
 marketing or search integration, an import. A feature that is part of the

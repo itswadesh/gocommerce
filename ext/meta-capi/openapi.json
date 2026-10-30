@@ -1,0 +1,36 @@
+{
+  "paths": {
+    "/api/admin/x/meta-capi/status": {
+      "get": {
+        "tags": ["admin:meta-capi"],
+        "summary": "Whether the Meta Conversions API is on, and how delivery is going",
+        "security": [{"adminToken": []}],
+        "description": "Purchases waiting for Meta, delivered and given up, and the last reason Meta gave. A purchase Meta cannot be reached for is retried with backoff for about an hour; one Meta refuses for good (a parameter it will not take) is given up at once. While Meta refuses the store's token or pixel, purchases wait rather than being given up, and one that has waited seven days, the most Meta accepts, is given up then. The access token is never returned.",
+        "responses": {
+          "200": {"description": "The sender's state.", "content": {"application/json": {"schema": {
+            "type": "object",
+            "properties": {"data": {"$ref": "#/components/schemas/MetaCAPIStatus"}}
+          }}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MetaCAPIStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {"type": "boolean"},
+          "configured": {"type": "boolean", "description": "An access token here, and the Meta pixel plugin switched on with its pixel ID."},
+          "test_mode": {"type": "boolean", "description": "A test event code is set: Meta shows the events under Test events and leaves them out of reports."},
+          "pending": {"type": "integer"},
+          "delivered": {"type": "integer"},
+          "dead": {"type": "integer"},
+          "last_sent": {"type": "string", "format": "date-time"},
+          "last_error": {"type": "string"}
+        }
+      }
+    }
+  }
+}
