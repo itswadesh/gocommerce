@@ -2,6 +2,7 @@ package aigateway
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -56,8 +57,8 @@ func TestConcurrentReservationsNeverPassTheCap(t *testing.T) {
 // before calling.
 func TestConcurrentRunsNeverSpendPastTheCap(t *testing.T) {
 	// Each call really costs 300,000 micro-minor (3000 tokens in at 100);
-	// each reserves its ceiling of 1,000,000 (4000 in at 125, 1000 out at
-	// 500). A cap of 2 minor units holds two ceilings at a time.
+	// each reserves its ceiling of about 590,000 (smallCeiling). A cap of 2
+	// minor units holds three ceilings at a time.
 	var calls atomic.Int32
 	app, m, _ := newGateway(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -119,8 +120,23 @@ func newQuickGateway(t *testing.T, s *standIn, deadline time.Duration) (*gocomme
 	return gctest.New(t, m), m
 }
 
-// The small model's ceiling: 4000 tokens in at 125, 1000 out at 500.
-const smallCeiling = 4000*125 + 1000*500
+// smallCeiling is what a rewrite of listing{Title: "x"} holds on the small
+// model: its request's estimated input at the dearest input price, 125, and
+// its 1,000 output tokens at 500.
+func smallCeiling(t *testing.T) int64 {
+	t.Helper()
+	task := rewriteTask()
+	p := Policy{Catalogue: true}
+	req, _, err := task.Build(context.Background(), json.RawMessage(`{"title":"x"}`), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := render(req, &task, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int64(estimateTokens(r.req))*125 + int64(r.req.MaxTokens)*500
+}
 
 // A call that was sent and then timed out may still be billed, and nothing
 // came back to say what for: it is charged at its ceiling and the record
@@ -142,10 +158,11 @@ func TestACallThatTimesOutIsChargedAtItsCeiling(t *testing.T) {
 		t.Fatalf("error = %+v", re)
 	}
 	e := mustExecution(t, m, ctx, res.ExecutionID)
-	if e.CostMicroMinor != smallCeiling || !e.CostEstimated || !e.Steps[0].Estimated {
-		t.Errorf("record cost %d estimated %v (step %v), want the ceiling %d, estimated", e.CostMicroMinor, e.CostEstimated, e.Steps[0].Estimated, smallCeiling)
+	ceiling := smallCeiling(t)
+	if e.CostMicroMinor != ceiling || !e.CostEstimated || !e.Steps[0].Estimated {
+		t.Errorf("record cost %d estimated %v (step %v), want the ceiling %d, estimated", e.CostMicroMinor, e.CostEstimated, e.Steps[0].Estimated, ceiling)
 	}
-	if b := mustBudget(t, m, ctx); b.SpentMicroMinor != smallCeiling || b.ReservedMicroMinor != 0 {
+	if b := mustBudget(t, m, ctx); b.SpentMicroMinor != ceiling || b.ReservedMicroMinor != 0 {
 		t.Errorf("budget = %+v", b)
 	}
 }
@@ -161,7 +178,7 @@ func TestAnAnswerThatCannotBeReadIsChargedAtItsCeiling(t *testing.T) {
 	if re := runErr(t, err); re.Outcome != OutcomeProviderError {
 		t.Fatalf("error = %+v", re)
 	}
-	if e := mustExecution(t, m, ctx, res.ExecutionID); e.CostMicroMinor != smallCeiling || !e.CostEstimated {
+	if e := mustExecution(t, m, ctx, res.ExecutionID); e.CostMicroMinor != smallCeiling(t) || !e.CostEstimated {
 		t.Errorf("record cost %d estimated %v", e.CostMicroMinor, e.CostEstimated)
 	}
 }

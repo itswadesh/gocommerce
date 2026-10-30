@@ -326,9 +326,10 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeRefused, err.Error(), false)
 			}
-			if est := estimateTokens(r.req); est > t.MaxInputTokens {
+			r.tokens = estimateTokens(r.req)
+			if r.tokens > t.MaxInputTokens {
 				step.Outcome = "refused"
-				step.Reason = fmt.Sprintf("the request comes to about %d input tokens, over this task's limit of %d", est, t.MaxInputTokens)
+				step.Reason = fmt.Sprintf("the request comes to about %d input tokens, over this task's limit of %d", r.tokens, t.MaxInputTokens)
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeRefused, step.Reason, false)
 			}
@@ -342,7 +343,11 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 		}
 		step.Dropped = built.dropped
 
-		ceiling := p.ceiling(t.MaxInputTokens, t.MaxOutputTokens)
+		// The most this request can cost: its own estimated input, which errs
+		// large, and the output it asks for, which the provider will not pass.
+		// Not the task's bounds, which a batch of three photos would pay for
+		// as if it were sixty (D151, 2026-10-30).
+		ceiling := p.ceiling(built.tokens, built.req.MaxTokens)
 		month := monthOf(time.Now())
 
 		// Credit first: a store with nothing left is refused before the model
