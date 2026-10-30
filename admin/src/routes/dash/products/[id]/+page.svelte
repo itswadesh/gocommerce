@@ -39,6 +39,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
+    import HsnPicker from "$lib/components/HsnPicker.svelte";
     import { COUNTRIES } from "$lib/countries.js";
     import Combobox from "$lib/components/Combobox.svelte";
     import TokenInput from "$lib/components/TokenInput.svelte";
@@ -2194,17 +2195,12 @@
                             </div>
                             <div class="field m-t-sm">
                                 <label for="hs-code">Harmonized System (HS) code</label>
-                                <input
-                                    id="hs-code"
-                                    type="text"
-                                    inputmode="numeric"
-                                    placeholder="6109.10"
-                                    bind:value={form.hs_code}
-                                />
+                                <HsnPicker id="hs-code" bind:value={form.hs_code} />
                             </div>
                             <div class="field-help">
                                 4 to 10 digits, stored as digits: 6109.10 and 610910 are the same code.
-                                In India this is the HSN printed on a GST tax invoice.
+                                In India this is the HSN printed on a GST tax invoice; type a code or
+                                a word to search the GST portal's list.
                             </div>
 
                             <h6 class="section-title m-t-base">Package dimensions</h6>

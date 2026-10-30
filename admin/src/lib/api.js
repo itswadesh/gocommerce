@@ -380,6 +380,16 @@ export const storeProfile = {
     save: (profile) => request("PATCH", "/api/admin/store", { body: profile }),
 };
 
+/**
+ * India's GST reference lists, compiled into the engine (D170): the state codes
+ * a GSTIN starts with, and the HSN/SAC master a product's tariff code is
+ * picked from.
+ */
+export const gst = {
+    states: () => api.get("/api/admin/gst-states"),
+    hsn: (q, limit = 20) => api.get("/api/admin/hsn" + query({ q, limit })),
+};
+
 export const roles = {
     matrix: () => api.get("/api/admin/roles"),
     // Every role's key and name, for the screens that hand one out. Behind
