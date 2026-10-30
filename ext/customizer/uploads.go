@@ -132,7 +132,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	keepBy := time.Now().Add(decodeWait + keepWithin)
 	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
-		if errors.Is(err, errTooSlow) {
+		if errors.Is(err, errTooSlow) && !body.trickled() {
 			m.uploads.refund(throttleKey(r), counted)
 		}
 		gocommerce.RespondError(w, r, err)
@@ -189,6 +189,10 @@ func (a *arriving) Read(p []byte) (int, error) {
 		_ = a.extend()
 	}
 	return n, err
+}
+
+func (a *arriving) trickled() bool {
+	return time.Duration(a.n)*time.Second/minUploadBytesPerSecond < uploadIdle
 }
 
 func (a *arriving) extend() error {
