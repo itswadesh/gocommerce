@@ -50,11 +50,13 @@ const (
 type Config struct {
 	// UploadsPerHour is how many files one address may upload in an hour.
 	// Zero means 30; a negative number turns the limit off. It counts by the
-	// connection's peer address, never by X-Forwarded-For, which anybody can
-	// write, so behind a reverse proxy every shopper shares the proxy's
-	// allowance and the store should raise it.
+	// request's address, which is a trusted proxy's shopper's once the
+	// install lists the proxy (GOCOMMERCE_TRUSTED_PROXIES), so raise it only
+	// where many shoppers share one address. The reference binary reads it
+	// from GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR.
 	UploadsPerHour int
-	// DesignsPerHour is the same for saved designs. Zero means 30.
+	// DesignsPerHour is the same for saved designs. Zero means 30;
+	// GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR.
 	DesignsPerHour int
 }
 

@@ -79,9 +79,17 @@ design and adds that; remove the old line.
 | Limit | 30 an hour per address (429, with `Retry-After`) |
 | Kept for | 30 days, then deleted, unless a design in a basket or on an order names it |
 
-The limit counts by the connection's address, not `X-Forwarded-For`, as every
-limit in the engine does. Behind a reverse proxy every shopper shares the
-proxy's address, so an install behind one raises `Config.UploadsPerHour`.
+The limit counts by the request's address, as every limit in the engine
+does, and never reads `X-Forwarded-For` itself. Behind a reverse proxy or a
+storefront that calls the engine for its shoppers, that address is the
+proxy's until the install names it in `GOCOMMERCE_TRUSTED_PROXIES` (engine
+PR #191): the engine then counts the shopper the proxy forwarded for, so
+this module needs nothing of its own. Raise the limits only where many real
+shoppers share one address, such as a mobile carrier's NAT:
+`GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR` and
+`GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR` (30 each when unset; anything but a
+whole number above 0 stops the engine at start), or `Config.UploadsPerHour`
+and `Config.DesignsPerHour` for an engine built in Go.
 
 ## The design document
 

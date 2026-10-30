@@ -470,8 +470,10 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	return 0, true
 }
 
-// peerAddr is the connection's own address, never X-Forwarded-For: behind no
-// proxy that header is whatever the client wrote.
+// peerAddr is the request's address as the engine's outermost handler left
+// it: the connection's, or the shopper's when the install trusts the proxy
+// in front (GOCOMMERCE_TRUSTED_PROXIES). X-Forwarded-For is never read here:
+// from anyone else it is whatever the client wrote.
 func peerAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

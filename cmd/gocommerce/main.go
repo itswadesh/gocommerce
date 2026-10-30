@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -208,6 +209,11 @@ environment:
   GOCOMMERCE_TRAEFIK_CERT_RESOLVER
                     the ACME resolver that issues the certificates; defaults
                     to letsencrypt
+  GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR, GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR
+                    with -customizer, how many files and designs one address
+                    may send in an hour, 30 each when unset; raise them where
+                    many shoppers share one address. Anything but a whole
+                    number above 0 stops the start
 `)
 	}
 
@@ -373,6 +379,13 @@ environment:
 	cfg.PostcodesFile = os.Getenv("GOCOMMERCE_POSTCODES_FILE")
 	if len(languages) > 0 {
 		cfg.DefaultLanguage = languages[0]
+	}
+
+	// Read before any module is built, so a limit that does not read stops
+	// the start rather than leaving the default the operator meant to raise.
+	customizerLimits, err := customizerConfig()
+	if err != nil {
+		return err
 	}
 
 	// The reference binary installs no module by default — that is what
@@ -561,7 +574,7 @@ environment:
 			modules = append(modules, wishlist.New(wishlist.Config{}))
 		}
 		if *withCustom {
-			modules = append(modules, customizer.New(customizer.Config{}))
+			modules = append(modules, customizer.New(customizerLimits))
 		}
 		if *withAmazon {
 			// With the gateway installed, ANTHROPIC_API_KEY is the platform's,
@@ -1119,6 +1132,27 @@ func envTrue(name string) bool {
 		return false
 	}
 	return true
+}
+
+// customizerConfig reads the customizer's hourly limits per address. Unset,
+// the module's own (30 each); otherwise a whole number above 0.
+func customizerConfig() (customizer.Config, error) {
+	var cfg customizer.Config
+	for name, limit := range map[string]*int{
+		"GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR": &cfg.UploadsPerHour,
+		"GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR": &cfg.DesignsPerHour,
+	} {
+		v := strings.TrimSpace(os.Getenv(name))
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return cfg, fmt.Errorf("%s is %q; it must be a whole number above 0", name, v)
+		}
+		*limit = n
+	}
+	return cfg, nil
 }
 
 // firstEnv is the first of these variables that is set. A module's own

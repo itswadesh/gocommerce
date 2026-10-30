@@ -145,6 +145,11 @@ services:
       # Post's directory built into the engine. Set this only to mount a newer
       # copy of the CSV data.gov.in publishes, or to "off".
       GOCOMMERCE_POSTCODES_FILE: ${GOCOMMERCE_POSTCODES_FILE:-}
+      # How many photos and designs one address may send the customizer in an
+      # hour, 30 each when unset. Raise them only where many shoppers share
+      # one address, such as a mobile carrier's NAT.
+      GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR: ${GOCOMMERCE_CUSTOMIZER_UPLOADS_PER_HOUR:-}
+      GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR: ${GOCOMMERCE_CUSTOMIZER_DESIGNS_PER_HOUR:-}
       # Email and SMS delivery, every one optional: a backend without its key
       # installs idle and waits for Notifications › Setup Email / Setup SMS.
       # The engine sees only what is listed here, so a key set in the host's
