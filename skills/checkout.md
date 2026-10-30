@@ -152,6 +152,15 @@ Indian delivery address whose state it cannot place ("choose a state"), both as
 400 `validation_failed` with no order and no reservation. Every other store
 neither reads nor checks it.
 
+**`metadata.meta_capi` is the browser Meta's pixel ran in,** `{"fbp": "fb.1.…",
+"fbc": "fb.1.…", "client_user_agent": "…", "event_source_url": "https://…"}`
+(D160). The storefront's connector sends it only when Meta's pixel is running
+on the page and its `_fbp` cookie exists, which is only where the shopper
+allows ad cookies. `ext/meta-capi` sends such
+an order to Meta's Conversions API as a Purchase when it is paid, or when it is
+placed for cash on delivery, with the order number as `event_id`, and only
+while the Meta pixel plugin is on; an order without the block is never sent.
+
 ## How to check out over HTTP
 
 ```http

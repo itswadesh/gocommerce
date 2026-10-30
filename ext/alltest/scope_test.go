@@ -37,6 +37,7 @@ import (
 	klaviyo "github.com/itswadesh/gocommerce/ext/klaviyo"
 	layouts "github.com/itswadesh/gocommerce/ext/layouts"
 	mcp "github.com/itswadesh/gocommerce/ext/mcp"
+	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	navigation "github.com/itswadesh/gocommerce/ext/navigation"
 	newsletter "github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -102,6 +103,7 @@ func everyModule() []gocommerce.Module {
 		invoices.New(invoices.Config{SellerName: "Test Store"}),
 		klaviyo.New(klaviyo.Config{}),
 		mcp.New(mcp.Config{}),
+		metacapi.New(metacapi.Config{}),
 		navigation.New(navigation.Config{}),
 		newsletter.New(newsletter.Config{}),
 		msg91.New(msg91.Config{}),

@@ -129,7 +129,7 @@ if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
         '-resend', '-sendgrid', '-twilio', '-msg91', '-telegram', '-invoices', '-cms', '-faq', '-translations', '-showcases', '-banners', '-layouts', '-wishlist', '-customizer',
-        '-gateways', '-carriers', '-feeds', '-sitemaps', '-b2b', '-recovery', '-ai-gateway', '-photo-products', '-catalog-ai'
+        '-gateways', '-carriers', '-feeds', '-meta-capi', '-sitemaps', '-b2b', '-recovery', '-ai-gateway', '-photo-products', '-catalog-ai'
     )
 } else {
     if ($Identity) { $serveArgs += '-identity' }

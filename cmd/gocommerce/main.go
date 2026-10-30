@@ -47,6 +47,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
+	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	"github.com/itswadesh/gocommerce/ext/navigation"
 	"github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -235,6 +236,7 @@ environment:
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withMetaCAPI = fs.Bool("meta-capi", false, "install the Meta Conversions API module idle: each store switches it on under Plugins with its access token, and its purchases reach Meta from the server as well as from the pixel")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
 		withMenus    = fs.Bool("menus", false, "install the navigation module: the storefront's menus, edited from the Menus screen")
@@ -456,6 +458,9 @@ environment:
 			modules = append(modules, klaviyo.New(klaviyo.Config{
 				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
 			}))
+		}
+		if *withMetaCAPI {
+			modules = append(modules, metacapi.New(metacapi.Config{}))
 		}
 		// Kept, with reviews below, for the Google product ratings feed, which
 		// names products as this feed does.
