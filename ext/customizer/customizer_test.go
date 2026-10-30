@@ -275,13 +275,14 @@ func (h *harness) uploadRaw(store, field string, file []byte) *httptest.Response
 	return h.do(http.MethodPost, "/x/customizer/uploads", store, contentType, body, "")
 }
 
-func (h *harness) server(readTimeout time.Duration) *httptest.Server {
+func (h *harness) server(readTimeout, writeTimeout time.Duration) *httptest.Server {
 	inner := h.app.Handler()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Host = "example.com"
 		inner.ServeHTTP(w, r)
 	}))
 	srv.Config.ReadTimeout = readTimeout
+	srv.Config.WriteTimeout = writeTimeout
 	srv.Start()
 	h.t.Cleanup(srv.Close)
 	return srv
@@ -751,7 +752,7 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	uploadDeadline = 500 * time.Millisecond
 	t.Cleanup(func() { uploadDeadline = 15 * time.Second })
-	srv := h.server(0)
+	srv := h.server(0, 0)
 	body, contentType := form("file", jpegRedTop(400, 300))
 
 	stalled := make([]net.Conn, 5)
@@ -793,7 +794,7 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 
 func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	srv := h.server(300 * time.Millisecond)
+	srv := h.server(300*time.Millisecond, 0)
 	body, contentType := form("file", jpegRedTop(40, 30))
 	h.mod.decodes <- struct{}{}
 	go func() {
@@ -865,6 +866,48 @@ func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	if n := spooled(); n != 0 {
 		t.Errorf("%d files left on disk, want none", n)
 	}
+}
+
+// The server's WriteTimeout runs from when the request arrived. An upload
+// that waits for its turn past it is still told it was kept, and one that is
+// not kept is told so rather than cut off.
+func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	srv := h.server(0, time.Second)
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+	body, contentType := form("file", jpegRedTop(40, 30))
+	post := func() string {
+		resp, err := client.Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+		if err != nil {
+			return err.Error()
+		}
+		resp.Body.Close()
+		return strconv.Itoa(resp.StatusCode)
+	}
+	stored := func() (n int) {
+		if err := h.app.DB().QueryRow(`SELECT count(*) FROM customizer_uploads`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	h.mod.decodes <- struct{}{}
+	go func() {
+		time.Sleep(2 * time.Second)
+		<-h.mod.decodes
+	}()
+	if got := post(); got != "201" || stored() != 1 {
+		t.Errorf("an upload that waited 2 s behind a 1 s write timeout = %s with %d stored; want 201 and it stored", got, stored())
+	}
+
+	decodeWait = 1500 * time.Millisecond
+	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	h.mod.decodes <- struct{}{}
+	if got := post(); got != "503" || stored() != 1 {
+		t.Errorf("an upload that waited past its 1.5 s = %s with %d stored; want 503 and nothing more stored", got, stored())
+	}
+	<-h.mod.decodes
 }
 
 func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {

@@ -40,6 +40,10 @@ const (
 	// decodeQueue is how many uploads may wait for a turn to decode, each
 	// keeping its file on disk while it does.
 	decodeQueue = 8
+	// keepWithin is the decode and the store once an upload's turn comes,
+	// and answerWithin the writing of its answer after them.
+	keepWithin   = 30 * time.Second
+	answerWithin = 10 * time.Second
 	// pngWriterState is what png.Encode's compress/flate writer holds
 	// whatever the picture: 1.1 MB in Go 1.27.
 	pngWriterState = 1200 << 10
@@ -111,13 +115,20 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	file, err := receive(w, r)
+	// The server's WriteTimeout runs from when the request arrived, so the
+	// answer gets a deadline of its own once the body is in. The upload is
+	// kept only while that deadline leaves time to say so.
+	keepBy := time.Now().Add(decodeWait + keepWithin)
+	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
 	_ = rc.SetReadDeadline(time.Time{})
 	defer discard(file)
-	up, err := m.keep(r.Context(), file)
+	ctx, cancel := context.WithDeadline(r.Context(), keepBy)
+	defer cancel()
+	up, err := m.keep(ctx, file)
 	if errors.Is(err, errBusy) {
 		busy(w)
 		return
@@ -224,7 +235,7 @@ func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 		INSERT INTO customizer_uploads (id, storage_key, url, mime, width, height, size_bytes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		id, key, url, mime, bounds.Dx(), bounds.Dy(), size); err != nil {
-		_ = store.Delete(ctx, key)
+		_ = store.Delete(context.WithoutCancel(ctx), key)
 		return nil, gocommerce.Internalf(err, "record the upload")
 	}
 	return &Upload{ID: id, URL: url, Width: bounds.Dx(), Height: bounds.Dy()}, nil
