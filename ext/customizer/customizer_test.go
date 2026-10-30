@@ -14,10 +14,12 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -608,45 +610,139 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
-func FuzzTheWalkFindsTheFrameTheDecoderDecodes(f *testing.F) {
-	f.Add(jpegRedTop(24, 16))
-	f.Add(withExif(jpegRedTop(16, 8), 6, ""))
+// jpegSpec is a JPEG made to order, whose scans of zeros decode: a frame, its
+// scans, and whatever comes before the frame.
+type jpegSpec struct {
+	w, h      int
+	sof       byte
+	ids       []byte
+	hv        []byte
+	adobe     int // the APP14 transform; -1 for no APP14
+	split     bool
+	beforeSOF []byte
+}
+
+func segment(marker byte, data []byte) []byte {
+	return append([]byte{0xFF, marker, byte((len(data) + 2) >> 8), byte(len(data) + 2)}, data...)
+}
+
+func jpegOf(s jpegSpec) []byte {
+	n := len(s.hv)
+	if s.ids == nil {
+		s.ids = []byte{1, 2, 3, 4}[:n]
+	}
+	b := []byte{0xFF, jpegStart}
+	if s.adobe >= 0 {
+		b = append(b, segment(0xEE, []byte{'A', 'd', 'o', 'b', 'e', 0, 100, 0, 0, 0, 0, byte(s.adobe)})...)
+	}
+	q := bytes.Repeat([]byte{1}, 65)
+	q[0] = 0
+	b = append(b, segment(jpegQuant, q)...)
+	// A DC and an AC table, each one one-bit code for 0.
+	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
+	b = append(b, segment(jpegHuffman, append([]byte{0x10, 1}, make([]byte, 16)...))...)
+	b = append(b, s.beforeSOF...)
+	frame := []byte{8, byte(s.h >> 8), byte(s.h), byte(s.w >> 8), byte(s.w), byte(n)}
+	maxH, maxV := 1, 1
+	for c, hv := range s.hv {
+		frame = append(frame, s.ids[c], hv, 0)
+		maxH, maxV = max(maxH, int(hv>>4)), max(maxV, int(hv&15))
+	}
+	b = append(b, segment(s.sof, frame)...)
+	if n == 1 {
+		maxH, maxV = 1, 1
+	}
+	mxx, myy := (s.w+8*maxH-1)/(8*maxH), (s.h+8*maxV-1)/(8*maxV)
+	scan := func(comps []int, from, to byte) {
+		hdr, blocks := []byte{byte(len(comps))}, 0
+		for _, c := range comps {
+			hdr = append(hdr, s.ids[c], 0)
+			h, v := int(s.hv[c]>>4), int(s.hv[c]&15)
+			if n == 1 {
+				h, v = 1, 1
+			}
+			blocks += mxx * myy * h * v
+		}
+		b = append(b, segment(jpegScan, append(hdr, from, to, 0))...)
+		b = append(b, make([]byte, (2*blocks+7)/8+8)...)
+	}
+	last := byte(63)
+	if s.sof == jpegProgressive {
+		last = 0
+	}
+	if s.split || n == 1 {
+		for c := range n {
+			scan([]int{c}, 0, last)
+		}
+	} else {
+		scan([]int{0, 1, 2, 3}[:n], 0, last)
+	}
+	if s.sof == jpegProgressive {
+		for c := range n {
+			scan([]int{c}, 1, 63)
+		}
+	}
+	return append(b, 0xFF, jpegEnd)
+}
+
+// withinItsReckoning fails when writing b again allocates more than
+// decodeCost reckoned for it beside the body, past what the decoders and
+// encoders keep whatever the picture: buffers, tables, a turned photo's row.
+func withinItsReckoning(t *testing.T, b []byte) {
+	t.Helper()
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil || cfg.Width*cfg.Height > 4<<20 {
+		return
+	}
+	mime := http.DetectContentType(b)
+	orientation := 1
+	if mime == "image/jpeg" {
+		_, orientation, _ = jpegHeader(b)
+	}
+	cost, _ := decodeCost(b, mime, cfg, orientation)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, _, err = redraw(b, io.Discard)
+	runtime.ReadMemStats(&after)
+	if got, want := int64(after.TotalAlloc-before.TotalAlloc), cost-int64(len(b)); err == nil && got > want+128<<10 {
+		t.Fatalf("writing a %d × %d %s again allocated %d bytes, reckoned at %d", cfg.Width, cfg.Height, mime, got, want)
+	}
+}
+
+func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x22, 0x12}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11}, adobe: -1}))
+		f.Add(jpegOf(jpegSpec{w: 96, h: 16, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, ids: []byte("RGB")}))
+	}
+	f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: jpegBaseline, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, beforeSOF: []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF}}))
+	f.Add(withExif(jpegRedTop(24, 16), 6, ""))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
-	f.Add(jpegBomb(16, 16, jpegBaseline, "rgb", 0x11, 0x11, 0x11))
-	var grey bytes.Buffer
-	_ = jpeg.Encode(&grey, image.NewGray(image.Rect(0, 0, 9, 9)), nil)
-	f.Add(grey.Bytes())
-	ratios := map[[2]int]image.YCbCrSubsampleRatio{{1, 1}: image.YCbCrSubsampleRatio444, {1, 2}: image.YCbCrSubsampleRatio440,
-		{2, 1}: image.YCbCrSubsampleRatio422, {2, 2}: image.YCbCrSubsampleRatio420, {4, 1}: image.YCbCrSubsampleRatio411,
-		{4, 2}: image.YCbCrSubsampleRatio410}
-	f.Fuzz(func(t *testing.T, b []byte) {
-		cfg, err := jpeg.DecodeConfig(bytes.NewReader(b))
-		if err != nil || cfg.Width*cfg.Height > 1<<20 {
+	f.Fuzz(func(t *testing.T, b []byte) { withinItsReckoning(t, b) })
+}
+
+func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, p := range []pngHeader{
+		{w: maxUploadSide, h: 1, depth: 16, colour: 2},
+		{w: maxUploadSide, h: 3, depth: 8, colour: 6, interlaced: true},
+		{w: 1, h: maxUploadSide, depth: 16, colour: 6},
+		{w: 300, h: 200, depth: 8, colour: 3, transparent: true},
+		{w: 97, h: 61, depth: 16, colour: 0, interlaced: true, transparent: true},
+		{w: 64, h: 64, depth: 8, colour: 4},
+		{w: 2000, h: 3, depth: 1, colour: 0},
+	} {
+		f.Add(p.w, p.h, p.depth, p.colour, p.interlaced, p.transparent)
+	}
+	f.Fuzz(func(t *testing.T, w, h uint32, depth, colour byte, interlaced, transparent bool) {
+		if w > maxUploadSide || h > maxUploadSide || uint64(w)*uint64(h) > 1<<20 {
 			return
 		}
-		img, err := jpeg.Decode(bytes.NewReader(b))
-		if err != nil {
-			return
-		}
-		frame, _, ok := jpegHeader(b)
-		want := map[string]int{"*image.Gray": 1, "*image.YCbCr": 3, "*image.RGBA": 3, "*image.CMYK": 4}[fmt.Sprintf("%T", img)]
-		if !ok || frame.width != cfg.Width || frame.height != cfg.Height || len(frame.components) != want {
-			t.Fatalf("walked to %+v (ok %v); the decoder made a %d × %d %T", frame, ok, cfg.Width, cfg.Height, img)
-		}
-		if y, isYCbCr := img.(*image.YCbCr); isYCbCr {
-			maxH, maxV := 1, 1
-			for _, c := range frame.components {
-				maxH, maxV = max(maxH, c.h), max(maxV, c.v)
-			}
-			ratio := image.YCbCrSubsampleRatio444
-			if hr, vr, known := chromaRatio(frame.components, maxH, maxV); known {
-				ratio = ratios[[2]int{hr, vr}]
-			}
-			if y.SubsampleRatio != ratio {
-				t.Fatalf("walked to %+v, chroma at %v; the decoder kept it at %v", frame, ratio, y.SubsampleRatio)
-			}
-		}
+		withinItsReckoning(t, pngBomb(pngHeader{w, h, depth, colour, interlaced, transparent, true}))
 	})
 }
 

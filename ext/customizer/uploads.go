@@ -36,6 +36,9 @@ const (
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
+	// pngWriterState is what png.Encode's compress/flate writer holds
+	// whatever the picture: 1.1 MB in Go 1.27.
+	pngWriterState = 1200 << 10
 )
 
 var uploadDeadline = 15 * time.Second
@@ -211,52 +214,62 @@ func (m *Module) keep(ctx context.Context, file *os.File) (*Upload, error) {
 
 func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, err error) {
 	body, err := os.ReadFile(file.Name())
+	if err == nil {
+		_, err = file.Seek(0, io.SeekStart)
+	}
+	if err == nil {
+		err = file.Truncate(0)
+	}
 	if err != nil {
 		return 0, "", bounds, gocommerce.Internalf(err, "read the upload back")
 	}
+	if mime, bounds, err = redraw(body, file); err != nil {
+		return 0, "", bounds, err
+	}
+	if size, err = file.Seek(0, io.SeekCurrent); err != nil {
+		return 0, "", bounds, gocommerce.Internalf(err, "write the photo again")
+	}
+	return size, mime, bounds, nil
+}
+
+// redraw decodes body, once decodeCost says it fits the budget, and writes
+// the picture again to out.
+func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, err error) {
 	mime = http.DetectContentType(body)
 	if mime != "image/jpeg" && mime != "image/png" {
-		return 0, "", bounds, errNotAPicture
+		return "", bounds, errNotAPicture
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(body))
 	if err != nil {
-		return 0, "", bounds, errNotAPicture
+		return "", bounds, errNotAPicture
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxUploadSide || cfg.Height > maxUploadSide ||
 		int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
-		return 0, "", bounds, errTooManyPixels
+		return "", bounds, errTooManyPixels
 	}
 	orientation := 1
 	if mime == "image/jpeg" {
 		_, orientation, _ = jpegHeader(body)
 	}
 	if cost, advice := decodeCost(body, mime, cfg, orientation); cost > decodeBudget {
-		return 0, "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
+		return "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
-		return 0, "", bounds, errNotAPicture
+		return "", bounds, errNotAPicture
 	}
 	img = encodable(img)
 	if mime == "image/jpeg" {
 		img = orient(img, orientation)
-	}
-	if _, err = file.Seek(0, io.SeekStart); err == nil {
-		err = file.Truncate(0)
-	}
-	if err == nil && mime == "image/jpeg" {
-		err = jpeg.Encode(file, img, &jpeg.Options{Quality: uploadQuality})
-	} else if err == nil {
-		err = png.Encode(file, img)
-	}
-	if err == nil {
-		size, err = file.Seek(0, io.SeekCurrent)
+		err = jpeg.Encode(out, img, &jpeg.Options{Quality: uploadQuality})
+	} else {
+		err = png.Encode(out, img)
 	}
 	if err != nil {
-		return 0, "", bounds, gocommerce.Internalf(err, "write the photo again")
+		return "", bounds, gocommerce.Internalf(err, "write the photo again")
 	}
-	return size, mime, img.Bounds(), nil
+	return mime, img.Bounds(), nil
 }
 
 // image/png's and image/jpeg's encoders (Go 1.27, writer.go) read a Gray16,
@@ -330,24 +343,32 @@ func dearestFrame(cfg image.Config) jpegHead {
 	return jpegHead{progressive: true, width: cfg.Width, height: cfg.Height, components: []sampling{{1, 1}, {1, 1}, {1, 1}, {1, 1}}}
 }
 
-// pngCost follows image/png's decoder (Go 1.27, reader.go readImagePass): a
-// grey or palette picture decodes to a byte a pixel, one with colour or
-// transparency to four, twice that at 16 bits, and an interlaced one decodes
-// each pass into a picture of its own beside the whole.
+// pngCost follows image/png (Go 1.27). The decoder (reader.go
+// readImagePass) makes a grey or palette picture a byte a pixel and one with
+// colour or transparency four, twice that at 16 bits, and an interlaced one
+// decodes each of its seven passes into a picture of its own beside the
+// whole. Each pass is read through two rows of the file's own bits, none
+// wider than the picture. The encoder (writer.go writeImage) fills six rows
+// of the 8-bit picture encodable leaves, beside its compressor's state.
 func pngCost(body []byte, w, h int64) int64 {
-	depth, colour, interlaced := body[24], body[25], body[28] == 1
+	depth, colour, interlaced := int64(body[24]), body[25], body[28] == 1
 	per := int64(4)
 	if colour == 3 || colour == 0 && !pngMayBeTransparent(body) {
 		per = 1
 	}
+	written := pngWriterState + 6*(1+per*w)
 	if depth == 16 {
 		per *= 2
 	}
+	picture, passes := per*w*h, int64(1)
 	if interlaced {
-		per *= 2
+		picture, passes = 2*picture, 7
 	}
-	return per * w * h
+	row := 1 + (depth*pngChannels[colour]*w+7)/8
+	return picture + 2*passes*row + written
 }
+
+var pngChannels = map[byte]int64{0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 
 func pngMayBeTransparent(b []byte) bool {
 	for b = b[8:]; len(b) >= 8; {
