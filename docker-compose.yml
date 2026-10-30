@@ -38,6 +38,7 @@ services:
       - -twilio
       - -msg91
       - -telegram
+      - -whatsapp
       - -invoices
       - -cms
       - -faq

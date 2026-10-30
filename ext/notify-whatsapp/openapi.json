@@ -1,0 +1,502 @@
+{
+  "paths": {
+    "/x/notify-whatsapp/consent": {
+      "get": {
+        "tags": [
+          "notify-whatsapp"
+        ],
+        "summary": "Whether the storefront should show the WhatsApp opt-in boxes",
+        "description": "`enabled` once the store connected WhatsApp and mapped an order-update template; `marketing` once a basket reminder template is mapped too.",
+        "responses": {
+          "200": {
+            "description": "What to show.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "marketing": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "notify-whatsapp"
+        ],
+        "summary": "Record a shopper's answer to the WhatsApp opt-in boxes",
+        "description": "The latest answer for a number wins; a yes after a STOP reply is a fresh opt-in. The number is read in the store's country when typed without a code, and stored as E.164. With `marketing` the number is put on the basket, so a reminder can reach it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "cart_id",
+                  "phone"
+                ],
+                "properties": {
+                  "cart_id": {
+                    "type": "string",
+                    "description": "The cart token."
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "order_updates": {
+                    "type": "boolean"
+                  },
+                  "marketing": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The standing answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/WhatsAppConsent"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such cart."
+          },
+          "400": {
+            "description": "The phone number cannot be read as a WhatsApp number."
+          }
+        }
+      }
+    },
+    "/x/notify-whatsapp/webhook": {
+      "get": {
+        "tags": [
+          "notify-whatsapp"
+        ],
+        "summary": "Meta's webhook verification",
+        "description": "Answers `hub.challenge` as plain text when `hub.mode` is subscribe and `hub.verify_token` is the store's; 403 otherwise. The address names its store with `?store=`.",
+        "parameters": [
+          {
+            "name": "hub.mode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hub.verify_token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hub.challenge",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The challenge.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token does not match."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "notify-whatsapp"
+        ],
+        "summary": "Message statuses and replies from Meta",
+        "description": "Signed by Meta in `X-Hub-Signature-256` (HMAC-SHA256 of the body with the app secret); anything else is refused with 403. Records sent, delivered, read and failed on the message and the order's history, STOP and START replies, and the answer to a cash-on-delivery confirmation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "The signature does not match."
+          }
+        }
+      }
+    },
+    "/api/admin/x/notify-whatsapp/status": {
+      "get": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "The WhatsApp connection, its templates and how sending is going",
+        "description": "The access token, app secret and verify token are never returned.",
+        "responses": {
+          "200": {
+            "description": "The state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/notify-whatsapp/templates": {
+      "get": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "The account's templates, read from Meta",
+        "description": "Only an approved template whose header needs nothing filled in is `usable`.",
+        "responses": {
+          "200": {
+            "description": "Templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "WhatsApp is not connected."
+          },
+          "502": {
+            "description": "Meta refused or could not be reached."
+          }
+        }
+      }
+    },
+    "/api/admin/x/notify-whatsapp/slots/{slot}": {
+      "put": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "Choose the template a moment sends",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "order_confirmation",
+                "cod_confirmation",
+                "shipped",
+                "out_for_delivery",
+                "delivered",
+                "cart_reminder"
+              ]
+            }
+          }
+        ],
+        "description": "Checked against Meta's current list: approved, utility for order updates and marketing for the basket reminder, two quick-reply buttons (confirm, then cancel) for the cash-on-delivery confirmation, and every variable given a value.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "variables": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such slot."
+          },
+          "400": {
+            "description": "The template cannot be sent for this moment."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "Stop sending a moment",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "order_confirmation",
+                "cod_confirmation",
+                "shipped",
+                "out_for_delivery",
+                "delivered",
+                "cart_reminder"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cleared."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/notify-whatsapp/slots/{slot}/suggest": {
+      "post": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "Submit GoCommerce's suggested wording to Meta for review",
+        "parameters": [
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "order_confirmation",
+                "cod_confirmation",
+                "shipped",
+                "out_for_delivery",
+                "delivered",
+                "cart_reminder"
+              ]
+            }
+          }
+        ],
+        "description": "Answers the status Meta gave, normally PENDING. Meta decides whether to approve it.",
+        "responses": {
+          "200": {
+            "description": "Submitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "502": {
+            "description": "Meta refused."
+          }
+        }
+      }
+    },
+    "/api/admin/x/notify-whatsapp/messages": {
+      "get": {
+        "tags": [
+          "admin:notify-whatsapp"
+        ],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "summary": "Recent WhatsApp messages and their status",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "reply",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cancel_requested"
+              ]
+            },
+            "description": "Only cash-on-delivery orders the shopper asked to cancel."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WhatsAppConsent": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "order_updates": {
+            "type": "boolean"
+          },
+          "marketing": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
