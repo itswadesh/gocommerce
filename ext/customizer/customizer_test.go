@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	"github.com/itswadesh/gocommerce/gctest"
@@ -638,6 +639,27 @@ func TestDesignedLinesAreTheirOwnAndCheckoutKeepsTheDesign(t *testing.T) {
 	again, _ := h.app.Cart().Create(h.ctx, "")
 	if rec := h.addDesign(again.Token, c.variant, first.ID, 1); rec.Code != http.StatusConflict {
 		t.Errorf("a design already ordered = %d %s, want 409", rec.Code, rec.Body)
+	}
+}
+
+// The line designer runs inside the basket's and the checkout's transaction,
+// so it must ask nothing of the pool: with one connection, a second one taken
+// there would wait for ever.
+func TestADesignIsVouchedForWithinItsLinesTransaction(t *testing.T) {
+	h := newHarness(t, Config{})
+	c := h.phoneCase(h.ctx, "CASE-TX")
+	h.save(h.ctx, c)
+	saved := h.saved("", c, h.upload("", jpegRedTop(20, 20)).ID)
+	cart, err := h.app.Cart().Create(h.ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h.app.DB().SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(h.ctx, 5*time.Second)
+	defer cancel()
+	if _, err := h.app.Cart().AddDesignLine(ctx, cart.Token, c.variant, saved.ID, 1); err != nil {
+		t.Fatalf("add a design on one connection: %v", err)
 	}
 }
 
