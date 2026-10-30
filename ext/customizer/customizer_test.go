@@ -1123,6 +1123,11 @@ func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
 	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 1 || got[0][1] != "1" {
 		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for the first", got)
 	}
+	h.mod.warnedAt.Add(-int64(time.Minute))
+	turnAway(1)
+	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 2 || got[1][1] != "3" {
+		t.Errorf("an upload turned away a minute after the warning logged %q; want a second warning, for the three since", got)
+	}
 }
 
 func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {

@@ -23,6 +23,7 @@ package customizer
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -69,6 +70,10 @@ type Module struct {
 	designs *throttle
 	decodes chan struct{}
 	waiting chan struct{}
+	// turnedAway counts the uploads answered busy since warnedAt, in Unix
+	// nanoseconds, when the log last said so.
+	turnedAway atomic.Int64
+	warnedAt   atomic.Int64
 }
 
 // New constructs the module.

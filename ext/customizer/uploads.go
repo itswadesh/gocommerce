@@ -152,7 +152,7 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	up, err := m.keep(ctx, file)
 	if errors.Is(err, errBusy) {
 		m.uploads.refund(throttleKey(r))
-		busy(w)
+		m.busy(w)
 		return
 	}
 	if err != nil {
@@ -166,8 +166,15 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // busy writes its answer itself: RespondError gives every 5xx an internal
-// error's message, and this one is for the shopper to read.
-func busy(w http.ResponseWriter) {
+// error's message, and this one is for the shopper to read. Shedding load is
+// no error, so it is a warning, at most once a minute so a flood of them is
+// one line.
+func (m *Module) busy(w http.ResponseWriter) {
+	m.turnedAway.Add(1)
+	now := time.Now().UnixNano()
+	if last := m.warnedAt.Load(); now-last >= int64(time.Minute) && m.warnedAt.CompareAndSwap(last, now) {
+		m.app.Log().Warn("customizer: uploads turned away while the decoder was busy", "uploads", m.turnedAway.Swap(0))
+	}
 	w.Header().Set("Retry-After", "10")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
