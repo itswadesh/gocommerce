@@ -54,6 +54,11 @@ func TestCoreSaysWhereEachBuiltInFeatureIsSetUp(t *testing.T) {
 		"tawk-to":               "",
 		"umami":                 "",
 		"plausible":             "",
+		"microsoft-clarity":     "",
+		"hotjar":                "",
+		"tiktok-pixel":          "",
+		"pinterest-tag":         "",
+		"snapchat-pixel":        "",
 		"trustpilot":            "",
 	}
 	for key, home := range want {
