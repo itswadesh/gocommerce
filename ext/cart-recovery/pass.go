@@ -36,6 +36,9 @@ const (
 	holdSendFailed         = "send_failed"
 	holdSequenceDone       = "sequence_done"
 	holdNewerBasket        = "newer_basket"
+	// holdNoWhatsApp marks a WhatsApp step passed over: the basket's shopper
+	// gave no number, or did not agree to reminders on WhatsApp.
+	holdNoWhatsApp = "no_whatsapp_consent"
 )
 
 // Bounds on one pass. Each is a batch rather than a backlog, so a store that
@@ -574,7 +577,7 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	case len(cur.detail.Lines) == 0 || !purchasable(cur.detail):
 		res.Held++
 		return m.hold(ctx, c.id, holdNothingPurchasable, c.stepsSent+1)
-	case !m.emailDelivers(ctx):
+	case a.Steps[c.stepsSent].Action == actionEmail && !m.emailDelivers(ctx):
 		res.Held++
 		return m.hold(ctx, c.id, holdNoProvider, c.stepsSent+1)
 	}
@@ -601,15 +604,27 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 
 	step := a.Steps[c.stepsSent]
 	data := m.data(ctx, set.Settings, cur, contact, c.linkToken, c.stepsSent+1)
-	sendErr := m.app.Notify(ctx, gocommerce.Notification{
+	note := gocommerce.Notification{
 		Event: step.Template, Channel: gocommerce.ChannelEmail, To: contact, Data: data,
 		Secrets: linkSecrets,
-	})
-	if sendErr != nil {
-		res.Failed++
-		return m.failed(ctx, c, sendErr)
 	}
-	res.Sent++
+	if step.Action == actionWhatsApp {
+		note.Channel, note.To = gocommerce.ChannelWhatsApp, cur.detail.Phone
+	}
+	// A WhatsApp step goes only to a shopper who agreed to reminders there and
+	// has not said STOP since, which the WhatsApp module answers. For anybody
+	// else the step is passed over, not failed, and the sequence carries on:
+	// the email steps around it are still theirs.
+	sent := note.Channel == gocommerce.ChannelEmail || (note.To != "" && m.app.Carries(ctx, note))
+	if sent {
+		if sendErr := m.app.Notify(ctx, note); sendErr != nil {
+			res.Failed++
+			return m.failed(ctx, c, sendErr)
+		}
+		res.Sent++
+	} else {
+		res.Held++
+	}
 
 	nextWait, hold := 0, ""
 	if c.stepsSent+1 < len(a.Steps) {
@@ -627,19 +642,31 @@ func (m *Module) sendStep(ctx context.Context, set *settingsRow, c claimed, res 
 	// the timeline still says so.
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE cart_recovery_abandonments
-		SET steps_sent = steps_sent + 1, messages_sent = messages_sent + 1,
-		    last_sent_at = now(), send_attempts = 0, claimed_until = NULL,
-		    status = 'contacted', hold_reason = $3,
+		SET steps_sent = steps_sent + 1,
+		    messages_sent = messages_sent + CASE WHEN $4 THEN 1 ELSE 0 END,
+		    last_sent_at = CASE WHEN $4 THEN now() ELSE last_sent_at END,
+		    send_attempts = 0, claimed_until = NULL,
+		    status = CASE WHEN $4 THEN 'contacted'
+		                  WHEN $2::int = 0 AND status = 'scheduled' THEN 'abandoned'
+		                  ELSE status END,
+		    hold_reason = $3,
 		    next_step_at = CASE WHEN $2::int > 0 THEN now() + make_interval(mins => $2::int) END,
 		    updated_at = now()
 		WHERE id = $1 AND status IN ('scheduled', 'contacted')`,
-		c.id, nextWait, nullString(hold)); err != nil {
+		c.id, nextWait, nullString(hold), sent); err != nil {
 		return err
 	}
-	if err := addEvent(ctx, tx, c.id, "sent", map[string]any{
-		"step": c.stepsSent + 1, "template": step.Template, "channel": gocommerce.ChannelEmail,
-		"to": contact, "manual": false,
-	}, actorSystem); err != nil {
+	if sent {
+		err = addEvent(ctx, tx, c.id, "sent", map[string]any{
+			"step": c.stepsSent + 1, "template": step.Template, "channel": note.Channel,
+			"to": note.To, "manual": false,
+		}, actorSystem)
+	} else {
+		err = addEvent(ctx, tx, c.id, "skipped", map[string]any{
+			"step": c.stepsSent + 1, "reason": holdNoWhatsApp,
+		}, actorSystem)
+	}
+	if err != nil {
 		return err
 	}
 	if nextWait > 0 {

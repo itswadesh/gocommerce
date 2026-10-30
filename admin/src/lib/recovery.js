@@ -88,6 +88,7 @@ const HOLD_SENTENCES = {
     send_failed: "The last message could not be sent.",
     sequence_done: "Every step of the recovery sequence has run.",
     newer_basket: "The same shopper left a newer basket. Reminders go to that one, so nobody gets each email twice.",
+    no_whatsapp_consent: "The shopper did not agree to reminders on WhatsApp, so the WhatsApp step was passed over.",
 };
 
 /** Why nothing is scheduled for an open record, as a sentence for its banner. */
