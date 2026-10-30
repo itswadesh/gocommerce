@@ -1,9 +1,12 @@
 package aigateway
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"image"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"sync/atomic"
@@ -239,5 +242,30 @@ func TestUpgradeRaisesOnlyThePlaceholderTrial(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("%s: free trial %d, want %d", name, got, tc.want)
 		}
+	}
+}
+
+// The estimate is now what money is held on, so a picture counts at least
+// what its pixels cost (about a token per 750), not a flat figure that a
+// 2048 px photo on a high-resolution model would pass; and the caption sent
+// before it counts too.
+func TestTheEstimateCountsAPictureAtItsSize(t *testing.T) {
+	jpegOf := func(side int) []byte {
+		var b bytes.Buffer
+		if err := jpeg.Encode(&b, image.NewRGBA(image.Rect(0, 0, side, side)), nil); err != nil {
+			t.Fatal(err)
+		}
+		return b.Bytes()
+	}
+	est := func(d Document) int { return estimateTokens(Request{Documents: []Document{d}}) }
+	small := est(Document{MediaType: "image/jpeg", Bytes: jpegOf(512)})
+	if small != requestOverhead+TokensPerImage {
+		t.Errorf("a 512 px picture estimates %d, want the floor %d", small, requestOverhead+TokensPerImage)
+	}
+	if big := est(Document{MediaType: "image/jpeg", Bytes: jpegOf(2048)}); big < requestOverhead+2048*2048/750 {
+		t.Errorf("a 2048 px picture estimates %d, want at least %d", big, requestOverhead+2048*2048/750)
+	}
+	if c := est(Document{MediaType: "image/jpeg", Bytes: jpegOf(512), Caption: "Photo 12345"}); c <= small {
+		t.Errorf("a caption added nothing: %d", c)
 	}
 }

@@ -336,7 +336,7 @@ call goes through the gateway, which records it and charges it (D107, D151).
   dearest input price, and the output it asks for (`max_tokens`), which
   Anthropic does not pass. It then settles to what the call cost. At 88.50, on
   Claude Sonnet 5.5, a "Create from photos" sorting call holds ₹2.23 for 3
-  photos, ₹3.69 for 6 and ₹10.50 for 20, and each product's listing call
+  photos, ₹3.69 for 6 and ₹10.52 for 20, and each product's listing call
   holds about ₹3.40 with one photo, up to ₹5.17 with six. Three listings are
   written at a time, so the ₹30 trial covers a small batch.
 - **When Anthropic refuses.** If Anthropic refuses a platform call, for a rate

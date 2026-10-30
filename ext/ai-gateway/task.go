@@ -106,7 +106,7 @@ func (m *Module) RegisterTask(t Task) error {
 			return fmt.Errorf("ai task %s: a task that calls a model needs Build", t.Name)
 		}
 		if t.MaxInputTokens <= 0 || t.MaxOutputTokens <= 0 {
-			return fmt.Errorf("ai task %s: MaxInputTokens and MaxOutputTokens set the ceiling the cap is held to, and both are needed", t.Name)
+			return fmt.Errorf("ai task %s: MaxInputTokens and MaxOutputTokens bound what a request may hold, and both are needed", t.Name)
 		}
 		if slices.Contains(t.Ladder, TierSmall) && t.MaxInputTokens > maxSmallPrompt {
 			return fmt.Errorf("ai task %s: a prompt for the small model stays within %d tokens", t.Name, maxSmallPrompt)

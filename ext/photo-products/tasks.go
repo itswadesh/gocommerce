@@ -181,8 +181,10 @@ Write for a shopper: a plain, specific title of a few words; a short description
 Choose category_id only from the categories listed in the data; if none fits, give null and suggest a name in suggested_category. Give hs_code only when the request asks for it, otherwise null. Keep the variants in the order given, one value each.
 
 ` + catalogai.Honesty,
-		Schema:          describeSchema,
-		MaxInputTokens:  photosPerProduct*1700 + 12000,
+		Schema: describeSchema,
+		// The bound, not the hold: a 2048 px picture, the largest accepted,
+		// estimates at 5,593 tokens. The panel sends 1024 px.
+		MaxInputTokens:  photosPerProduct*5600 + 12000,
 		MaxOutputTokens: 3000,
 		Ladder:          []aigateway.Tier{aigateway.TierStrong},
 		Build: func(ctx context.Context, raw json.RawMessage, _ aigateway.Policy) (aigateway.Request, []aigateway.SourceRef, error) {
