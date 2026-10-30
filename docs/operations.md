@@ -307,6 +307,15 @@ call goes through the gateway, which records it and charges it (D107, D151).
   is assumed. One rate that does not read, such as `INR=88,50` with a decimal
   comma, drops them all, and the engine logs it. The rates are yours to keep
   current.
+- **Free trial.** A new store gets ₹30 of AI to try (D151, 2026-10-30).
+  `AI_FREE_TRIAL` sets it in whole minor units per currency, for example
+  `INR=3000,USD=50`. Empty is `INR=3000`. A store in a currency it does not
+  name gets the first amount's worth at `AI_PLATFORM_USD_RATES`, rounded down:
+  at `INR=88.50`, a dollar store gets 33 cents, not $30. A value that does not
+  read is logged and the default is used. A store keeps the trial it started
+  with when you change this. On upgrade, a store still on the old placeholder
+  (500 minor units, never set by hand) is raised to the new trial, and never
+  lowered: a dollar store keeps its $5.
 - **Credit.** A store starts with the free trial and runs on what you top up
   (D151). Credit is what the platform's key spends, so only the install's admin
   token grants it. No store's staff can, not even its owner. Top up a store by
@@ -322,11 +331,14 @@ call goes through the gateway, which records it and charges it (D107, D151).
   trial instead. The store's AI usage screen lists each top-up. Credit is held
   in the currency it was granted in. A store that changes its currency
   afterwards draws none until you move it.
-- **How much a call holds.** A call reserves the most it could cost before it
-  is sent, so the credit must cover that. One "Create from photos" grouping
-  call on Claude Sonnet 5.5 reserves about $0.35, or ₹30.53 at 88.50. That is
-  more than the default free trial in rupees (500 minor units, ₹5), so top up
-  an Indian store before it uses photos.
+- **How much a call holds.** A call reserves the most its own request could
+  cost before it is sent: its estimated input, which errs large, at the
+  dearest input price, and the output it asks for (`max_tokens`), which
+  Anthropic does not pass. It then settles to what the call cost. At 88.50, on
+  Claude Sonnet 5.5, a "Create from photos" sorting call holds ₹2.23 for 3
+  photos, ₹3.69 for 6 and ₹10.52 for 20, and each product's listing call
+  holds about ₹3.40 with one photo, up to ₹5.17 with six. Three listings are
+  written at a time, so the ₹30 trial covers a small batch.
 - **When Anthropic refuses.** If Anthropic refuses a platform call, for a rate
   limit, a spent balance or a bad key, the store sees only the status and the
   kind of failure. The engine logs Anthropic's own words as `ai call on the
@@ -400,6 +412,56 @@ While the rule is on, those requests do not go through `HTTP_PROXY` or
 `HTTPS_PROXY`: through a proxy the server cannot see where a request really
 goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
 are set by whoever runs the server and are not held to it.
+
+### Shipping through Shiprocket
+
+Each store connects its own Shiprocket account; nothing about one store's
+account is used for another's. A store owner does this once:
+
+1. In Shiprocket, Settings › API › Add New API User. The email must differ
+   from the account's own login. Copy the password Shiprocket shows.
+2. In the panel, Settings › Shipping providers › Shiprocket › Configure: type
+   the API user's email and password, press **Test connection**, and choose
+   the pickup location from the ones the account lists. Save, then Activate.
+3. For tracking, press **Generate token** in the same drawer. In Shiprocket,
+   Settings › API › Webhooks: add the address it shows
+   (`https://<this server>/api/tracking-updates/courier-aggregator`), switch
+   it on, and paste the token as the security token. Shiprocket refuses an
+   address containing "shiprocket", "kartrocket", "sr" or "kr", which is why
+   the path is neutral and why the panel warns when this server's own host
+   name contains one; the token, not the address, says which store it is.
+   Without the webhook the store asks Shiprocket about every parcel on its
+   way every thirty minutes, so tracking is late rather than missing.
+
+From then on the ship dialog on an order offers Shiprocket with every courier
+that serves the order's pincode, its rate and Shiprocket's delivery estimate,
+and books the chosen one: the Shiprocket order, its waybill, the pickup and
+the label. The order's Shiprocket card has the label, manifest and invoice,
+asks for a pickup again when the first request failed, and cancels a booking
+until the parcel is out for pickup. It shows each parcel's journey as
+Shiprocket reports it, and a failed delivery's reason with Shiprocket's two
+answers: try again, or send it back. On the order, a parcel delivered is
+delivered (the order with its last parcel, which sends the delivered email),
+and in transit, out for delivery, a failed attempt, returning and returned
+are `order.shipment_updated` events for webhooks; a status Shiprocket's docs do
+not list is logged and kept as in transit. **Reverse pickup** on the card books
+a Shiprocket return order for items that went out, from the customer's address
+to the pickup location, with a waybill and tracking of its own; it changes
+nothing on the order, and what arrives is recorded with the order's Return.
+
+The password is sealed with the other secrets (see Secrets at rest) and never
+shown again; the login token Shiprocket gives for it is kept in memory only.
+A cash-on-delivery order goes out in one parcel, collecting the order's total;
+an order not in rupees or not to India is refused, since this is Shiprocket's
+domestic service. An install that embeds the engine can pass an account in
+`shiprocket.Config`, which every store without its own falls back to — so an
+install that hosts stores for other people leaves it empty: every one of those
+stores would otherwise book on, and see the pickup addresses of, that account.
+
+`SHIPROCKET_BASE_URL` points the `gocommerce` binary's Shiprocket at another
+address for every store — a stand-in for trying the panel without an account.
+Empty is Shiprocket's own API. It is the install's setting and not a store's,
+because a store's saved password is sent wherever it points.
 
 ### Several brands
 

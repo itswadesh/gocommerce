@@ -538,3 +538,31 @@ func TestDiscountUsageLimitCanBeCleared(t *testing.T) {
 		t.Error("a usage limit of zero was accepted")
 	}
 }
+
+// A prepaid-only code is refused on cash on delivery and honoured by a
+// gateway; the cart's preview, with no method chosen yet, still shows it.
+func TestDiscountPrepaidOnly(t *testing.T) {
+	app := newTestApp(t, refundableModule{})
+	ctx := context.Background()
+	product := simpleProduct(t, app, "DISC-PREPAID", 1000, 10)
+	newDiscount(t, app, DiscountInput{
+		Code: "PAYNOW", Title: "Pay online", Kind: DiscountFixed, ValueMinor: 100, PrepaidOnly: true,
+	})
+
+	if _, err := checkoutWithCode(t, app, "PAYNOW", product.DefaultVariant().ID, 1, ""); err == nil {
+		t.Fatal("a prepaid-only code was honoured on cash on delivery")
+	}
+
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	if err := app.Cart().SetDiscountCode(ctx, cart.Token, "PAYNOW"); err != nil {
+		t.Fatalf("the cart refused a prepaid-only code before any method was chosen: %v", err)
+	}
+	res, err := app.Order().Checkout(ctx, "refundable", checkoutInput(cart.Token), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Order.Discount.AmountMinor != 100 {
+		t.Fatalf("a prepaid order got a discount of %d, want 100", res.Order.Discount.AmountMinor)
+	}
+}

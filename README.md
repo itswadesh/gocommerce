@@ -112,6 +112,7 @@ graph):
 | `notify-sendgrid` | The store's email through SendGrid — the key from the environment or from Notifications › Setup Email, the wording from the panel |
 | `notify-twilio` | The store's SMS through Twilio — plain text, so the wording is the store's own under Notifications › Setup SMS and nothing has to be registered with a carrier first |
 | `notify-msg91` | The store's SMS through MSG91's DLT templates — the key and the template ids from the environment or from Notifications › Setup SMS |
+| `notify-whatsapp` | Order updates, cash-on-delivery confirmations (Confirm / Cancel buttons) and basket reminders on WhatsApp, through Meta's Cloud API from the store's own WhatsApp Business account — only to shoppers who opted in at checkout, in templates Meta approved, chosen under Notifications › Setup WhatsApp |
 | `telegram-alerts` | The owner told on Telegram about every new order, payment, cancellation and return, through a bot of their own — free, set up and worded under Notifications › Setup Telegram, with retries when Telegram is down |
 
 Every gateway and carrier module installs idle: `-gateways` and `-carriers` put all of them in the binary with nothing in Config, and Settings › Payment methods and Settings › Shipping providers switch each one on and take its keys. A store that prefers the environment wires the module itself with a Config.
@@ -135,11 +136,13 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by a model, through the AI gateway where the store has switched it on |
 | `photo-products` | Draft products from a batch of the shop's own photos: Claude, through the AI gateway, sorts them into products and variants and writes each listing from what is visible; created as unpriced drafts after the shop reviews them |
 | `catalog-ai` | "Improve with AI" on a product's page: a better title, description, highlights, tags, category, SEO copy and alt text, proposed field by field through the AI gateway, with what the shop must check; nothing is saved until the shop saves the product |
+| `ads` | Ads intelligence: orders, sales, profit after product cost and ad spend by source, medium and campaign, from the attribution the storefront records on each order; spend typed in or imported from Google Ads and Meta Ads Manager, with ROAS and profit per unit of spend; a plain-words AI summary written only from the report's figures |
 | `ai-gateway` | Every model call the store makes, recorded and held to a monthly cap in the store's currency, with the owner's own provider key and a switch for each kind of data that may leave the store; idle until a key, a cap and prices are set |
 | `mcp` | The store as tools for an AI agent, with an audit trail |
 | `search-meilisearch` | A Meilisearch index kept in step with the catalogue, and the storefront's search through it |
 | `klaviyo` | Orders and abandoned carts as Klaviyo events, under the metric names its flows know |
 | `feeds` | Google Merchant Center and Meta catalogue feeds, generated from the live catalogue |
+| `google-reviews` | The store's Google rating and latest Google reviews on the storefront, read live with Google's attribution and never stored; Google Customer Reviews' survey after checkout and its store widget; and a product ratings feed of the store's own verified reviews for Merchant Center |
 | `sitemaps` | The storefront's sitemap: products, collections and content pages |
 | `navigation` | The storefront's menus — trees of links to products, collections, categories and pages — edited from the panel |
 | `reviews` | Product ratings and reviews, verified against the store's own orders, moderated from the panel; with the AI gateway, a summary of what shoppers praise and complain about in a product's reviews, each theme citing its reviews |

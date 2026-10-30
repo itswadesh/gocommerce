@@ -699,32 +699,46 @@ the higher priority, then the cheaper of the two.
 ## The sample shop
 
 The store picker's create form has a **Start with a sample shop** switch, off
-by default (D94, D96). Turned on, the new store opens with a shop to look
-around, so every screen has something in it:
+by default (D94, D96, D159). Turned on, the new store opens as a small fashion
+shop to look around, so every screen has something in it:
 
-- **Eight products with photographs**, active and in stock at the default
-  location, four with sizes or colours. A colour's variants show that colour's
-  photo. Prices come from one table in whole units, scaled by the store's
-  currency, so a tee is 25.00 in dollars, 25 in yen and 25.000 in dinars.
-- **Four categories** the products are filed in (Apparel, Accessories, Home,
-  Stationery) and **two collections** (New in, Gifts).
-- **Two discount codes**, WELCOME10 and BUNDLE15, which only ever apply to the
-  sample products, so one left switched on cannot take money off anything else.
+- **Eleven garments with photographs**: kurtas, a saree, a lehenga, co-ord
+  sets, a jumpsuit, a dress and menswear, active and in stock at the default
+  location, each in three or four colours and every size. Each colour has one
+  to three photographs of a model, and that colour's variants show them, so
+  the gallery changes when a shopper picks a colour. A few sizes are sold out
+  and a few are down to two, so a storefront has both states to show. Every
+  product has its highlights, and seven carry a badge naming something the
+  photographs show, such as "Two-piece set".
+- **Prices** come from the catalogue (`core/sample/catalogue.json`), which is
+  priced in rupees: a store selling in rupees gets ₹1,999 to ₹12,999, with a
+  struck-through price on five. Any other currency gets the catalogue's dollar
+  figure as a face value in its own units, so the anarkali kurta is 45.00 in
+  dollars or euros, 45 in yen and 45.000 in dinars, never a rupee number read
+  as another currency. Neither is a market price: they are sample numbers.
+- **Eight categories** the products are filed in, under Women (Dresses,
+  Jumpsuits, Ethnic wear, Co-ord sets) and Men (Kurtas, Jackets), and **two
+  collections** (New arrivals, Festive edit).
+- **Two discount codes**, WELCOME10 and BUNDLE15 (15% off a basket of 5,000 or
+  more in rupees, 100 or more in any other currency), which only ever apply to
+  the sample products, so one left switched on cannot take money off anything
+  else.
 - **Twelve orders over the last month** from **six customers**, most paid, two
   awaiting payment and one cancelled. They are numbered SAMPLE-1001 on and move
   no stock. They announce nothing, then or later, whatever is done to them: no
   confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
-- With the banners module, **three slides** on the home page (New in,
-  Apparel, For the home) and a **Shop by collection** grid of the two
-  collections. The categories carry pictures of their own (`metadata.image`),
-  which the storefront's own category tiles show.
+- With the banners module, **three slides** on the home page (Festive edit,
+  Women, Men), each a row of the products' photographs, and a **Shop by
+  collection** grid of the two collections. The categories carry pictures of
+  their own (`metadata.image`), which the storefront's own category tiles show.
 - With the other modules installed, **a review on each product** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**
-  to the categories in the header menu and to the pages in the footer. The
-  pages and answers promise nothing a store has not decided, such as a number
-  of days for returns: they are there to be replaced.
+  to the categories in the header menu, nested as the categories are, and to
+  the pages in the footer. The pages and answers promise nothing a store has
+  not decided, such as a number of days for returns: they are there to be
+  replaced.
 
 If adding fails part way, the store still opens and a warning says so; adding
 again (`POST /api/admin/sample-content`) fills in only what is missing. A slug,
@@ -738,36 +752,62 @@ On Products, a store with any of it left shows a banner naming what it holds
 `media.write`, and the write right of each installed module that adds samples
 (`pages.write`, `faq.write`, `reviews.moderate`, `menus.write`), gets **Erase
 the sample shop** in the banner, and, on a store with no products, **Add a
-sample shop** beside **New product**. Erasing
+sample fashion shop** beside **New product**. Erasing
 (`DELETE /api/admin/sample-content`) removes all of it, edited or not, and
 nothing of the merchant's: every sample row is marked by a column only the
 engine sets. Products, discounts and collections go as a delete by hand would,
 with their audit rows and events, and each sample order leaves an audit row
 too. A sample category the merchant has filed one of their own products in,
-and a sample photo they have put on one, are kept and become theirs. A menu
+with the categories above it, and a sample photo they have put on one, are
+kept and become theirs. A menu
 saved by hand keeps its sample links marked, so they go with the pages and
 categories they point at. Erase it before the store opens: the reviews and
 orders are made up, and a real shopper should not see them.
 
-The photographs are built into the engine and served at `/sample-media/1/`, so
-every install has them whether or not it can store uploads. They are under the
-[Unsplash License](https://unsplash.com/license), by:
+The photographs are built into the engine and served at `/sample-media/2/`, so
+every install has them whether or not it can store uploads: 89 files, 750 by
+1000 pixels for a product's and cut to 1500 by 380 and 720 by 380 for a
+banner's, 4.5 MB in all. `scripts/fashion-images/build-sample.mjs` makes them
+from the full-size files `fetch-photos.mjs` downloads. Each product was
+photographed in one colour, and its other colours are edits of that
+photograph, made with ChatGPT at the owner's request, which both licences
+allow; the banners are cut from the same photographs. The catalogue's men's
+cotton shirt is left out, because its photographs show another company's
+logo. The photographs are free under the Unsplash and Pexels licences, by:
 
-| Product | Photographer |
-|---|---|
-| Cotton crew tee, black | [Or Hakim](https://unsplash.com/photos/XaPmwu1npkQ) |
-| Cotton crew tee, white | [mockupbee](https://unsplash.com/photos/4rUYuwJ2vGw) |
-| Hooded sweatshirt | [Mediamodifier](https://unsplash.com/photos/kJXGTOY1wLQ) |
-| Canvas tote bag | [Brando Makes Branding](https://unsplash.com/photos/smTDI-z1rlY) |
-| Ceramic mug | [Vanesa Giaconi](https://unsplash.com/photos/VVcggzlkYgE) |
-| Wool beanie, grey | [Rainier Watch](https://unsplash.com/photos/2MMaMLOECjA) |
-| Wool beanie, yellow | [Kerim Ayar](https://unsplash.com/photos/WWpJViNdatc) |
-| Linen napkins | [Svitlana](https://unsplash.com/photos/HbiRi1Owk9k) |
-| Leather card holder | [Mason Supply](https://unsplash.com/photos/-lN0HnySy7w) |
-| A5 notebook | [Brando Makes Branding](https://unsplash.com/photos/TPoARluSmYs) |
-| Banner: New in | [Kajetan Sumila](https://unsplash.com/photos/RYHvzYdeoCI) |
-| Banner: Apparel | [No Revisions](https://unsplash.com/photos/kWVImL5QxJI) |
-| Banner: For the home | [Eric Prouzet](https://unsplash.com/photos/5lUMTeo7-bE) |
+| Product | Shot | Photographer | Photo | Licence |
+| --- | --- | --- | --- | --- |
+| Printed anarkali kurta | front | [nikhil uttam](https://unsplash.com/@nikutm) | [unsplash.com/photos/a-woman-standing-in-a-long-dress-xbew54fDolA](https://unsplash.com/photos/a-woman-standing-in-a-long-dress-xbew54fDolA) | [Unsplash License](https://unsplash.com/license) |
+| Printed anarkali kurta | detail | [nikhil uttam](https://unsplash.com/@nikutm) | [unsplash.com/photos/a-close-up-of-a-woman-wearing-a-red-and-blue-dress-RjoGIGrQcLU](https://unsplash.com/photos/a-close-up-of-a-woman-wearing-a-red-and-blue-dress-RjoGIGrQcLU) | [Unsplash License](https://unsplash.com/license) |
+| Printed kurta with embroidered yoke | front | [Anil Sharma](https://unsplash.com/@anil_sharma_india) | [unsplash.com/photos/a-woman-poses-in-a-traditional-outfit-SmEZ0H1M_Ic](https://unsplash.com/photos/a-woman-poses-in-a-traditional-outfit-SmEZ0H1M_Ic) | [Unsplash License](https://unsplash.com/license) |
+| Printed kurta with embroidered yoke | side | [Anil Sharma](https://unsplash.com/@anil_sharma_india) | [unsplash.com/photos/woman-poses-in-a-patterned-dress-with-jewelry-lxG61EjYfcU](https://unsplash.com/photos/woman-poses-in-a-patterned-dress-with-jewelry-lxG61EjYfcU) | [Unsplash License](https://unsplash.com/license) |
+| Printed kurta with embroidered yoke | detail | [Anil Sharma](https://unsplash.com/@anil_sharma_india) | [unsplash.com/photos/woman-wears-a-patterned-dress-and-jewelry-Tf-asLC3iG0](https://unsplash.com/photos/woman-wears-a-patterned-dress-and-jewelry-Tf-asLC3iG0) | [Unsplash License](https://unsplash.com/license) |
+| Floral print co-ord set | front | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/young-woman-in-a-floral-print-pink-outfit--gDDIFVWtZg](https://unsplash.com/photos/young-woman-in-a-floral-print-pink-outfit--gDDIFVWtZg) | [Unsplash License](https://unsplash.com/license) |
+| Floral print co-ord set | side | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/woman-wearing-a-pink-floral-print-outfit-yDbsPQzIWyw](https://unsplash.com/photos/woman-wearing-a-pink-floral-print-outfit-yDbsPQzIWyw) | [Unsplash License](https://unsplash.com/license) |
+| Floral print co-ord set | seated | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/woman-wearing-a-floral-pajama-set-OZD8LweOvJ0](https://unsplash.com/photos/woman-wearing-a-floral-pajama-set-OZD8LweOvJ0) | [Unsplash License](https://unsplash.com/license) |
+| Ikat print tunic and trouser set | front | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/woman-in-patterned-tunic-and-wide-leg-pants-8G-IqIGkMTc](https://unsplash.com/photos/woman-in-patterned-tunic-and-wide-leg-pants-8G-IqIGkMTc) | [Unsplash License](https://unsplash.com/license) |
+| Ikat print tunic and trouser set | side | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/a-woman-wearing-a-colorful-patterned-outfit-21v7vavMCS0](https://unsplash.com/photos/a-woman-wearing-a-colorful-patterned-outfit-21v7vavMCS0) | [Unsplash License](https://unsplash.com/license) |
+| Ikat print tunic and trouser set | detail | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/a-woman-in-a-colorful-patterned-kurta-P9g4Wb6z5ZE](https://unsplash.com/photos/a-woman-in-a-colorful-patterned-kurta-P9g4Wb6z5ZE) | [Unsplash License](https://unsplash.com/license) |
+| Paisley print jumpsuit | front | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/woman-in-a-floral-print-dress-stands-by-plants-2BZs-NKM4ww](https://unsplash.com/photos/woman-in-a-floral-print-dress-stands-by-plants-2BZs-NKM4ww) | [Unsplash License](https://unsplash.com/license) |
+| Paisley print jumpsuit | side | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/a-woman-in-a-floral-jumpsuit-stands-in-a-room-ggd4ejHJ4qg](https://unsplash.com/photos/a-woman-in-a-floral-jumpsuit-stands-in-a-room-ggd4ejHJ4qg) | [Unsplash License](https://unsplash.com/license) |
+| Paisley print jumpsuit | back | [IMANA](https://unsplash.com/@imanaindia) | [unsplash.com/photos/woman-in-patterned-jumpsuit-stands-with-hands-behind-back-nV8C4JgAV-0](https://unsplash.com/photos/woman-in-patterned-jumpsuit-stands-with-hands-behind-back-nV8C4JgAV-0) | [Unsplash License](https://unsplash.com/license) |
+| Satin saree with embellished border | front | [Prajakt Rebeloma](https://www.pexels.com/@prajakt-rebeloma-1604474/) | [pexels.com/photo/4048041/](https://www.pexels.com/photo/4048041/) | [Pexels License](https://www.pexels.com/license/) |
+| Satin saree with embellished border | side | [Prajakt Rebeloma](https://www.pexels.com/@prajakt-rebeloma-1604474/) | [pexels.com/photo/4048042/](https://www.pexels.com/photo/4048042/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered lehenga set | front | [aksinfo7 universe](https://www.pexels.com/@aksinfo7/) | [pexels.com/photo/37628610/](https://www.pexels.com/photo/37628610/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered lehenga set | side | [aksinfo7 universe](https://www.pexels.com/@aksinfo7/) | [pexels.com/photo/37628618/](https://www.pexels.com/photo/37628618/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered lehenga set | detail | [aksinfo7 universe](https://www.pexels.com/@aksinfo7/) | [pexels.com/photo/37628609/](https://www.pexels.com/photo/37628609/) | [Pexels License](https://www.pexels.com/license/) |
+| Floral tiered maxi dress | front | [nikhil uttam](https://unsplash.com/@nikutm) | [unsplash.com/photos/woman-in-pink-and-white-floral-dress--FVDX_HjTy0](https://unsplash.com/photos/woman-in-pink-and-white-floral-dress--FVDX_HjTy0) | [Unsplash License](https://unsplash.com/license) |
+| Men's embroidered kurta | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/man-in-yellow-kurta-and-white-pants-smiles-fI8QI03I3Og](https://unsplash.com/photos/man-in-yellow-kurta-and-white-pants-smiles-fI8QI03I3Og) | [Unsplash License](https://unsplash.com/license) |
+| Men's embroidered kurta | standing | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/gDY1O5S7GtY](https://unsplash.com/photos/gDY1O5S7GtY) | [Unsplash License](https://unsplash.com/license) |
+| Men's embroidered kurta | seated | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-yellow-kurta-and-white-pants-sits-KbYXDew9uNk](https://unsplash.com/photos/a-man-in-a-yellow-kurta-and-white-pants-sits-KbYXDew9uNk) | [Unsplash License](https://unsplash.com/license) |
+| Men's embroidered Nehru jacket | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c](https://unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c) | [Unsplash License](https://unsplash.com/license) |
+| Men's embroidered Nehru jacket | standing | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4](https://unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4) | [Unsplash License](https://unsplash.com/license) |
+| Men's kurta pyjama set | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY](https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY) | [Unsplash License](https://unsplash.com/license) |
+
+`/sample-media/1/` serves D96's photographs of general goods, which new stores
+no longer get. They stay in the binary for the stores that added the sample
+shop before D159, and for a merchant who put one of them on a product of their
+own, which D96 made theirs.
 
 ## Themes and the homepage
 

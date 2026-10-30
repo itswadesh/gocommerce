@@ -17,7 +17,7 @@ const migrationSample = `ALTER TABLE cms_pages ADD COLUMN sample boolean NOT NUL
 
 var samplePages = []struct{ slug, title, excerpt, body string }{
 	{"about", "About us", "Who we are and what we sell.",
-		"We are a small shop selling everyday clothing, accessories and things for the home.\n\n" +
+		"We are a small shop selling clothes for women and men: dresses, co-ord sets, kurtas and festive wear.\n\n" +
 			"Questions about an order or a product? Write to us from the contact page."},
 	{"shipping", "Shipping and delivery", "How your order reaches you.",
 		"The checkout shows every delivery option for your address, with its price, before you pay.\n\n" +

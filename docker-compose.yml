@@ -38,6 +38,7 @@ services:
       - -twilio
       - -msg91
       - -telegram
+      - -whatsapp
       - -invoices
       - -cms
       - -faq
@@ -49,6 +50,8 @@ services:
       - -gateways
       - -carriers
       - -feeds
+      - -google-reviews
+      - -meta-capi
       - -sitemaps
       - -b2b
       - -recovery
@@ -64,6 +67,8 @@ services:
       - -ai-gateway
       - -photo-products
       - -catalog-ai
+      # Ads intelligence: the ads report, ad spend and its AI summary.
+      - -ads
       - serve
     depends_on:
       postgres:
@@ -202,6 +207,10 @@ services:
       # Units of each currency to one US dollar, e.g. INR=88.50,EUR=0.92. A
       # store in a currency with no rate here cannot use the platform's key.
       AI_PLATFORM_USD_RATES: ${AI_PLATFORM_USD_RATES:-}
+      # A new store's free AI trial, whole minor units per currency, e.g.
+      # INR=3000,USD=50. Empty is INR=3000 (₹30); a currency not named gets
+      # the first amount's worth at the rates above.
+      AI_FREE_TRIAL: ${AI_FREE_TRIAL:-}
     volumes:
       - media:/data/media
     ports:

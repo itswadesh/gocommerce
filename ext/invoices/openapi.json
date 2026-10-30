@@ -148,7 +148,7 @@
       },
       "InvoicesTaxInvoice": {
         "type": "object",
-        "description": "A GST tax invoice (CGST Rules 2017, rule 46) as it was issued, present only for a GST store's invoices. Built once from what checkout charged and never recomputed. Every *_minor is an integer in currency. Per line, cgst + sgst + igst is the tax checkout charged and taxable + tax = total; the line totals sum to the order total. Within a state CGST is the floor of half the tax and SGST (or UTGST, when supply.state_tax_name says so) the rest; between states and for exports all of it is IGST. Delivery is an untaxed freight line with the freight_untaxed warning.",
+        "description": "A GST tax invoice (CGST Rules 2017, rule 46) as it was issued, present only for a GST store's invoices. Built once from what checkout charged and never recomputed. Every *_minor is an integer in currency. Per line, cgst + sgst + igst is the tax checkout charged and taxable + tax = total; the line totals sum to the order total. Within a state CGST is the floor of half the tax and SGST (or UTGST, when supply.state_tax_name says so) the rest; between states and for exports all of it is IGST. Delivery is an untaxed freight line with the freight_untaxed warning; cash on delivery's extra charge is an untaxed charge line.",
         "properties": {
           "version": {"type": "integer", "description": "1. A reader branches on it."},
           "doc_type": {"type": "string", "enum": ["INV"]},
@@ -172,7 +172,7 @@
             "type": "object",
             "properties": {
               "n": {"type": "integer"},
-              "kind": {"type": "string", "enum": ["goods", "freight"]},
+              "kind": {"type": "string", "enum": ["goods", "freight", "charge"]},
               "sku": {"type": "string"},
               "description": {"type": "string"},
               "hsn": {"type": "string", "description": "The variant's HS code at issue; empty with an hsn_missing warning."},

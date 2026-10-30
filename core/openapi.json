@@ -1348,6 +1348,44 @@
         }
       }
     },
+    "/api/tracking-updates/{hook}": {
+      "post": {
+        "tags": [
+          "orders"
+        ],
+        "summary": "A carrier's tracking callback",
+        "description": "A core-owned route that hands a carrier's tracking callback to the fulfillment module that asked for it (TrackingReceiver), under a name the module chose: a carrier may refuse a callback address containing its own name, as Shiprocket does. No store is resolved for it; the module finds the store in whatever authenticates the call, and reports what it learns through Fulfillments.Track. What the module answers is its own; Shiprocket's (hook `courier-aggregator`) is always 200, because Shiprocket expects nothing else.",
+        "parameters": [
+          {
+            "name": "hook",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Received by the module."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/orders/{number}": {
       "get": {
         "tags": [
@@ -3929,7 +3967,7 @@
             "adminToken": []
           }
         ],
-        "description": "Adds the sample shop (D96) to the store, or whatever of it the store does not have: eight products with photographs, four categories they are filed in, two collections, two percentage discounts that only ever apply to the sample products, twelve orders over the last month from six customers at example.com, and the installed modules' own samples (reviews, pages, questions and answers, menu links). The orders are numbered SAMPLE-1001 on, move no stock and announce nothing, then or after, so no email, SMS, webhook or invoice ever follows them. A slug, code or order number the store already has is skipped, so asking again adds only what is missing. Needs catalog.write, categories.write, collections.write, discounts.write, orders.write and media.write, and the write right of each installed module that adds samples, as GET lists them.",
+        "description": "Adds the sample shop (D96) to the store, or whatever of it the store does not have: eleven garments in colours and sizes, each colour with its own photographs, priced in rupees for a store selling in rupees and otherwise at a face value in the store's currency, eight categories they are filed in under Women and Men, two collections, two percentage discounts that only ever apply to the sample products, twelve orders over the last month from six customers at example.com, and the installed modules' own samples (reviews, pages, questions and answers, menu links). The orders are numbered SAMPLE-1001 on, move no stock and announce nothing, then or after, so no email, SMS, webhook or invoice ever follows them. A slug, code or order number the store already has is skipped, so asking again adds only what is missing. Needs catalog.write, categories.write, collections.write, discounts.write, orders.write and media.write, and the write right of each installed module that adds samples, as GET lists them.",
         "responses": {
           "200": {
             "description": "What was added.",
@@ -4110,19 +4148,28 @@
         }
       }
     },
-    "/sample-media/1/{file}": {
+    "/sample-media/{set}/{file}": {
       "get": {
         "tags": [
           "catalog"
         ],
-        "summary": "A sample product's picture",
-        "description": "One of the photographs the sample products link to (D96), served from the engine's own binary, so every install has them whether or not it can store uploads. Public, like a store's own media, and cached as immutable: a changed picture takes a new version in the path. The photographs are under the Unsplash License; their photographers are credited in docs/admin-panel.md.",
+        "summary": "A sample shop's picture",
+        "description": "One of the photographs the sample shop links to (D96, D159), served from the engine's own binary, so every install has them whether or not it can store uploads. Public, like a store's own media, and cached as immutable: a set's files are never changed or removed, and a different picture goes in a new set. Set 2 is what a new sample shop links to: the fashion catalogue's photographs, free under the Unsplash and Pexels licences with their colour variants edited from them, and the home page banners cut from them. Set 1 is D96's, kept for the stores that added the sample shop before D159. The photographers are credited in docs/admin-panel.md.",
         "parameters": [
+          {
+            "name": "set",
+            "in": "path",
+            "required": true,
+            "description": "The set, `1` or `2`.",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "file",
             "in": "path",
             "required": true,
-            "description": "The picture's file name, such as `cotton-crew-tee-black.webp`.",
+            "description": "The picture's file name, such as `printed-anarkali-kurta-rose-front.webp`.",
             "schema": {
               "type": "string"
             }
@@ -18279,6 +18326,10 @@
           "email": {
             "type": "string"
           },
+          "phone": {
+            "type": "string",
+            "description": "A number the shopper gave this basket for messages about it, in E.164, set by a module that holds their consent (the WhatsApp opt-in). Absent on most baskets."
+          },
           "verified_email": {
             "type": "string",
             "description": "The address this basket is priced as: a customer group's prices reach it only through this field. Set by an operator, a signed-in account whose address is confirmed, or a module — never by the public cart routes, which take any address from anybody. Absent when nothing has vouched for the basket."
@@ -18528,6 +18579,10 @@
           },
           "email": {
             "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "The number the shopper gave this basket for messages, in E.164, when a module recorded one with their consent."
           },
           "verified_email": {
             "type": "string",
@@ -18893,6 +18948,20 @@
               "delivered",
               "cancelled"
             ]
+          },
+          "tracking_status": {
+            "type": "string",
+            "enum": [
+              "in_transit",
+              "out_for_delivery",
+              "delivery_failed",
+              "delivered",
+              "returning",
+              "returned",
+              "lost",
+              "cancelled"
+            ],
+            "description": "The carrier's latest word on the parcel, when a carrier module reports one. `delivery_failed` is a failed attempt (an NDR); `returning` and `returned` are the parcel going back to the store (RTO). Absent when no carrier has said anything."
           },
           "lines": {
             "type": "array",
@@ -19634,6 +19703,10 @@
           },
           "reason": {
             "type": "string"
+          },
+          "tracking_status": {
+            "type": "string",
+            "description": "What a carrier reported, on `order.shipment_updated`: one of the fulfillment `tracking_status` values. Its own words for it are in `reason`."
           },
           "change": {
             "$ref": "#/components/schemas/OrderChange"

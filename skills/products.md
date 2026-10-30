@@ -592,10 +592,13 @@ draws no AI credit.
 
 A store can start with a sample shop (D94, D96): `POST /api/stores/create` with
 `"sample_content": true` (`"sample_products"` is still taken), or
-`app.AddSampleShop(ctx)` for the store `ctx` is bound to. It makes eight active,
-stocked products through `CreateProduct`, each with a photograph linked from the
-binary (`/sample-media/1/`), priced from a table in major units scaled by the
-store's currency; four categories they are filed in; two collections; two
+`app.AddSampleShop(ctx)` for the store `ctx` is bound to. It makes the eleven
+active, stocked garments of `core/sample/catalogue.json` (D159) through
+`CreateProduct`, every colour's variants showing that colour's photographs,
+linked from the binary (`SampleMediaPrefix`, `/sample-media/2/`); they are
+priced in rupees for a store selling in rupees, and otherwise at the
+catalogue's dollar figure as a face value in the store's major units. Eight
+categories they are filed in, under Women and Men; two collections; two
 percentage discounts scoped to the sample products; and twelve orders through
 the orders importer, numbered `SAMPLE-1001` on, which move no stock and fire no
 events. A module adds its own by implementing `SampleSeeder` (and

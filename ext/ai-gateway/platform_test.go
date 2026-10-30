@@ -34,6 +34,7 @@ func platformConfig() Config {
 		PlatformAnthropicKey: platformKey,
 		PlatformSmallPrices:  "1,5,0.10,1.25",
 		PlatformStrongPrices: "3,15,3,3",
+		FreeTrial:            "USD=500",
 	}
 }
 

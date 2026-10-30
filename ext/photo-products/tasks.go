@@ -57,6 +57,12 @@ var groupSchema = json.RawMessage(`{
   }
 }`)
 
+// The grouping answer's size: a little for its frame, and room per photo.
+const (
+	groupBaseTokens     = 500
+	groupTokensPerPhoto = 150
+)
+
 func groupTask(m *Module) aigateway.Task {
 	return aigateway.Task{
 		Name:    groupTaskName,
@@ -87,7 +93,12 @@ func groupTask(m *Module) aigateway.Task {
 				return aigateway.Request{}, nil, err
 			}
 			req := aigateway.Request{Messages: []aigateway.Message{{Role: "user", Text: fmt.Sprintf(
-				"Here are %d photos, numbered 1 to %d. Sort them into products and variants.", len(photos), len(photos))}}}
+				"Here are %d photos, numbered 1 to %d. Sort them into products and variants.", len(photos), len(photos))}},
+				// Output sized to the batch, so a few photos hold a few photos'
+				// worth of credit (D151, 2026-10-30). A photo that is a product
+				// of its own is about 30 tokens of answer; this allows five times
+				// that, and the task's 8,000 caps it.
+				MaxTokens: groupBaseTokens + groupTokensPerPhoto*len(photos)}
 			for i, p := range photos {
 				req.Documents = append(req.Documents, aigateway.Document{
 					Name: fmt.Sprintf("photo-%d.jpg", i+1), MediaType: "image/jpeg", Bytes: p.thumb,
@@ -170,8 +181,10 @@ Write for a shopper: a plain, specific title of a few words; a short description
 Choose category_id only from the categories listed in the data; if none fits, give null and suggest a name in suggested_category. Give hs_code only when the request asks for it, otherwise null. Keep the variants in the order given, one value each.
 
 ` + catalogai.Honesty,
-		Schema:          describeSchema,
-		MaxInputTokens:  photosPerProduct*1700 + 12000,
+		Schema: describeSchema,
+		// The bound, not the hold: a 2048 px picture, the largest accepted,
+		// estimates at 5,593 tokens. The panel sends 1024 px.
+		MaxInputTokens:  photosPerProduct*5600 + 12000,
 		MaxOutputTokens: 3000,
 		Ladder:          []aigateway.Tier{aigateway.TierStrong},
 		Build: func(ctx context.Context, raw json.RawMessage, _ aigateway.Policy) (aigateway.Request, []aigateway.SourceRef, error) {

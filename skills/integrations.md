@@ -50,8 +50,9 @@ Everything in `ports.go`. Nothing else in the engine is abstracted.
 | `Refunder` | `Refund` | *optional, detected* | every gateway except `cod` and `revenuecat` — RevenueCat has no refund API for Web Billing, so it does not claim one. `creem` claims it but refunds in full only: it refuses a partial request rather than returning the whole order while the books record a fraction |
 | `ReferencedRefunder` | `RefundWithReference` | *optional, detected; a `Refunder` as well* | stripe, razorpay, cashfree, paddle, lemonsqueezy, adyen, hyperswitch, helcim, clover, creem — it returns the gateway's own refund id, which is recorded on the refund |
 | `PaymentStatusReader` | `Status` | *optional, detected* | stripe, razorpay, cashfree — it reads back what became of an order's payment, for `POST /api/admin/orders/{id}/check-payment` (D112); the settings mark such a method `checks_payments` |
-| `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-{shiprocket,delhivery,nimbuspost,indiapost,shippo,shipstation,easyship,shippit,usps,onfleet,veeqo}` |
-| `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS) |
+| `FulfillmentProvider` | `Code`, `Ship` | `RegisterFulfillment` | built-in `manual`; `ext/fulfill-{shiprocket,delhivery,nimbuspost,indiapost,shippo,shipstation,easyship,shippit,usps,onfleet,veeqo}`. A carrier quotes on `Ship().Parcel` before booking and reports a parcel it called off with `Ship().Cancel`, which keeps the shipment on the order as cancelled; `ext/fulfill-shiprocket` does both |
+| `TrackingReceiver` | `TrackingHook`, `Tracking` | *optional on a `FulfillmentProvider`, detected* | `ext/fulfill-shiprocket` (hook `courier-aggregator`). Served at `POST /api/tracking-updates/{hook}` with no store bound: the handler binds the store from what authenticates the call, then reports through `Ship().Track`, which records the carrier's status, delivers the order with its last parcel and cancels a parcel the carrier called off |
+| `Notifier` | `Notify` | `RegisterNotifier(channel, n)` | built-in log notifier; `ext/notify-resend` and `ext/notify-sendgrid` (email), `ext/notify-twilio` and `ext/notify-msg91` (SMS); `ext/notify-whatsapp` (WhatsApp) |
 | *(sending one)* | — | `App.Notify(ctx, n)` | D50. The engine delivers `order.*` itself and nothing else; a module that wants to write to a shopper about anything else calls this. `ext/cart-recovery` is the first caller |
 | `Translator` | `Translate` | `RegisterTranslator` | `ext/translations` — products, and the names of categories and collections, in the language a shopper asked for (kinds `product`, `category`, `collection`, D87) |
 
@@ -184,6 +185,15 @@ stored)` when it reads (a value never sealed comes back as it is), and
 What a plugin is not: code that arrives at runtime. The Plugins screen
 lists what this binary can do; adding to it is adding a module.
 
+The ad and analytics tags — Google Analytics, Meta pixel, Microsoft Clarity,
+Hotjar, the TikTok, Pinterest and Snap pixels — are core descriptors with one
+public ID each (D160). The engine holds the switch; the storefront owns the
+vendor's snippet, when it loads, the shopper's consent and which shopping
+events it hears. `ext/meta-capi` is the one with code behind it: it reads the
+pixel ID off `meta-pixel` with `app.Plugins().String` rather than asking for
+it twice, so the browser and the server can never name different pixels, and
+it delivers through a queue of its own like `ext/webhooks`.
+
 Not every descriptor is an add-on (D132). A plugin on the Plugins screen is an
 optional third-party integration or extra: an analytics or chat tag, a
 marketing or search integration, an import. A feature that is part of the
@@ -239,6 +249,18 @@ unready backend as absent: the funnel skips it, the settings and the doctor
 say the channel does not deliver, and the moment the key is typed in the
 next message goes out. `ext/notify-sendgrid` and `ext/notify-msg91` are the
 worked examples.
+
+### A channel that needs consent: WhatsApp
+
+`ChannelWhatsApp` is addressed to a phone, like SMS, but the engine offers an
+order's message on it only when `App.Carries` says a backend would take it.
+`ext/notify-whatsapp` is a `ScopedNotifier` whose `Serves` is the whole rule:
+a template mapped for the moment, and the number's owner opted in to that kind
+of message (order updates or marketing) and has not replied STOP. `Notify`
+queues and returns; the module's worker talks to Meta. A module that sends on
+it — `ext/cart-recovery`'s WhatsApp step — asks `Carries` first and skips
+rather than sends into nothing. What happens to a message afterwards goes on
+the order through `Orders.RecordMessage`, never by writing `admin_audit`.
 
 ### Sending while somebody waits: `NotifyNow`
 

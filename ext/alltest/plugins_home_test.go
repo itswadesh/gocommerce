@@ -18,10 +18,13 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 	addOns := map[string]bool{
 		// Analytics
 		"google-analytics": true, "meta-pixel": true, "criteo": true, "umami": true, "plausible": true,
+		"microsoft-clarity": true, "hotjar": true, "tiktok-pixel": true, "pinterest-tag": true, "snapchat-pixel": true,
+		"meta-capi": true,
 		// Chat
 		"tidio": true, "tawk-to": true, "whatsapp-chat": true,
 		// Marketing
 		"trustpilot": true, "klaviyo": true, "indexnow": true, "product-feeds": true, "recent-purchase-popup": true,
+		"google-reviews": true,
 		// Search
 		"meilisearch": true,
 		// Other
@@ -41,6 +44,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"email-sendgrid":   "/dash/notifications/email",
 		"sms-msg91":        "/dash/notifications/sms",
 		"sms-twilio":       "/dash/notifications/sms",
+		"whatsapp-cloud":   "/dash/notifications/whatsapp",
 		"navigation":       "/dash/menus",
 		"faq":              "/dash/faq",
 		"showcases":        "/dash/showcases",

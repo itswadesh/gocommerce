@@ -273,6 +273,32 @@ func (m *Module) summary(ctx context.Context, productID int64) (*Summary, error)
 	return s, rows.Err()
 }
 
+// Published is every review the storefront shows, oldest first, for a feed
+// that republishes them. It is not found while reviews are off, because the
+// storefront then shows none. The sample shop's are left out: nobody wrote
+// them. Email is not filled in.
+func (m *Module) Published(ctx context.Context) ([]Review, error) {
+	if !m.policy(ctx).enabled {
+		return nil, gocommerce.NotFoundf("product reviews are not enabled on this store")
+	}
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT id, product_id, name, rating, title, body, verified, created_at
+		FROM reviews WHERE status = 'approved' AND NOT sample ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Review
+	for rows.Next() {
+		rv := Review{Status: StatusApproved}
+		if err := rows.Scan(&rv.ID, &rv.ProductID, &rv.Name, &rv.Rating, &rv.Title, &rv.Body, &rv.Verified, &rv.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
 // ----------------------------------------------------------------- public
 
 // publicReview is a review as the storefront sees it: no email.

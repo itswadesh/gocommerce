@@ -67,6 +67,7 @@
         fromLocalInput,
         scheduleLine,
         isChrome,
+        arrivalSection,
     } from "$lib/layouts.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise, flipDuration } from "$lib/motion.js";
@@ -163,8 +164,13 @@
     const canUndo = $derived(historyTick >= 0 && history.canUndo());
     const canRedo = $derived(historyTick >= 0 && history.canRedo());
 
-    /** Every edit goes through here: one undo step, then the autosave. */
+    /**
+     * Every edit goes through here: one undo step, then the autosave. A role
+     * that may only look gets disabled controls; this stops anything that
+     * slipped past them from reaching a save the engine would refuse.
+     */
     function edit(next, key = null) {
+        if (!writable) return;
         history.record(docJSON(), key);
         historyTick++;
         sections = next;
@@ -172,6 +178,7 @@
     }
 
     function editTheme(next) {
+        if (!writable) return;
         history.record(docJSON(), "theme-settings");
         historyTick++;
         themeSettings = next;
@@ -292,11 +299,9 @@
             tokenGroups = themeSettingGroups(reg?.theme_settings);
             adopt(state);
             autosave.reset();
-            // There is nothing to choose between: open its settings — for a
-            // role that may change them. Opened for one that may not, they
-            // were an empty panel, or on a phone a drawer of fields whose
-            // saves the engine refused.
-            if (CHROME && sections.length && writable) selectedId = sections[0].id;
+            // The header or footer: nothing to choose between, so its
+            // settings open, disabled for a role that may only look.
+            selectedId = arrivalSection(PAGE, sections) ?? selectedId;
             pluginOn = plugin ? !!plugin.enabled : true;
             storeInfo = profile;
         } catch (err) {
@@ -817,9 +822,7 @@
                 </button>
             {/if}
         </div>
-        {#if writable}
-            {@render settingsBody(selected, selectedType)}
-        {/if}
+        {@render settingsBody(selected, selectedType)}
     </div>
 {/snippet}
 
@@ -836,6 +839,7 @@
 {/snippet}
 
 {#snippet themeBody()}
+    {@render readOnlyNote()}
     <p class="txt-hint txt-sm m-b-sm">Colours, type, spacing, product cards, lists and the product page, for every page of the storefront, published with the home page. Anything empty or on "Storefront's own" keeps the storefront's look.</p>
     {#if writable}
         <div class="hp-match" bind:this={matchBox}>
@@ -885,7 +889,7 @@
     {#each tokenGroups as g, gi (g.label)}
         <fieldset class="hp-group" disabled={!writable}>
             <legend>{g.label}</legend>
-            <SectionFields fields={g.fields} idPrefix="hp-theme-{gi}" notes={warnings} bind:settings={() => themeSettings, (v) => editTheme(v)} />
+            <SectionFields fields={g.fields} idPrefix="hp-theme-{gi}" notes={warnings} readonly={!writable} bind:settings={() => themeSettings, (v) => editTheme(v)} />
         </fieldset>
     {/each}
 {/snippet}
@@ -981,6 +985,23 @@
     {/if}
 {/snippet}
 
+<!-- At the top of the settings, in the inspector or the phone's drawer:
+     the page's View only note is out of sight under a drawer, and a panel of
+     greyed-out fields with no reason given reads as broken. -->
+{#snippet readOnlyNote()}
+    {#if !writable}
+        <div class="alert info hp-alert" role="note">
+            <i class="ri-lock-line" aria-hidden="true"></i>
+            <div class="content">
+                <p class="txt-sm">
+                    <strong>You're not authorized to modify these settings.</strong> You're signed in to {storeName}{asRole}, and your role doesn't include
+                    <strong>{rightLabel("layouts.write")}</strong>. {@render turnOn()}
+                </p>
+            </div>
+        </div>
+    {/if}
+{/snippet}
+
 {#snippet alerts()}
     {#if !writable}
         <div class="alert info hp-alert" role="status" in:rise>
@@ -1015,6 +1036,7 @@
 {/snippet}
 
 {#snippet settingsBody(section, type)}
+    {@render readOnlyNote()}
     <p class="txt-hint txt-sm m-b-sm">{type.description}</p>
     {#if type.fixed && !type.fields?.length}
         <p class="hp-fixed-note txt-sm" in:rise>
@@ -1022,12 +1044,13 @@
             Always on the {meta.noun}. What it shows is each {PAGE}'s own, from the catalogue; change it there.
         </p>
     {:else if !type.fields?.length}
-        <p class="txt-hint txt-sm">This section has nothing to set: move it, hide it or remove it.</p>
+        <p class="txt-hint txt-sm">This section has nothing to set{#if writable}: move it, hide it or remove it{/if}.</p>
     {/if}
     {#key section.id}
         <SectionFields
             fields={type.fields ?? []}
             idPrefix="hp-{section.id}"
+            readonly={!writable}
             bind:settings={() => sections.find((s) => s.id === section.id)?.settings ?? {}, (v) => setSettings(section.id, v)}
         />
     {/key}
@@ -1131,7 +1154,7 @@
                             <div class="hp-row" class:off={!section.enabled} class:fixed>
                                 <span class="hp-num txt-hint" aria-hidden="true">{i + 1}</span>
                                 <i class="hp-icon {sectionType(section.type, registry)?.icon ?? 'ri-question-line'}" aria-hidden="true"></i>
-                                <button type="button" class="hp-text" disabled={!known || !writable} onclick={() => select(section.id)}>
+                                <button type="button" class="hp-text" disabled={!known} onclick={() => select(section.id)}>
                                     <span class="hp-label">{sum.label}{#if fixed}<i class="ri-lock-line hp-lock" aria-label="always on the page"></i>{/if}</span>
                                     {#if sum.text}<span class="hp-sub txt-hint txt-sm">{sum.text}</span>{/if}
                                     {#if !section.enabled}<span class="label sm">Hidden</span>{/if}
@@ -1331,7 +1354,7 @@
         {@render settingsBody(selected, selectedType)}
     {/if}
     {#snippet footer()}
-        <span class="txt-hint txt-sm m-r-auto">Changes save as you make them.</span>
+        <span class="txt-hint txt-sm m-r-auto">{#if writable}Changes save as you make them.{/if}</span>
         <button type="button" class="btn" onclick={closePanel}><span class="txt">Done</span></button>
     {/snippet}
 </Drawer>

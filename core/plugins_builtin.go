@@ -51,6 +51,10 @@ var builtinPlugins = []PluginDef{
 	{
 		Key: CODPluginKey, Home: "/dash/settings/payments", Title: "Cash on delivery", Icon: "ri-hand-coin-line", Category: "payments", DefaultEnabled: true,
 		Description: "Shoppers pay in cash when the order arrives. Off, checkout offers only the gateways that are set up.",
+		Fields: []PluginField{
+			{Key: "fee", Label: "Extra charge", Kind: "number", Public: true,
+				Help: "Added to an order paid in cash on delivery, in the store's currency: 60 is ₹60. Empty charges nothing."},
+		},
 	},
 	{
 		Key: "guest-checkout", Home: homeStoreSettings, Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
@@ -149,6 +153,49 @@ var builtinPlugins = []PluginDef{
 		Fields: []PluginField{
 			{Key: "domain", Label: "Domain", Kind: "text", Public: true, Required: true, Help: "shop.example.com"},
 			{Key: "script_url", Label: "Script URL", Kind: "url", Public: true, Default: "https://plausible.io/js/script.js"},
+		},
+	},
+	// The ad and analytics tags (D160). Each is an ID the storefront puts in
+	// the vendor's own snippet; the storefront also decides when it loads and
+	// which shopping events it hears, so all that is held here is the switch.
+	{
+		Key: "microsoft-clarity", Title: "Microsoft Clarity", Icon: "ri-microsoft-line", Category: "analytics",
+		Description: "Heatmaps and session recordings, free from Microsoft.",
+		Docs:        "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-setup",
+		Fields: []PluginField{
+			{Key: "project_id", Label: "Project ID", Kind: "text", Public: true, Required: true, Help: "Clarity › Settings › Overview › Project ID."},
+		},
+	},
+	{
+		Key: "hotjar", Title: "Hotjar", Icon: "ri-cursor-line", Category: "analytics",
+		Description: "Heatmaps, recordings and on-page surveys.",
+		Docs:        "https://help.hotjar.com/hc/en-us/articles/115009336727-How-to-Install-Your-Hotjar-Tracking-Code",
+		Fields: []PluginField{
+			{Key: "site_id", Label: "Site ID", Kind: "text", Public: true, Required: true, Help: "The number beside the site's name in Hotjar's site list."},
+		},
+	},
+	{
+		Key: "tiktok-pixel", Title: "TikTok pixel", Icon: "ri-tiktok-line", Category: "analytics",
+		Description: "TikTok's pixel: page views, product views, baskets, checkouts and purchases with their value, for TikTok ads.",
+		Docs:        "https://ads.tiktok.com/help/article/standard-events-parameters",
+		Fields: []PluginField{
+			{Key: "pixel_id", Label: "Pixel ID", Kind: "text", Public: true, Required: true, Help: "TikTok Ads Manager › Assets › Events › Web events: the pixel's ID."},
+		},
+	},
+	{
+		Key: "pinterest-tag", Title: "Pinterest tag", Icon: "ri-pinterest-line", Category: "analytics",
+		Description: "Pinterest's tag: page visits, baskets and purchases with their value, for Pinterest ads.",
+		Docs:        "https://developers.pinterest.com/docs/track-conversions/pinterest-tag/",
+		Fields: []PluginField{
+			{Key: "tag_id", Label: "Tag ID", Kind: "text", Public: true, Required: true, Help: "Pinterest Ads › Conversions: the tag's ID, a long number."},
+		},
+	},
+	{
+		Key: "snapchat-pixel", Title: "Snap pixel", Icon: "ri-snapchat-line", Category: "analytics",
+		Description: "Snapchat's pixel: page views, product views, baskets, checkouts and purchases with their value, for Snapchat ads.",
+		Docs:        "https://developers.snap.com/marketing-api/Ads-API/snap-pixel",
+		Fields: []PluginField{
+			{Key: "pixel_id", Label: "Pixel ID", Kind: "text", Public: true, Required: true, Help: "Snapchat Ads Manager › Events Manager: the pixel's ID, shaped like 1a2b3c4d-…"},
 		},
 	},
 	{

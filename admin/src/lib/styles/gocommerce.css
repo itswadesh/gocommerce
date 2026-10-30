@@ -4046,6 +4046,15 @@ button.media-check {
     max-width: 120px;
     object-fit: contain;
 }
+/* A store's logo drawn for dark backgrounds replaces its own in the dark
+   theme, and is hidden in the light one. */
+.app-brand-logo-dark,
+[data-color-scheme="dark"] .app-brand-logo.has-dark {
+    display: none;
+}
+[data-color-scheme="dark"] .app-brand-logo-dark {
+    display: block;
+}
 /* On a first visit the brand's name arrives with the auth-state answer, a
    moment after the page: it fades in rather than popping into place. */
 .app-brand-name:empty {
@@ -12636,6 +12645,650 @@ html .tw\:rounded-2xl {
 @media (prefers-reduced-motion: reduce) {
     .hp-match-tool:hover:not(:disabled),
     .hp-match-tool:active:not(:disabled) {
+        transform: none;
+    }
+}
+
+/*
+ * Themes › a page, for a role that may only look: the settings as they are,
+ * every control disabled (SectionFields' readonly). PocketBase paints a
+ * disabled field's value and label in --surfaceTxtDisabledColor, 2.2:1 on the
+ * field, which leaves nothing to read; here they keep an enabled field's
+ * colours. The note above them, the plain cursor and the missing buttons say
+ * they can't be changed.
+ */
+.sf-field.readonly :is(input[type="text"], input[type="number"], textarea):disabled,
+.sf-field.readonly .input.select.disabled .selected-item {
+    color: var(--surfaceTxtColor);
+    -webkit-text-fill-color: currentColor; /* Safari fades a disabled field's text again */
+    opacity: 1;
+}
+.sf-field.readonly .field > label {
+    color: var(--surfaceTxtHintColor);
+}
+.sf-field.readonly :is(.sf-swatch, .sf-icon, .sf-icon-input) {
+    cursor: default;
+}
+.sf-field.readonly :is(.sf-swatch, .sf-icon):is(:hover, :active) {
+    transform: none;
+}
+.sf-field.readonly .sf-icon:not(.active):hover {
+    background: var(--cardFace);
+    color: var(--surfaceTxtHintColor);
+}
+
+/* ------------------------------------------------------------- Shiprocket */
+
+/*
+ * The courier picker in the ship dialog, the bookings card on an order and
+ * the account check in Shiprocket's settings drawer. Each choice is a row
+ * with its radio inside the label, so the whole row is the hit target; the
+ * selected row says so with its edge and a whisper of the mark colour, never
+ * colour alone (the radio is drawn too). Movement is a short press and a
+ * fade, both gone under reduced motion while the change of edge stays.
+ */
+.sr-couriers {
+    margin-top: var(--smSpacing);
+}
+.sr-couriers-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px var(--smSpacing);
+    margin-bottom: 8px;
+}
+.sr-couriers-title {
+    font-weight: 600;
+}
+.sr-weight {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sr-weight input {
+    width: 96px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    transition: border-color 150ms ease-out;
+}
+.sr-weight input:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.sr-couriers-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+}
+.sr-spinner {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    border: 2px solid var(--surfaceAlt3Color);
+    border-top-color: var(--markColor);
+    animation: sr-spin 0.8s linear infinite;
+}
+@keyframes sr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+.sr-alert {
+    margin: 0;
+}
+.sr-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.sr-pick {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--surfaceAlt3Color);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: var(--smFontSize);
+    cursor: pointer;
+    transition:
+        border-color 150ms ease-out,
+        background-color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.sr-pick.active {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor), transparent 90%);
+    font-weight: 600;
+}
+.sr-courier-list,
+.sr-pickups {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: opacity 200ms ease-out;
+}
+/* A re-quote in flight: the old list stays readable and says it is old. */
+.sr-courier-list.stale {
+    opacity: 0.55;
+}
+.sr-courier,
+.sr-pickup {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 2px 10px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    cursor: pointer;
+    transition:
+        border-color 150ms ease-out,
+        background-color 150ms ease-out,
+        transform 150ms ease-out;
+}
+.sr-pickup {
+    grid-template-columns: auto 1fr;
+}
+.sr-courier input,
+.sr-pickup input {
+    margin: 0;
+}
+.sr-courier.active,
+.sr-pickup.active {
+    border-color: var(--markColor);
+    background: color-mix(in srgb, var(--markColor), transparent 92%);
+}
+.sr-courier-name,
+.sr-pickup-name {
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+.sr-courier-rate {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.sr-courier-meta,
+.sr-pickup > .txt-hint {
+    grid-column: 2 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    min-width: 0;
+}
+.sr-cod {
+    font-size: 11px;
+}
+.sr-courier:focus-within,
+.sr-pickup:focus-within,
+.sr-pick:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 2px;
+}
+@media (hover: hover) {
+    .sr-courier:hover,
+    .sr-pickup:hover,
+    .sr-pick:hover {
+        border-color: var(--txtHintColor);
+    }
+}
+.sr-courier:active,
+.sr-pickup:active,
+.sr-pick:active {
+    transform: scale(0.99);
+}
+.sr-connected {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--successColor);
+    font-weight: 600;
+}
+/* Two classes, to win over list.css's centred row. */
+.order-card .sr-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    transition: opacity 200ms ease-out;
+}
+.order-card .sr-row.cancelled {
+    opacity: 0.6;
+}
+.sr-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+}
+.sr-row-head .txt-code {
+    overflow-wrap: anywhere;
+}
+.sr-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+/* A parcel's journey: newest at the top, a rail of dots, the latest filled. */
+.sr-scans summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    color: var(--txtHintColor);
+    list-style: none;
+}
+.sr-scans summary::-webkit-details-marker {
+    display: none;
+}
+.sr-scans-chevron {
+    transition: transform 200ms ease-out;
+}
+.sr-scans[open] .sr-scans-chevron {
+    transform: rotate(90deg);
+}
+.sr-scans[open] .sr-timeline {
+    animation: fadeIn 200ms ease-out;
+}
+.sr-timeline {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.sr-timeline li {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    padding: 0 0 10px 2px;
+}
+.sr-timeline li::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 14px;
+    bottom: 0;
+    width: 1px;
+    background: var(--surfaceAlt3Color);
+}
+.sr-timeline li:last-child::before {
+    display: none;
+}
+.sr-dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    margin-top: 5px;
+    border-radius: 50%;
+    border: 2px solid var(--surfaceAlt3Color);
+    background: var(--surfaceColor);
+}
+.sr-timeline li.latest .sr-dot {
+    border-color: var(--markColor);
+    background: var(--markColor);
+}
+.sr-scan-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+/* A failed delivery wants an answer, so it is set apart: an amber edge, the
+   reason, and the two things Shiprocket can be told. */
+.sr-ndr {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--warningColor);
+    border-radius: var(--borderRadius);
+    background: color-mix(in srgb, var(--warningColor), transparent 92%);
+}
+.sr-ndr-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+.sr-ndr-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.sr-ndr-field textarea,
+.sr-ndr-field input {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+    resize: vertical;
+}
+.sr-ndr-date input {
+    max-width: 200px;
+}
+.sr-ndr-field textarea:focus-visible,
+.sr-ndr-field input:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+/* The card's title shares its row with the reverse pickup button. */
+.sr-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.sr-card-head .order-card-title {
+    margin: 0;
+}
+/* Booking a reverse pickup: the lines that went out, how many come back. */
+.sr-return {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+}
+.sr-return-line {
+    display: grid;
+    grid-template-columns: 1fr 72px auto;
+    align-items: center;
+    gap: 8px;
+}
+.sr-return-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.sr-return-line input {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--surfaceAlt3Color);
+    border-radius: var(--borderRadius);
+    background: var(--surfaceColor);
+    color: inherit;
+    font: inherit;
+}
+.sr-return-line input:focus-visible {
+    outline: 2px solid var(--markColor);
+    outline-offset: 1px;
+}
+.sr-return-label {
+    background: color-mix(in srgb, var(--markColor), transparent 85%);
+}
+/* The webhook's address and token, each copyable, wrapping on a phone rather
+   than pushing the drawer sideways. */
+.sr-hook {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.sr-hook-row {
+    display: grid;
+    grid-template-columns: 64px 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+.sr-hook-value {
+    min-width: 0;
+    padding: 6px 8px;
+    border-radius: var(--borderRadius);
+    background: var(--surfaceAlt1Color);
+    font-size: var(--smFontSize);
+    overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+    .sr-courier:active,
+    .sr-pickup:active,
+    .sr-pick:active {
+        transform: none;
+    }
+    .sr-spinner {
+        animation-duration: 1.6s;
+    }
+    .sr-scans-chevron {
+        transition: none;
+    }
+}
+
+/* ------------------------------------------------------------ ads report
+   Ads performance (ext/ads, D168). Reuses the recovery report's cards, tiles
+   and segmented switches; what follows is only the table's open rows, the
+   summary's points beside their figures, and the spend forms. */
+@media (min-width: 601px) {
+    .ads-table td,
+    .ads-table th {
+        white-space: nowrap;
+    }
+}
+.ads-row-btn {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: var(--borderRadius);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 180ms ease-out,
+        transform 150ms ease-out;
+}
+.ads-row-btn:hover {
+    background: var(--surfaceAlt1Color);
+}
+.ads-row-btn:active {
+    transform: scale(0.98);
+}
+.ads-row-btn:focus-visible {
+    outline: 2px solid var(--ring, var(--primaryColor));
+    outline-offset: 1px;
+}
+.ads-chevron {
+    transition: transform 200ms ease-out;
+}
+.ads-row.is-open .ads-chevron {
+    transform: rotate(90deg);
+}
+.ads-where {
+    display: block;
+    font-weight: 600;
+}
+.ads-campaign {
+    display: block;
+    font-size: var(--smFontSize);
+    color: var(--surfaceTxtHintColor);
+    white-space: normal;
+}
+.ads-row.is-open > td {
+    background: var(--surfaceAlt1Color);
+}
+.ads-drill > td {
+    background: var(--surfaceAlt1Color);
+    white-space: normal;
+}
+.ads-orders {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ads-orders > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+}
+.ads-orders > li:last-child {
+    border-bottom: 0;
+}
+.ads-order-link {
+    font-weight: 600;
+    transition: opacity 150ms ease-out;
+}
+.ads-order-link:hover {
+    opacity: 0.75;
+}
+.ads-loss {
+    color: var(--dangerColor);
+}
+.ads-warn {
+    color: var(--warningColor);
+}
+.ads-press {
+    transition:
+        transform 150ms ease-out,
+        opacity 150ms ease-out;
+}
+.ads-press:active {
+    transform: scale(0.97);
+}
+.ads-headline {
+    margin: 8px 0 2px;
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+.ads-points {
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+.ads-point {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 18rem);
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+}
+.ads-point p {
+    margin: 6px 0 0;
+}
+.ads-kind {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: var(--smFontSize);
+    font-weight: 600;
+    background: var(--surfaceAlt1Color);
+}
+.ads-kind.is-working {
+    color: var(--successColor);
+}
+.ads-kind.is-wasting {
+    color: var(--dangerColor);
+}
+.ads-kind.is-watch {
+    color: var(--warningColor);
+}
+.ads-figures {
+    margin: 0;
+    display: grid;
+    gap: 2px;
+    font-size: var(--smFontSize);
+}
+.ads-figures > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+.ads-figures dt {
+    color: var(--surfaceTxtHintColor);
+}
+.ads-figures dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+.ads-problem {
+    margin: 8px 0;
+    padding: 12px;
+    border: 1px solid var(--warningColor);
+    border-radius: var(--borderRadius);
+}
+.ads-problem p {
+    margin: 4px 0 8px;
+}
+.ads-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    cursor: pointer;
+}
+.ads-forms {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+.ads-form {
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+}
+.ads-form-title {
+    margin: 0;
+    font-size: var(--baseFontSize, 14px);
+    font-weight: 600;
+}
+.ads-form .btn {
+    justify-self: start;
+}
+.ads-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 8px;
+}
+.ads-grid .field {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+}
+.ads-grid input {
+    width: 100%;
+    min-width: 0;
+}
+@media (max-width: 640px) {
+    .ads-point {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ads-row-btn,
+    .ads-chevron,
+    .ads-press,
+    .ads-order-link {
+        transition: none;
+    }
+    .ads-row-btn:active,
+    .ads-press:active {
         transform: none;
     }
 }

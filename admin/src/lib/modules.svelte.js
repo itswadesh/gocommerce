@@ -57,6 +57,7 @@ const PROBES = {
     // The products page's "Create from photos", for the same reason.
     "photo-products": { path: "/api/admin/x/photo-products/status", right: "catalog.write" },
     "catalog-ai": { path: "/api/admin/x/catalog-ai/status", right: "catalog.write" },
+    ads: { path: "/api/admin/x/ads/settings", right: "ads.read" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
     // The module's own right, or the one it was lifted off (D65): in a binary
@@ -87,6 +88,7 @@ const PROBES = {
     // notifications.read beside the module's own right for cart-recovery's
     // reason: in a binary without the module nobody holds alerts.read, and a
     // typed /dash/notifications/telegram should say the module is missing.
+    "notify-whatsapp": { path: "/api/admin/x/notify-whatsapp/status", right: "notifications.read" },
     "telegram-alerts": { path: "/api/admin/x/telegram-alerts/alerts", right: ["alerts.read", "notifications.read"] },
     // Plugin-only modules have no admin routes of their own; the plugin's
     // row is the proof they are installed.

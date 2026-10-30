@@ -7,7 +7,9 @@
  * delivery (D102) — the engine names the plugin, and a built-in without one
  * (manual fulfilment) has nothing to switch.
  *
- * Green is for "on and working" alone; a built-in method is simply there, so
+ * Green is for "on and working" alone. A built-in with a switch (cash on
+ * delivery) is green when it is on, since it then takes orders as any active
+ * gateway does; one without a switch (manual fulfilment) is simply there, so
  * it reads neutral, and one switched off says so.
  *
  * @param {{ module: string, configured: boolean, plugin?: string }} provider from the settings
@@ -19,7 +21,8 @@ export function providerCard(provider, plugins) {
     else if (provider.module !== "core") plugin = plugins.find((x) => x.module === provider.module) ?? null;
 
     let state;
-    if (provider.module === "core") state = plugin && !plugin.enabled ? { label: "Off", cls: "" } : { label: "Built in", cls: "" };
+    if (provider.module === "core" && plugin) state = plugin.enabled ? { label: "Active", cls: "label-success" } : { label: "Off", cls: "" };
+    else if (provider.module === "core") state = { label: "Built in", cls: "" };
     else if (provider.configured) state = { label: "Active", cls: "label-success" };
     else if (plugin?.enabled) state = { label: "Needs settings", cls: "label-warning" };
     else state = { label: "Inactive", cls: "" };

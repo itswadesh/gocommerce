@@ -106,8 +106,40 @@ func coreMigrations() []Migration {
 		{ID: "0088_four_digit_hs_code", SQL: migration0088FourDigitHSCode},
 		{ID: "0089_store_images", SQL: migration0089StoreImages},
 		{ID: "0090_store_contact_page", SQL: migration0090StoreContactPage},
+		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
+		{ID: "0092_order_payment_fee", SQL: migration0092OrderPaymentFee},
+		{ID: "0093_discount_prepaid_only", SQL: migration0093DiscountPrepaidOnly},
+		{ID: "0094_cart_phone", SQL: `ALTER TABLE carts ADD COLUMN phone text;`},
 	}
 }
+
+// M93 — a discount that only an order paid up front gets: a code refused on
+// cash on delivery. Off on every existing rule, which is how they behaved.
+const migration0093DiscountPrepaidOnly = `
+ALTER TABLE discounts ADD COLUMN prepaid_only boolean NOT NULL DEFAULT false;
+`
+
+// M92 — what the payment method added to the order: the extra charge a store
+// makes for cash on delivery. Its own column rather than folded into shipping,
+// because the invoice has to say what it was for. Zero on every order before
+// it, which is what they were charged.
+const migration0092OrderPaymentFee = `
+ALTER TABLE orders
+    ADD COLUMN payment_fee_minor bigint NOT NULL DEFAULT 0 CHECK (payment_fee_minor >= 0);
+`
+
+// M91 — what a carrier last said about a parcel (Fulfillments.Track).
+//
+// Beside status rather than in it: status is the parcel's place in the
+// order's state machine, which counts what shipped and decides delivery, and
+// a parcel out for delivery or on its way back has shipped all the same.
+const migration0091FulfillmentTracking = `
+ALTER TABLE fulfillments
+    ADD COLUMN tracking_status text NOT NULL DEFAULT ''
+        CHECK (tracking_status IN ('', 'in_transit', 'out_for_delivery', 'delivery_failed',
+            'delivered', 'returning', 'returned', 'lost', 'cancelled')),
+    ADD COLUMN tracking_updated_at timestamptz;
+`
 
 // M90 — what a storefront's contact page shows (D156): whether the address
 // is public, a map location for when the address puts the pin in the wrong

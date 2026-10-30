@@ -1,6 +1,7 @@
 package aigateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -8,6 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif" // registered so imageTokens can read their sizes
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"regexp"
 	"runtime/debug"
@@ -326,9 +331,10 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeRefused, err.Error(), false)
 			}
-			if est := estimateTokens(r.req); est > t.MaxInputTokens {
+			r.tokens = estimateTokens(r.req)
+			if r.tokens > t.MaxInputTokens {
 				step.Outcome = "refused"
-				step.Reason = fmt.Sprintf("the request comes to about %d input tokens, over this task's limit of %d", est, t.MaxInputTokens)
+				step.Reason = fmt.Sprintf("the request comes to about %d input tokens, over this task's limit of %d", r.tokens, t.MaxInputTokens)
 				rec.Steps = append(rec.Steps, step)
 				return fail(OutcomeRefused, step.Reason, false)
 			}
@@ -342,7 +348,11 @@ func (m *Module) ladder(ctx context.Context, t *Task, input json.RawMessage, st 
 		}
 		step.Dropped = built.dropped
 
-		ceiling := p.ceiling(t.MaxInputTokens, t.MaxOutputTokens)
+		// The most this request can cost: its own estimated input, which errs
+		// large, and the output it asks for, which the provider will not pass.
+		// Not the task's bounds, which a batch of three photos would pay for
+		// as if it were sixty (D151, 2026-10-30).
+		ceiling := p.ceiling(built.tokens, built.req.MaxTokens)
 		month := monthOf(time.Now())
 
 		// Credit first: a store with nothing left is refused before the model
@@ -521,18 +531,33 @@ func estimateTokens(req Request) int {
 	for _, msg := range req.Messages {
 		count(msg.Text)
 	}
+	for _, d := range req.Documents {
+		count(d.Caption)
+	}
 	n := ascii/3 + (wide*3+1)/2 + requestOverhead
 	for _, d := range req.Documents {
 		switch {
 		case d.MediaType == "application/pdf":
 			n += max(1, pdfPages(d.Bytes)) * tokensPerPage
 		case strings.HasPrefix(d.MediaType, "image/"):
-			n += TokensPerImage
+			n += imageTokens(d.Bytes)
 		default:
 			n += len(d.Bytes) / 3
 		}
 	}
 	return n
+}
+
+// imageTokens is what a picture can cost: a token per 750 pixels, which is
+// what a model that keeps a large picture's full size charges, and never less
+// than TokensPerImage. A picture whose size does not read (WebP, which the
+// standard library cannot decode) counts the floor.
+func imageTokens(b []byte) int {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil {
+		return TokensPerImage
+	}
+	return max(TokensPerImage, (cfg.Width*cfg.Height+749)/750)
 }
 
 // pdfPageRE finds a page object, not the page tree (/Pages).

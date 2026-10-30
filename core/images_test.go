@@ -243,3 +243,36 @@ func TestImageRouteResizesAnUpload(t *testing.T) {
 		t.Errorf("served %d×%d, want 160×120", w, h)
 	}
 }
+
+// The sample shop's pictures are the engine's own files, in WebP, which is not
+// resized: a storefront asking for a card-sized one is sent to the original.
+// It used to be refused, which left every sample product card blank. A picture
+// of D96's set, which an older store still links, is found the same way.
+func TestImageRouteSendsASamplePictureToItsOriginal(t *testing.T) {
+	app := imageApp(t, false)
+	ctx := WithStore(context.Background(), app.defaultStore)
+	if _, err := app.Products().AddSampleProducts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.media.AddURL(ctx, "/sample-media/1/cotton-crew-tee-black.webp", MediaImage, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, original := range []string{
+		SampleMediaPrefix + "printed-anarkali-kurta-rose-front.webp",
+		"/sample-media/1/cotton-crew-tee-black.webp",
+	} {
+		rec := do(t, app, http.MethodGet, ImagesPath(app.defaultStore)+"/cdn-cgi/image/width=240,quality=80,format=auto"+original)
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != original {
+			t.Errorf("GET a card-sized %s = %d to %q, want 302 to the original", original, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	// A banner's picture is in its module's table, where the lookup cannot
+	// see it, and is found all the same; a name the binary lacks is not.
+	banner := SampleMediaPrefix + "banner-festive-wide.webp"
+	if rec := do(t, app, http.MethodGet, ImagesPath(app.defaultStore)+"/cdn-cgi/image/width=1280"+banner); rec.Code != http.StatusFound {
+		t.Errorf("GET a banner = %d, want 302 to the original", rec.Code)
+	}
+	if rec := do(t, app, http.MethodGet, ImagesPath(app.defaultStore)+"/cdn-cgi/image/width=240/sample-media/2/no-such-picture.webp"); rec.Code != http.StatusNotFound {
+		t.Errorf("GET a picture the binary lacks = %d, want 404", rec.Code)
+	}
+}

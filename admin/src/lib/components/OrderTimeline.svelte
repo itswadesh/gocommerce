@@ -21,6 +21,17 @@
         "order.refunded": { icon: "ri-refund-2-line", label: "Money refunded" },
         "order.returned": { icon: "ri-inbox-unarchive-line", label: "Goods returned" },
         "order.unreturned": { icon: "ri-arrow-go-back-line", label: "Return withdrawn" },
+        "order.shipment_updated": { icon: "ri-truck-line", label: "Carrier update" },
+    };
+
+    /* What a carrier said, for order.shipment_updated. */
+    const TRACKING = {
+        in_transit: { icon: "ri-truck-line", label: "In transit" },
+        out_for_delivery: { icon: "ri-e-bike-2-line", label: "Out for delivery" },
+        delivery_failed: { icon: "ri-error-warning-line", label: "Delivery attempt failed" },
+        returning: { icon: "ri-arrow-go-back-line", label: "Returning to the store" },
+        returned: { icon: "ri-inbox-unarchive-line", label: "Returned to the store" },
+        lost: { icon: "ri-error-warning-line", label: "Lost by the carrier" },
     };
 
     const ACTIONS = {
@@ -28,6 +39,7 @@
         "order.refund_settle": { icon: "ri-refund-2-line", label: "Refund settled by hand" },
         "order.shipment_update": { icon: "ri-truck-line", label: "Tracking corrected" },
         "order.shipment_delete": { icon: "ri-truck-line", label: "Shipment removed" },
+        "order.shipment_cancel": { icon: "ri-truck-line", label: "Shipment cancelled" },
         "order.mark_failed": { icon: "ri-error-warning-line", label: "Payment failed" },
     };
 
@@ -69,6 +81,11 @@
     let { entries = [], loading = false, currency = "USD" } = $props();
 
     function look(entry) {
+        // order.unshipped is a removal or a cancellation; the act says which.
+        if (entry.action === "order.shipment_cancel") return ACTIONS[entry.action];
+        // A message to or from the shopper: its own words are the phrase.
+        if (entry.action === "order.message") return { icon: "ri-chat-3-line", label: entry.summary };
+        if (entry.name === "order.shipment_updated" && TRACKING[entry.tracking_status]) return TRACKING[entry.tracking_status];
         if (entry.name && EVENTS[entry.name]) return EVENTS[entry.name];
         // order.edited is deliberately not in that table: it is two different
         // things under one name, and the change block is what tells them apart.

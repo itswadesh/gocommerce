@@ -145,6 +145,9 @@ const (
 	AuditOrderShip           = "order.ship"
 	AuditOrderShipmentUpdate = "order.shipment_update"
 	AuditOrderShipmentDelete = "order.shipment_delete"
+	// A booked parcel that will not travel. Its own verb rather than
+	// shipment_delete: the booking happened and stays on the order.
+	AuditOrderShipmentCancel = "order.shipment_cancel"
 	// Goods coming back, and that record taken back. Their own verbs rather
 	// than order.edit_lines, because a return changes nothing about what was
 	// agreed — it says what happened to the goods afterwards.
@@ -156,6 +159,10 @@ const (
 	// one out is a row saying who asked for it and when. See
 	// Orders.RevealAccessToken.
 	AuditOrderTokenReveal = "order.token_reveal"
+	// AuditOrderMessage is a message to or from the shopper about the order,
+	// recorded by the module that carried it: a WhatsApp update delivered or
+	// read, a cash-on-delivery order confirmed by reply (Orders.RecordMessage).
+	AuditOrderMessage = "order.message"
 
 	AuditProductCreate         = "product.create"
 	AuditProductUpdate         = "product.update"
@@ -260,9 +267,9 @@ var AllAuditActions = []string{
 	AuditOrderMarkPaid, AuditOrderMarkUnpaid, AuditOrderMarkFailed, AuditOrderEraseSample,
 	AuditOrderRefund, AuditOrderRefundSettle,
 	AuditOrderDeliver, AuditOrderUndeliver,
-	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete,
+	AuditOrderShip, AuditOrderShipmentUpdate, AuditOrderShipmentDelete, AuditOrderShipmentCancel,
 	AuditOrderReturn, AuditOrderReturnWithdraw,
-	AuditOrderTokenReveal,
+	AuditOrderTokenReveal, AuditOrderMessage,
 
 	AuditProductCreate, AuditProductUpdate, AuditProductDelete,
 	AuditProductOptionAdd, AuditProductOptionsSet, AuditProductMediaSet,

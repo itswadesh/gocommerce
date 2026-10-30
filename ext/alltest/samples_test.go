@@ -3,6 +3,7 @@ package alltest
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -34,8 +35,8 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 		t.Fatalf("add the sample shop: %v", err)
 	}
 	// Their returns page stays theirs, so two sample pages, and the footer
-	// links only those: four categories in the header and two pages below.
-	want := gocommerce.SampleCounts{"products": 8, "orders": 12, "reviews": 8, "pages": 2, "faq": 5, "menu_links": 6, "banners": 5}
+	// links only those: eight categories in the header and two pages below.
+	want := gocommerce.SampleCounts{"products": 11, "orders": 12, "reviews": 11, "pages": 2, "faq": 5, "menu_links": 10, "banners": 5}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
@@ -46,23 +47,47 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 	// product, so the engine's own test marks it verified.
 	var verified int
 	if err := app.DB().QueryRowContext(ctx,
-		`SELECT count(*) FROM reviews WHERE sample AND verified AND status = 'approved'`).Scan(&verified); err != nil || verified != 8 {
-		t.Fatalf("verified, approved sample reviews = %d (%v), want 8", verified, err)
+		`SELECT count(*) FROM reviews WHERE sample AND verified AND status = 'approved'`).Scan(&verified); err != nil || verified != 11 {
+		t.Fatalf("verified, approved sample reviews = %d (%v), want 11", verified, err)
 	}
 
-	// What a storefront reads.
-	rec := gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/header", nil)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"/categories/apparel"`) {
-		t.Fatalf("header menu = %d %s, want a link to the apparel category", rec.Code, rec.Body)
+	// What a storefront reads. The header nests the categories as they are:
+	// Women and Men, each with its own under it.
+	var header struct {
+		Items []struct {
+			URL      string `json:"url"`
+			Children []struct {
+				URL string `json:"url"`
+			} `json:"children"`
+		} `json:"items"`
 	}
-	rec = gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/footer", nil)
+	gctest.DecodeData(t, gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/header", nil), &header)
+	var tree []string
+	for _, it := range header.Items {
+		var under []string
+		for _, c := range it.Children {
+			under = append(under, c.URL)
+		}
+		tree = append(tree, it.URL+" ["+strings.Join(under, " ")+"]")
+	}
+	if got, want := strings.Join(tree, "\n"), "/categories/women [/categories/women-dresses /categories/women-jumpsuits /categories/women-ethnic-wear /categories/women-co-ord-sets]\n"+
+		"/categories/men [/categories/men-kurtas /categories/men-jackets]"; !strings.HasSuffix(got, want) {
+		t.Fatalf("header menu =\n%s\nwant it to end with\n%s", got, want)
+	}
+	rec := gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/footer", nil)
 	if !strings.Contains(rec.Body.String(), `"/pages/about"`) || strings.Contains(rec.Body.String(), `"/pages/returns"`) {
 		t.Fatalf("footer menu = %s, want the sample about page and not the merchant's returns page", rec.Body)
 	}
 	rec = gctest.Request(t, app, http.MethodGet, "/x/banners?page=home", nil)
-	if body := rec.Body.String(); !strings.Contains(body, `"/collections/new-in"`) || !strings.Contains(body, `"Shop by collection"`) ||
-		!strings.Contains(body, `"/sample-media/1/banner-new-in-phone.webp"`) {
-		t.Fatalf("home banners = %s, want the sample slides and the category grid", body)
+	if body := rec.Body.String(); !strings.Contains(body, `"/collections/festive-edit"`) || !strings.Contains(body, `"Shop by collection"`) ||
+		!strings.Contains(body, `"/sample-media/2/banner-festive-phone.webp"`) {
+		t.Fatalf("home banners = %s, want the sample slides and the collection grid", body)
+	}
+	// Every picture a banner names is one the engine serves.
+	for _, picture := range regexp.MustCompile(`/sample-media/[^"]+`).FindAllString(rec.Body.String(), -1) {
+		if got := gctest.Request(t, app, http.MethodGet, picture, nil); got.Code != http.StatusOK {
+			t.Fatalf("banner picture %s = %d, want it served", picture, got.Code)
+		}
 	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/cms/pages/about", nil); rec.Code != http.StatusOK {
 		t.Fatalf("the about page = %d %s, want it published", rec.Code, rec.Body)

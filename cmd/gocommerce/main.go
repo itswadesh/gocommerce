@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/itswadesh/gocommerce/core"
+	ads "github.com/itswadesh/gocommerce/ext/ads"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/banners"
@@ -39,17 +40,20 @@ import (
 	shipstation "github.com/itswadesh/gocommerce/ext/fulfill-shipstation"
 	usps "github.com/itswadesh/gocommerce/ext/fulfill-usps"
 	veeqo "github.com/itswadesh/gocommerce/ext/fulfill-veeqo"
+	googlereviews "github.com/itswadesh/gocommerce/ext/google-reviews"
 	"github.com/itswadesh/gocommerce/ext/identity"
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
+	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	"github.com/itswadesh/gocommerce/ext/navigation"
 	"github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
 	resend "github.com/itswadesh/gocommerce/ext/notify-resend"
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	twilio "github.com/itswadesh/gocommerce/ext/notify-twilio"
+	whatsapp "github.com/itswadesh/gocommerce/ext/notify-whatsapp"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
 	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
@@ -227,10 +231,12 @@ environment:
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withMetaCAPI = fs.Bool("meta-capi", false, "install the Meta Conversions API module idle: each store switches it on under Plugins with its access token, and its purchases reach Meta from the server as well as from the pixel")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
 		withMenus    = fs.Bool("menus", false, "install the navigation module: the storefront's menus, edited from the Menus screen")
 		withReviews  = fs.Bool("reviews", false, "install the reviews module: product ratings and reviews, moderated from the Reviews screen; with -ai-gateway it also summarizes what shoppers praise and complain about in a product's reviews")
+		withGoogle   = fs.Bool("google-reviews", false, "install the google-reviews module idle: the store's Google rating and reviews on the storefront, Google Customer Reviews after checkout, and a product ratings feed of its own reviews for Merchant Center (the feed takes -reviews and -feeds), each switched on under Settings › Plugins")
 		withContact  = fs.Bool("contact", false, "install the contact module: the storefront's contact form and its inbox (CONTACT_EMAIL, or the Contact messages screen)")
 		withNews     = fs.Bool("newsletter", false, "install the newsletter module: the storefront's signup box and its list")
 		withRecovery = fs.Bool("recovery", false, "install the cart-recovery module: abandoned checkouts, a reminder sequence by email, and the recovery figures (STOREFRONT_URL, or the automation screen)")
@@ -238,6 +244,7 @@ environment:
 		withSendgrid = fs.Bool("sendgrid", false, "install the SendGrid module: the store's emails through SendGrid (SENDGRID_API_KEY, SENDGRID_FROM, or Notifications › Setup Email)")
 		withTwilio   = fs.Bool("twilio", false, "install the Twilio module: the store's SMS through Twilio, with the wording from Notifications › Setup SMS (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM)")
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
+		withWhatsApp = fs.Bool("whatsapp", false, "install the WhatsApp module idle: each store connects its own WhatsApp Business account under Notifications › Setup WhatsApp, and shoppers who opt in get order updates there")
 		withTelegram = fs.Bool("telegram", false, "install the Telegram alerts module idle: each store gives it a bot and a chat under Notifications › Setup Telegram, and its owner is told about every order there")
 		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Cashfree, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
@@ -259,6 +266,7 @@ environment:
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
 		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withCatAI  = fs.Bool("catalog-ai", false, "install the catalog-ai module: \"Improve with AI\" on a product's page proposes a better title, description, highlights, tags, category, SEO copy and alt text, field by field, for the shop to apply and save (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
+		withAds    = fs.Bool("ads", false, "install ads intelligence: a report of orders, sales, profit after product cost and ad spend by source, medium and campaign, spend entered by hand or imported from Google Ads and Meta Ads Manager, and an AI summary (brings -ai-gateway with it)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY when -ai-gateway is not installed, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -389,7 +397,7 @@ environment:
 		var modules []gocommerce.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI || *withPhotos || *withCatAI {
+		if *withAI || *withPhotos || *withCatAI || *withAds {
 			// The platform's own Anthropic key and what its calls cost (D151):
 			// a store with no key of its own runs on it, paid from its AI
 			// credit. The Amazon importer, below, reads it only without a gateway.
@@ -400,6 +408,7 @@ environment:
 				PlatformStrongModel:  os.Getenv("AI_PLATFORM_STRONG_MODEL"),
 				PlatformStrongPrices: os.Getenv("AI_PLATFORM_STRONG_PRICES"),
 				PlatformUSDRates:     os.Getenv("AI_PLATFORM_USD_RATES"),
+				FreeTrial:            os.Getenv("AI_FREE_TRIAL"),
 			})
 			modules = append(modules, gateway)
 		}
@@ -408,6 +417,9 @@ environment:
 		}
 		if *withCatAI {
 			modules = append(modules, catalogai.New(catalogai.Config{Gateway: gateway}))
+		}
+		if *withAds {
+			modules = append(modules, ads.New(ads.Config{Gateway: gateway}))
 		}
 		// b2b's buyers are identity's accounts, so -b2b brings identity with it
 		// and is handed the same instance, listed first for its tables.
@@ -440,8 +452,15 @@ environment:
 				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
 			}))
 		}
+		if *withMetaCAPI {
+			modules = append(modules, metacapi.New(metacapi.Config{}))
+		}
+		// Kept, with reviews below, for the Google product ratings feed, which
+		// names products as this feed does.
+		var productFeeds *feeds.Module
 		if *withFeeds {
-			modules = append(modules, feeds.New(feeds.Config{StorefrontURL: env("STOREFRONT_URL")}))
+			productFeeds = feeds.New(feeds.Config{StorefrontURL: env("STOREFRONT_URL")})
+			modules = append(modules, productFeeds)
 		}
 		if *withSitemaps {
 			modules = append(modules, sitemaps.New(sitemaps.Config{StorefrontURL: env("STOREFRONT_URL")}))
@@ -449,8 +468,13 @@ environment:
 		if *withMenus {
 			modules = append(modules, navigation.New(navigation.Config{}))
 		}
+		var productReviews *reviews.Module
 		if *withReviews {
-			modules = append(modules, reviews.New(reviews.Config{Gateway: gateway}))
+			productReviews = reviews.New(reviews.Config{Gateway: gateway})
+			modules = append(modules, productReviews)
+		}
+		if *withGoogle {
+			modules = append(modules, googlereviews.New(googlereviews.Config{Feeds: productFeeds, Reviews: productReviews}))
 		}
 		if *withContact {
 			modules = append(modules, contact.New(contact.Config{NotifyEmail: os.Getenv("CONTACT_EMAIL")}))
@@ -495,6 +519,13 @@ environment:
 		// belong to one owner, and on an install that hosts several stores a
 		// token from the environment would send every store's orders to the
 		// same chat. Each store sets its own from the panel.
+		// No environment fallback for the account, for Telegram's reason: the
+		// account, its number and its templates are each store's own. The API
+		// address is the install owner's, as Shiprocket's is: a stand-in Graph
+		// API for a test drive, empty for Meta's.
+		if *withWhatsApp {
+			modules = append(modules, whatsapp.New(whatsapp.Config{BaseURL: os.Getenv("WHATSAPP_GRAPH_URL")}))
+		}
 		if *withTelegram {
 			modules = append(modules, telegramalerts.New(telegramalerts.Config{}))
 		}
@@ -511,7 +542,9 @@ environment:
 		}
 		if *withCarriers {
 			modules = append(modules,
-				shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
+				// The API address is the install owner's to set, never a store's
+				// (D162): a stand-in Shiprocket for a test drive, empty for the real one.
+				shiprocket.New(shiprocket.Config{BaseURL: os.Getenv("SHIPROCKET_BASE_URL")}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
 				indiapost.New(indiapost.Config{}), shippo.New(shippo.Config{}), shipstation.New(shipstation.Config{}),
 				easyship.New(easyship.Config{}), shippit.New(shippit.Config{}), usps.New(usps.Config{}),
 				onfleet.New(onfleet.Config{}), veeqo.New(veeqo.Config{}),

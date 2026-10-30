@@ -1,5 +1,6 @@
 <script>
-    import { api, query } from "$lib/api.js";
+    import { untrack } from "svelte";
+    import { api, can, query } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
 
     /**
@@ -56,14 +57,16 @@
 
     /*
      * Chips for what is chosen. An id the picker has never fetched still has to
-     * render, so three sources are tried in order: the rows in hand, the names
-     * the drawer was given, and finally the bare id — which is honest about what
-     * is known rather than drawing an empty chip.
+     * render, so four sources are tried in order: the rows in hand, the names
+     * the drawer was given, the names looked up for it (below), and finally the
+     * bare id — which is honest about what is known rather than drawing an
+     * empty chip.
      */
+    let fetched = $state({});
     const chosen = $derived(
         value.map((v) => ({
             id: v,
-            label: options.find((o) => o.id === v)?.label ?? names.get(v) ?? `#${v}`,
+            label: options.find((o) => o.id === v)?.label ?? names.get(v) ?? fetched[v] ?? `#${v}`,
             missing: missing.has(v),
         })),
     );
@@ -116,6 +119,34 @@
             if (kind !== "products" || search === filter) loading = false;
         }
     }
+
+    /*
+     * A chip shows its name, not its number, without waiting for the picker
+     * to open: a disabled one never opens, and its reader would see only
+     * "#3". A chosen id with no name in hand is looked up once (asked: a
+     * failure is not retried on every edit to the form), and only by a role
+     * that may read it, so no request is refused. Collections and categories
+     * come back whole; a product is fetched by its id.
+     */
+    const READ = { products: "catalog.read", collections: "collections.read", categories: "categories.read" };
+    const asked = new Set();
+    $effect(() => {
+        const unnamed = value.filter((v) => !options.some((o) => o.id === v) && !names.has(v) && !missing.has(v) && !(v in fetched) && !asked.has(`${kind}:${v}`));
+        if (!unnamed.length || !can(READ[kind])) return;
+        for (const v of unnamed) asked.add(`${kind}:${v}`);
+        untrack(() => {
+            if (kind !== "products") {
+                if (loadedKind !== kind) loadOptions("");
+                return;
+            }
+            // ponytail: one request per product; a section holds at most 24.
+            for (const v of unnamed) {
+                api.get(`/api/admin/products/${v}`)
+                    .then((p) => (fetched = { ...fetched, [v]: p.title }))
+                    .catch(() => {});
+            }
+        });
+    });
 
     /** Debounced, because the product search goes over the wire per keystroke. */
     function onFilterInput() {
@@ -215,13 +246,17 @@
                 {target.label}
             </span>
         {/each}
-        <span class="label chip-new">
-            <i class="ri-add-line" aria-hidden="true"></i>
-            {chosen.length ? "Add" : `Add ${noun}`}
-        </span>
+        {#if !disabled}
+            <span class="label chip-new">
+                <i class="ri-add-line" aria-hidden="true"></i>
+                {chosen.length ? "Add" : `Add ${noun}`}
+            </span>
+        {:else if !chosen.length}
+            <span class="placeholder">None</span>
+        {/if}
     </button>
 
-    {#if chosen.length}
+    {#if chosen.length && !disabled}
         <button
             type="button"
             class="chip-add"

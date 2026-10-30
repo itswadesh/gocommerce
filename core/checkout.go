@@ -330,7 +330,7 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// was typing their address is refused by the same mechanism that refuses
 		// a sold-out line.
 		applied, eligible, err := s.app.discounts.applyTx(ctx, tx, discountRequest{
-			Code: cartCode, Email: in.Email, Lines: dlines,
+			Code: cartCode, Email: in.Email, Lines: dlines, Method: code,
 		})
 		if err != nil {
 			return err
@@ -382,7 +382,11 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// Inclusive prices already contain the tax, so it is reported rather
 		// than added. Exclusive prices do not, so it is added. Getting this
 		// backwards is the one bug in tax that a customer notices immediately.
-		total := subtotal + shipping - discount
+		// Not taxed and not discounted: it is the method's charge, not the
+		// basket's. ponytail: a store that must charge GST on it needs a tax
+		// line of its own here.
+		paymentFee := s.app.payments.paymentFeeMinor(ctx, code, currency)
+		total := subtotal + shipping - discount + paymentFee
 		if !inclusive {
 			total += tax
 		}
@@ -396,7 +400,8 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				Method: code, Input: in, VerifiedEmail: verified.String,
 				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
 				Discount: money(discount, currency), Tax: money(tax, currency),
-				Total: money(total, currency), ByOperator: byOperator(ctx), Tx: tx,
+				PaymentFee: money(paymentFee, currency),
+				Total:      money(total, currency), ByOperator: byOperator(ctx), Tx: tx,
 			}
 			for _, l := range lines {
 				attempt.Lines = append(attempt.Lines, AttemptLine{
@@ -438,17 +443,18 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			                    email, phone, name, address,
 			                    lang, metadata, shipping_method, channel_id,
 			                    reservation_expires_at,
-			                    tax_exempt_group_id, tax_exempt_group_code, tax_exempt_group_name)
+			                    tax_exempt_group_id, tax_exempt_group_code, tax_exempt_group_name,
+			                    payment_fee_minor)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
 			        (SELECT channel_id FROM carts WHERE id = $22),
 			        now() + make_interval(secs => $21),
-			        $23, $24, $25)`,
+			        $23, $24, $25, $26)`,
 			orderID, number, accessToken, OrderPending, PaymentPending, code, currency,
 			subtotal, shipping, discount, tax, inclusive, total,
 			strings.ToLower(in.Email), nullString(in.Phone),
 			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta, shippingMethod,
 			s.app.cfg.OrderTTL.Seconds(), cartID,
-			exemptID, exemptCode, exemptName,
+			exemptID, exemptCode, exemptName, paymentFee,
 		); err != nil {
 			return err
 		}
