@@ -44,6 +44,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"email-sendgrid":   "/dash/notifications/email",
 		"sms-msg91":        "/dash/notifications/sms",
 		"sms-twilio":       "/dash/notifications/sms",
+		"whatsapp-cloud":   "/dash/notifications/whatsapp",
 		"navigation":       "/dash/menus",
 		"faq":              "/dash/faq",
 		"showcases":        "/dash/showcases",

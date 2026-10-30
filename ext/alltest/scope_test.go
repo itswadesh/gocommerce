@@ -43,6 +43,7 @@ import (
 	resend "github.com/itswadesh/gocommerce/ext/notify-resend"
 	sendgrid "github.com/itswadesh/gocommerce/ext/notify-sendgrid"
 	twilio "github.com/itswadesh/gocommerce/ext/notify-twilio"
+	whatsapp "github.com/itswadesh/gocommerce/ext/notify-whatsapp"
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
 	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
@@ -109,6 +110,7 @@ func everyModule() []gocommerce.Module {
 		resend.New(resend.Config{}),
 		sendgrid.New(sendgrid.Config{}),
 		twilio.New(twilio.Config{}),
+		whatsapp.New(whatsapp.Config{}),
 		adyen.New(adyen.Config{}),
 		cashfree.New(cashfree.Config{}),
 		clover.New(clover.Config{}),
