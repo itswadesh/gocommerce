@@ -485,6 +485,20 @@ test("the header and footer are previewed on the home page, which draws both", (
     assert.equal(previewAddress("https://shop.example.com", "k", "", "/", ""), "https://shop.example.com/?preview=k");
 });
 
+import { arrivalSection } from "../src/lib/layouts.js";
+
+test("the header and footer open on their one section, whoever is looking", () => {
+    // Opened only for a role that could edit, a view-only role saw a Footer
+    // row and an empty panel beside it. A viewer now reads the same settings
+    // as an editor does, disabled, so the page opens on them for anybody.
+    assert.equal(arrivalSection("footer", [{ id: "f1", type: "footer" }]), "f1");
+    assert.equal(arrivalSection("header", [{ id: "h1", type: "header" }]), "h1");
+    // A page of many sections waits for one to be picked.
+    assert.equal(arrivalSection("home", [{ id: "s1", type: "hero" }]), null);
+    assert.equal(arrivalSection("product", [{ id: "m", type: "main-product" }]), null);
+    assert.equal(arrivalSection("footer", []), null);
+});
+
 test("a header's row says what its strip says", () => {
     assert.equal(sectionSummary({ type: "header", settings: { announcement_text: "Free returns" } }, chromeRegistry).text, "Free returns");
 });

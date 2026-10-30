@@ -12639,3 +12639,31 @@ html .tw\:rounded-2xl {
         transform: none;
     }
 }
+
+/*
+ * Themes › a page, for a role that may only look: the settings as they are,
+ * every control disabled (SectionFields' readonly). PocketBase paints a
+ * disabled field's value and label in --surfaceTxtDisabledColor, 2.2:1 on the
+ * field, which leaves nothing to read; here they keep an enabled field's
+ * colours. The note above them, the plain cursor and the missing buttons say
+ * they can't be changed.
+ */
+.sf-field.readonly :is(input[type="text"], input[type="number"], textarea):disabled,
+.sf-field.readonly .input.select.disabled .selected-item {
+    color: var(--surfaceTxtColor);
+    -webkit-text-fill-color: currentColor; /* Safari fades a disabled field's text again */
+    opacity: 1;
+}
+.sf-field.readonly .field > label {
+    color: var(--surfaceTxtHintColor);
+}
+.sf-field.readonly :is(.sf-swatch, .sf-icon, .sf-icon-input) {
+    cursor: default;
+}
+.sf-field.readonly :is(.sf-swatch, .sf-icon):is(:hover, :active) {
+    transform: none;
+}
+.sf-field.readonly .sf-icon:not(.active):hover {
+    background: var(--cardFace);
+    color: var(--surfaceTxtHintColor);
+}

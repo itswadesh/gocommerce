@@ -12,6 +12,9 @@
      *
      * kind "video" picks a video from Files instead, and shows its name
      * rather than a picture.
+     *
+     * disabled shows the picture and its address, with nothing to change
+     * them by.
      */
     import { api, can, query } from "$lib/api.js";
     import { mediaQuery } from "$lib/media.js";
@@ -19,10 +22,10 @@
     import { rise } from "$lib/motion.js";
     import MediaLibrary from "$lib/components/MediaLibrary.svelte";
 
-    let { id, label, value = $bindable(""), hint = "", required = false, kind = "image" } = $props();
+    let { id, label, value = $bindable(""), hint = "", required = false, kind = "image", disabled = false } = $props();
 
     const PER_PAGE = 24;
-    const pickable = $derived(can("media.read"));
+    const pickable = $derived(can("media.read") && !disabled);
 
     let open = $state(false);
     let items = $state([]);
@@ -82,6 +85,7 @@
         spellcheck="false"
         placeholder="/media/… or https://…"
         {required}
+        {disabled}
         bind:value
         aria-describedby={hint ? `${id}-hint` : undefined}
     />
@@ -114,7 +118,7 @@
             <span class="txt">{open ? "Close Files" : value ? "Choose another" : "Choose from Files"}</span>
         </button>
     {/if}
-    {#if value && !required}
+    {#if value && !required && !disabled}
         <button type="button" class="btn sm transparent secondary" onclick={() => (value = "")}>
             <span class="txt">Remove</span>
         </button>

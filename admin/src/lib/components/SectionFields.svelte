@@ -29,6 +29,10 @@
      * grid of the engine's fixed set, each shown as itself (D139). A note is
      * a warning shown beside the colour it names (key), such as a pair that
      * reads poorly (D155); it never stops the edit.
+     *
+     * readonly draws the same form for a role that may only look: every
+     * control disabled with its value showing, and nothing offered that would
+     * change one (no Add, Remove, Move, Clear or Files).
      */
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
@@ -37,7 +41,7 @@
     import { rise } from "$lib/motion.js";
     import Self from "./SectionFields.svelte";
 
-    let { fields = [], settings = $bindable({}), idPrefix = "sf", errorKey = "", notes = [] } = $props();
+    let { fields = [], settings = $bindable({}), idPrefix = "sf", errorKey = "", notes = [], readonly = false } = $props();
 
     const shown = $derived(visibleFields(fields, settings));
     $effect(() => {
@@ -88,9 +92,9 @@
 
 {#each shown as f (f.key)}
     {@const id = `${idPrefix}-${f.key}`}
-    <div class="sf-field" in:rise>
+    <div class="sf-field" class:readonly in:rise>
         {#if f.kind === "image" || f.kind === "video"}
-            <ImageField {id} kind={f.kind} label={f.label} hint={f.help ?? ""} required={f.required} bind:value={() => settings[f.key] ?? "", (v) => set(f.key, v)} />
+            <ImageField {id} kind={f.kind} label={f.label} hint={f.help ?? ""} required={f.required} disabled={readonly} bind:value={() => settings[f.key] ?? "", (v) => set(f.key, v)} />
         {:else if f.kind === "color"}
             {@const fieldNotes = notes.filter((n) => n.key === f.key)}
             <div class="field" class:error={errorKey === f.key}>
@@ -102,6 +106,7 @@
                         class:unset={!settings[f.key]}
                         aria-label="Pick {f.label}"
                         value={settings[f.key] || "#ffffff"}
+                        disabled={readonly}
                         oninput={(e) => setColor(f.key, e.currentTarget.value)}
                     />
                     <input
@@ -113,10 +118,11 @@
                         placeholder="Storefront's own"
                         aria-describedby={fieldNotes.length ? `${id}-notes` : undefined}
                         value={settings[f.key] ?? ""}
+                        disabled={readonly}
                         onchange={(e) => setColor(f.key, e.currentTarget.value)}
                         oninput={(e) => setColor(f.key, e.currentTarget.value)}
                     />
-                    {#if settings[f.key]}
+                    {#if settings[f.key] && !readonly}
                         <button type="button" class="btn sm transparent secondary" onclick={() => set(f.key, null)} aria-label="Clear {f.label}" in:rise={{ y: 0, duration: 150 }}>
                             <span class="txt">Clear</span>
                         </button>
@@ -137,7 +143,7 @@
                 <div class="sf-icon-grid">
                     {#each iconChoices(f.options) as o (o.value)}
                         <label class="sf-icon" class:active={current === o.value} title={o.label}>
-                            <input type="radio" class="sf-icon-input" name={id} value={o.value} checked={current === o.value} aria-label={o.label} onchange={() => set(f.key, o.value)} />
+                            <input type="radio" class="sf-icon-input" name={id} value={o.value} checked={current === o.value} disabled={readonly} aria-label={o.label} onchange={() => set(f.key, o.value)} />
                             <i class={o.glyph} aria-hidden="true"></i>
                         </label>
                     {/each}
@@ -146,7 +152,7 @@
             {#if f.help}<div class="field-help">{f.help}</div>{/if}
         {:else if f.kind === "bool"}
             <div class="field sf-switch">
-                <input {id} type="checkbox" class="switch" checked={!!settings[f.key]} onchange={(e) => set(f.key, e.currentTarget.checked)} />
+                <input {id} type="checkbox" class="switch" checked={!!settings[f.key]} disabled={readonly} onchange={(e) => set(f.key, e.currentTarget.checked)} />
                 <label for={id}>{f.label}</label>
             </div>
             {#if f.help}<div class="field-help">{f.help}</div>{/if}
@@ -157,22 +163,26 @@
                     <div class="sf-item" in:rise>
                         <div class="sf-item-head">
                             <span class="txt-hint txt-sm">{i + 1}</span>
-                            <div class="sf-item-actions">
-                                <button type="button" class="btn sm circle transparent secondary" disabled={i === 0} onclick={() => moveItem(f.key, i, -1)} aria-label="Move item {i + 1} up">
-                                    <i class="ri-arrow-up-line" aria-hidden="true"></i>
-                                </button>
-                                <button type="button" class="btn sm circle transparent secondary" disabled={i === listItems(f.key).length - 1} onclick={() => moveItem(f.key, i, 1)} aria-label="Move item {i + 1} down">
-                                    <i class="ri-arrow-down-line" aria-hidden="true"></i>
-                                </button>
-                                <button type="button" class="btn sm circle transparent danger" onclick={() => removeItem(f.key, i)} aria-label="Remove item {i + 1}">
-                                    <i class="ri-delete-bin-line" aria-hidden="true"></i>
-                                </button>
-                            </div>
+                            {#if !readonly}
+                                <div class="sf-item-actions">
+                                    <button type="button" class="btn sm circle transparent secondary" disabled={i === 0} onclick={() => moveItem(f.key, i, -1)} aria-label="Move item {i + 1} up">
+                                        <i class="ri-arrow-up-line" aria-hidden="true"></i>
+                                    </button>
+                                    <button type="button" class="btn sm circle transparent secondary" disabled={i === listItems(f.key).length - 1} onclick={() => moveItem(f.key, i, 1)} aria-label="Move item {i + 1} down">
+                                        <i class="ri-arrow-down-line" aria-hidden="true"></i>
+                                    </button>
+                                    <button type="button" class="btn sm circle transparent danger" onclick={() => removeItem(f.key, i)} aria-label="Remove item {i + 1}">
+                                        <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            {/if}
                         </div>
-                        <Self fields={f.fields ?? []} bind:settings={() => item, (v) => setItem(f.key, i, v)} idPrefix="{id}-{i}" />
+                        <Self fields={f.fields ?? []} bind:settings={() => item, (v) => setItem(f.key, i, v)} idPrefix="{id}-{i}" {readonly} />
                     </div>
+                {:else}
+                    {#if readonly}<p class="txt-hint txt-sm m-0">None</p>{/if}
                 {/each}
-                {#if !f.max_items || listItems(f.key).length < f.max_items}
+                {#if !readonly && (!f.max_items || listItems(f.key).length < f.max_items)}
                     <button type="button" class="btn sm transparent secondary" onclick={() => addItem(f.key)}>
                         <i class="ri-add-line" aria-hidden="true"></i><span class="txt">Add</span>
                     </button>
@@ -184,14 +194,14 @@
             <div class="field" class:required={f.required} class:error={errorKey === f.key || offStore}>
                 <label for={id}>{f.label}</label>
                 {#if f.kind === "textarea"}
-                    <textarea {id} rows="4" maxlength={f.max_length || undefined} value={settings[f.key] ?? ""} oninput={(e) => set(f.key, e.currentTarget.value)}></textarea>
+                    <textarea {id} rows="4" maxlength={f.max_length || undefined} value={settings[f.key] ?? ""} disabled={readonly} oninput={(e) => set(f.key, e.currentTarget.value)}></textarea>
                 {:else if f.kind === "select"}
-                    <Select {id} options={f.options ?? []} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
+                    <Select {id} options={f.options ?? []} disabled={readonly} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
                 {:else if f.kind === "menu"}
                     {#if menus === null}
                         <span class="skeleton-loader sf-menu-wait" aria-hidden="true"></span>
                     {:else}
-                        <Select {id} options={menuOptions(menus, settings[f.key] ?? f.default ?? "")} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
+                        <Select {id} options={menuOptions(menus, settings[f.key] ?? f.default ?? "")} disabled={readonly} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
                     {/if}
                 {:else if f.kind === "number"}
                     <input
@@ -202,14 +212,15 @@
                         max={f.max}
                         step="1"
                         value={settings[f.key] ?? f.default ?? ""}
+                        disabled={readonly}
                         oninput={(e) => set(f.key, e.currentTarget.value === "" ? null : Number(e.currentTarget.value))}
                     />
                 {:else if f.kind === "products"}
-                    <TargetPicker {id} kind="products" bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
+                    <TargetPicker {id} kind="products" disabled={readonly} bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
                 {:else if f.kind === "collections"}
-                    <TargetPicker {id} kind="collections" bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
+                    <TargetPicker {id} kind="collections" disabled={readonly} bind:value={() => settings[f.key] ?? [], (v) => set(f.key, v)} />
                 {:else if f.kind === "collection"}
-                    <TargetPicker {id} kind="collections" bind:value={() => collectionValue(f.key), (v) => set(f.key, v.length ? v[v.length - 1] : null)} />
+                    <TargetPicker {id} kind="collections" disabled={readonly} bind:value={() => collectionValue(f.key), (v) => set(f.key, v.length ? v[v.length - 1] : null)} />
                 {:else}
                     <input
                         {id}
@@ -222,6 +233,7 @@
                         aria-invalid={offStore || undefined}
                         aria-describedby={offStore ? `${id}-error` : undefined}
                         value={settings[f.key] ?? ""}
+                        disabled={readonly}
                         oninput={(e) => set(f.key, e.currentTarget.value)}
                     />
                 {/if}
