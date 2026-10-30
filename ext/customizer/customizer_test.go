@@ -97,26 +97,64 @@ func withExif(j []byte, orientation uint16, secret string) []byte {
 	return append(out, j[2:]...)
 }
 
-// pngBomb is a PNG header claiming a w × h picture of colour and alpha at
-// depth bits a channel, with no picture behind it.
-func pngBomb(w, h uint32, depth byte) []byte {
-	ihdr := make([]byte, 13)
-	binary.BigEndian.PutUint32(ihdr[0:], w)
-	binary.BigEndian.PutUint32(ihdr[4:], h)
-	ihdr[8], ihdr[9] = depth, 6
-	chunk := append([]byte("IHDR"), ihdr...)
-	out := []byte("\x89PNG\r\n\x1a\n")
-	out = binary.BigEndian.AppendUint32(out, 13)
-	out = append(out, chunk...)
-	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(chunk))
+type pngHeader struct {
+	w, h          uint32
+	depth, colour byte
+	interlaced    bool
+	transparent   bool
 }
 
-// jpegBomb is a JPEG header claiming a w × h colour photo, its brightness
-// sampled as luma says (0x22 for 4:2:0, 0x11 for full resolution), with no
-// picture behind it.
-func jpegBomb(w, h uint16, marker, luma byte) []byte {
-	return []byte{0xFF, 0xD8, 0xFF, marker, 0, 17, 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 3,
-		1, luma, 0, 2, 0x11, 1, 3, 0x11, 1, 0xFF, 0xDA, 0, 2}
+func pngBomb(p pngHeader) []byte {
+	out := []byte("\x89PNG\r\n\x1a\n")
+	chunk := func(typ string, data []byte) {
+		out = binary.BigEndian.AppendUint32(out, uint32(len(data)))
+		c := append([]byte(typ), data...)
+		out = append(out, c...)
+		out = binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(c))
+	}
+	ihdr := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, p.w), p.h)
+	ihdr = append(ihdr, p.depth, p.colour, 0, 0, 0)
+	if p.interlaced {
+		ihdr[12] = 1
+	}
+	chunk("IHDR", ihdr)
+	if p.transparent {
+		chunk("tRNS", make([]byte, map[byte]int{0: 2, 2: 6}[p.colour]))
+	}
+	chunk("IDAT", nil)
+	return out
+}
+
+func jpegBomb(w, h uint16, marker byte, gadget string, hv ...byte) []byte {
+	out := []byte{0xFF, jpegStart}
+	if len(hv) == 4 {
+		out = append(out, 0xFF, 0xEE, 0, 14, 'A', 'd', 'o', 'b', 'e', 0, 100, 0, 0, 0, 0, 0)
+	}
+	frame := []byte{0xFF, marker, 0, byte(8 + 3*len(hv)), 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), byte(len(hv))}
+	for c, s := range hv {
+		id := byte(c + 1)
+		if gadget == "rgb" {
+			id = "RGB"[c]
+		}
+		frame = append(frame, id, s, 0)
+	}
+	switch gadget {
+	case "stray byte":
+		out = append(out, 0)
+	case "restart":
+		frame = frameBehindRestart(frame, w, h)
+	}
+	return append(append(out, frame...), 0xFF, jpegScan, 0, 2)
+}
+
+func frameBehindRestart(frame []byte, w, h uint16) []byte {
+	misreadLength := int(binary.BigEndian.Uint16(frame))
+	commentStart := 2 + len(frame) + 4
+	greyFrame := []byte{0xFF, jpegBaseline, 0, 11, 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0}
+	comment := make([]byte, 0xFFFF-2)
+	copy(comment[2+misreadLength-commentStart:], greyFrame)
+	out := append([]byte{0xFF, 0xD0}, frame...)
+	return append(append(out, 0xFF, 0xFE, 0xFF, 0xFF), comment...)
 }
 
 func (h *harness) media(ctx context.Context, name, mime string, body []byte) *gocommerce.MediaItem {
@@ -431,7 +469,7 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 }
 
 func TestUploadsAreRewrittenAndLimited(t *testing.T) {
-	h := newHarness(t, Config{UploadsPerHour: 11})
+	h := newHarness(t, Config{UploadsPerHour: 13})
 
 	photo := withExif(jpegRedTop(40, 80), 6, "GPS 12.9716N 77.5946E")
 	up := h.upload("", photo)
@@ -461,23 +499,24 @@ func TestUploadsAreRewrittenAndLimited(t *testing.T) {
 	}
 
 	gif := []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+	pastTheBudget := http.StatusUnsupportedMediaType
 	for name, tc := range map[string]struct {
 		field string
 		body  []byte
 		want  int
 	}{
-		"text":        {"file", []byte("<html><script>alert(1)</script></html>"), http.StatusUnsupportedMediaType},
-		"gif":         {"file", gif, http.StatusUnsupportedMediaType},
-		"broken jpeg": {"file", []byte("\xff\xd8\xff\xe0 not really a jpeg"), http.StatusUnsupportedMediaType},
-		"bomb":        {"file", pngBomb(8000, 6000, 8), http.StatusUnprocessableEntity},
-		"no file":     {"photo", jpegRedTop(10, 10), http.StatusBadRequest},
-		// 36 megapixels at eight bytes a pixel is over the decode budget and
-		// at four is not, so that one gets as far as decoding, which finds no
-		// picture. The same for 24 megapixels at 15 bytes and at 1.5.
-		"16-bit PNG":                   {"file", pngBomb(6000, 6000, 16), http.StatusUnprocessableEntity},
-		"8-bit PNG":                    {"file", pngBomb(6000, 6000, 8), http.StatusUnsupportedMediaType},
-		"progressive full-colour JPEG": {"file", jpegBomb(6000, 4000, jpegProgressive, 0x11), http.StatusUnprocessableEntity},
-		"baseline 4:2:0 JPEG":          {"file", jpegBomb(6000, 4000, jpegBaseline, 0x22), http.StatusUnsupportedMediaType},
+		"text":                         {"file", []byte("<html><script>alert(1)</script></html>"), http.StatusUnsupportedMediaType},
+		"gif":                          {"file", gif, http.StatusUnsupportedMediaType},
+		"broken jpeg":                  {"file", []byte("\xff\xd8\xff\xe0 not really a jpeg"), http.StatusUnsupportedMediaType},
+		"bomb":                         {"file", pngBomb(pngHeader{w: 8000, h: 6000, depth: 8, colour: 6}), http.StatusUnprocessableEntity},
+		"no file":                      {"photo", jpegRedTop(10, 10), http.StatusBadRequest},
+		"16-bit PNG":                   {"file", pngBomb(pngHeader{w: 6000, h: 6000, depth: 16, colour: 6}), http.StatusUnprocessableEntity},
+		"8-bit PNG":                    {"file", pngBomb(pngHeader{w: 6000, h: 6000, depth: 8, colour: 6}), pastTheBudget},
+		"progressive full-colour JPEG": {"file", jpegBomb(6000, 4000, jpegProgressive, "", 0x11, 0x11, 0x11), http.StatusUnprocessableEntity},
+		"baseline 4:2:0 JPEG":          {"file", jpegBomb(6000, 4000, jpegBaseline, "", 0x22, 0x11, 0x11), pastTheBudget},
+		"12-megapixel photo":           {"file", withExif(jpegBomb(4032, 3024, jpegBaseline, "", 0x22, 0x11, 0x11), 6, ""), pastTheBudget},
+		"12-megapixel progressive photo": {"file", withExif(jpegBomb(4032, 3024, jpegProgressive, "", 0x22, 0x11, 0x11), 6, ""),
+			pastTheBudget},
 	} {
 		rec := h.uploadRaw("", tc.field, tc.body)
 		if rec.Code != tc.want {
@@ -489,7 +528,7 @@ func TestUploadsAreRewrittenAndLimited(t *testing.T) {
 		}
 	}
 	if rec := h.uploadRaw("", "file", make([]byte, maxUploadBytes+1)); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("the twelfth upload this hour = %d, want 429", rec.Code)
+		t.Errorf("the fourteenth upload this hour = %d, want 429", rec.Code)
 	}
 
 	big := newHarness(t, Config{})
@@ -497,6 +536,68 @@ func TestUploadsAreRewrittenAndLimited(t *testing.T) {
 	if rec := big.uploadRaw("", "file", tooBig); rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("a file over 15 MB = %d %s, want 413", rec.Code, rec.Body)
 	}
+}
+
+func TestAPictureIsReckonedAsTheDecoderReadsIt(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	cmyk := []byte{0x11, 0x11, 0x11, 0x11}
+	for name, body := range map[string][]byte{
+		"CMYK behind a restart marker":              jpegBomb(8000, 5000, jpegProgressive, "restart", cmyk...),
+		"colour behind a restart marker":            jpegBomb(8000, 5000, jpegProgressive, "restart", 0x11, 0x11, 0x11),
+		"CMYK behind a stray byte":                  jpegBomb(5000, 3570, jpegProgressive, "stray byte", cmyk...),
+		"components named R, G and B":               jpegBomb(5000, 3570, jpegProgressive, "rgb", 0x11, 0x11, 0x11),
+		"16-bit grey with a transparent colour":     pngBomb(pngHeader{w: 8000, h: 5000, depth: 16, transparent: true}),
+		"interlaced grey with a transparent colour": pngBomb(pngHeader{w: 8000, h: 5000, depth: 8, interlaced: true, transparent: true}),
+	} {
+		if rec := h.uploadRaw("", "file", body); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s = %d %s, want 422: too large to read", name, rec.Code, rec.Body)
+		}
+	}
+	if rec := h.uploadRaw("", "file", pngBomb(pngHeader{w: 8000, h: 5000, depth: 8, interlaced: true})); rec.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("interlaced grey, nothing transparent = %d %s, want it read, which finds no picture", rec.Code, rec.Body)
+	}
+}
+
+func FuzzTheWalkFindsTheFrameTheDecoderDecodes(f *testing.F) {
+	f.Add(jpegRedTop(24, 16))
+	f.Add(withExif(jpegRedTop(16, 8), 6, ""))
+	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
+	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
+	f.Add(jpegBomb(16, 16, jpegBaseline, "rgb", 0x11, 0x11, 0x11))
+	var grey bytes.Buffer
+	_ = jpeg.Encode(&grey, image.NewGray(image.Rect(0, 0, 9, 9)), nil)
+	f.Add(grey.Bytes())
+	ratios := map[[2]int]image.YCbCrSubsampleRatio{{1, 1}: image.YCbCrSubsampleRatio444, {1, 2}: image.YCbCrSubsampleRatio440,
+		{2, 1}: image.YCbCrSubsampleRatio422, {2, 2}: image.YCbCrSubsampleRatio420, {4, 1}: image.YCbCrSubsampleRatio411,
+		{4, 2}: image.YCbCrSubsampleRatio410}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(b))
+		if err != nil || cfg.Width*cfg.Height > 1<<20 {
+			return
+		}
+		img, err := jpeg.Decode(bytes.NewReader(b))
+		if err != nil {
+			return
+		}
+		frame, _, ok := jpegHeader(b)
+		want := map[string]int{"*image.Gray": 1, "*image.YCbCr": 3, "*image.RGBA": 3, "*image.CMYK": 4}[fmt.Sprintf("%T", img)]
+		if !ok || frame.width != cfg.Width || frame.height != cfg.Height || len(frame.components) != want {
+			t.Fatalf("walked to %+v (ok %v); the decoder made a %d × %d %T", frame, ok, cfg.Width, cfg.Height, img)
+		}
+		if y, isYCbCr := img.(*image.YCbCr); isYCbCr {
+			maxH, maxV := 1, 1
+			for _, c := range frame.components {
+				maxH, maxV = max(maxH, c.h), max(maxV, c.v)
+			}
+			ratio := image.YCbCrSubsampleRatio444
+			if hr, vr, known := chromaRatio(frame.components, maxH, maxV); known {
+				ratio = ratios[[2]int{hr, vr}]
+			}
+			if y.SubsampleRatio != ratio {
+				t.Fatalf("walked to %+v, chroma at %v; the decoder kept it at %v", frame, ratio, y.SubsampleRatio)
+			}
+		}
+	})
 }
 
 func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
@@ -946,7 +1047,7 @@ func TestReportsCannotReadShoppersPhotos(t *testing.T) {
 
 func TestOrientationReadsAndTurns(t *testing.T) {
 	for o := 1; o <= 8; o++ {
-		if got := jpegOrientation(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
+		if _, got, _ := jpegHeader(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
 			t.Errorf("orientation %d read as %d", o, got)
 		}
 		src := image.NewRGBA(image.Rect(0, 0, 3, 2))
@@ -957,7 +1058,10 @@ func TestOrientationReadsAndTurns(t *testing.T) {
 			t.Errorf("orientation %d: the top-left pixel is not at %v", o, want)
 		}
 	}
-	if jpegOrientation(jpegRedTop(4, 4)) != 1 || jpegOrientation([]byte("nope")) != 1 {
-		t.Error("a JPEG without EXIF, or not a JPEG, should read as stored")
+	if _, plain, _ := jpegHeader(jpegRedTop(4, 4)); plain != 1 {
+		t.Error("a JPEG without EXIF should read as stored")
+	}
+	if _, nope, _ := jpegHeader([]byte("nope")); nope != 1 {
+		t.Error("something that is not a JPEG should read as stored")
 	}
 }

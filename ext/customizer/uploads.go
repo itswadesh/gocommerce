@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/jpeg"
 	"image/png"
@@ -34,15 +35,23 @@ const (
 
 var uploadDeadline = 15 * time.Second
 
-// The JPEG and EXIF markers jpegSegments walks.
 const (
 	jpegMarker      = 0xFF
 	jpegStart       = 0xD8
-	jpegApp1        = 0xE1
-	jpegScan        = 0xDA
 	jpegEnd         = 0xD9
+	jpegRestart0    = 0xD0
+	jpegRestart7    = 0xD7
 	jpegBaseline    = 0xC0
+	jpegExtended    = 0xC1
 	jpegProgressive = 0xC2
+	jpegHuffman     = 0xC4
+	jpegScan        = 0xDA
+	jpegQuant       = 0xDB
+	jpegInterval    = 0xDD
+	jpegApp0        = 0xE0
+	jpegApp1        = 0xE1
+	jpegApp15       = 0xEF
+	jpegComment     = 0xFE
 	exifOrientation = 0x0112
 )
 
@@ -208,15 +217,14 @@ func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, er
 	if err != nil {
 		return 0, "", bounds, errNotAPicture
 	}
-	pixels := int64(cfg.Width) * int64(cfg.Height)
-	if cfg.Width <= 0 || cfg.Height <= 0 || pixels > maxUploadPixels {
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
 		return 0, "", bounds, errTooManyPixels
 	}
 	orientation := 1
 	if mime == "image/jpeg" {
-		orientation = jpegOrientation(body)
+		_, orientation, _ = jpegHeader(body)
 	}
-	if perPixel, advice := decodeCost(body, mime, orientation); float64(pixels)*perPixel > decodeBudget {
+	if cost, advice := decodeCost(body, mime, cfg, orientation); cost > decodeBudget {
 		return 0, "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
 	}
 
@@ -224,6 +232,7 @@ func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, er
 	if err != nil {
 		return 0, "", bounds, errNotAPicture
 	}
+	img = encodable(img)
 	if mime == "image/jpeg" {
 		img = orient(img, orientation)
 	}
@@ -244,6 +253,34 @@ func rewrite(file *os.File) (size int64, mime string, bounds image.Rectangle, er
 	return size, mime, img.Bounds(), nil
 }
 
+// image/png's and image/jpeg's encoders (Go 1.27, writer.go) read a Gray16,
+// RGBA64, NRGBA64 or CMYK picture through an interface, a pixel at a time,
+// which allocates for every pixel.
+func encodable(img image.Image) image.Image {
+	switch m := img.(type) {
+	case *image.Gray16:
+		return &image.Gray{Pix: highBytes(m.Pix), Stride: m.Stride / 2, Rect: m.Rect}
+	case *image.RGBA64:
+		return &image.RGBA{Pix: highBytes(m.Pix), Stride: m.Stride / 2, Rect: m.Rect}
+	case *image.NRGBA64:
+		return &image.NRGBA{Pix: highBytes(m.Pix), Stride: m.Stride / 2, Rect: m.Rect}
+	case *image.CMYK:
+		for i := 0; i+4 <= len(m.Pix); i += 4 {
+			m.Pix[i], m.Pix[i+1], m.Pix[i+2] = color.CMYKToRGB(m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3])
+			m.Pix[i+3] = 0xFF
+		}
+		return &image.RGBA{Pix: m.Pix, Stride: m.Stride, Rect: m.Rect}
+	}
+	return img
+}
+
+func highBytes(p []byte) []byte {
+	for i := range len(p) / 2 {
+		p[i] = p[2*i]
+	}
+	return p[:len(p)/2]
+}
+
 func randomID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -260,123 +297,232 @@ func validID(s string) bool {
 	return err == nil
 }
 
-// decodeCost is about how many bytes each pixel of a picture holds while it
-// is decoded, turned and written again, read from its header, and what to
-// tell a shopper whose picture holds too many. It follows what the standard
-// library allocates. A PNG decodes to one byte a pixel (grey, a palette) or
-// four (colour), twice that at 16 bits, and an interlaced one keeps each pass
-// beside the whole. A JPEG decodes to a byte a sample, so 1.5 a pixel for the
-// usual 4:2:0 colour and 3 for full-resolution colour; a progressive one also
-// keeps every coefficient, four bytes a sample, until its last scan; CMYK is
-// copied into a picture of its own; and turning it takes four bytes a pixel.
-func decodeCost(body []byte, kind string, orientation int) (float64, string) {
-	if kind == "image/png" {
-		// IHDR, which DecodeConfig has read: the signature, the chunk's length
-		// and type, the width and height, then the bit depth, the colour type,
-		// the compression and filter methods, and the interlace method.
-		depth, colour, interlaced := body[24], body[25], body[28] == 1
-		cost := 4.0
-		if colour == 0 || colour == 3 {
-			cost = 1
+func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (cost int64, advice string) {
+	w, h := int64(cfg.Width), int64(cfg.Height)
+	if mime == "image/png" {
+		advice = "this picture is too large to read; make it smaller"
+		if body[24] == 16 {
+			advice = "this picture is a 16-bit PNG too large to read; save it as an ordinary 8-bit picture"
 		}
-		if interlaced {
-			cost *= 2
-		}
-		if depth == 16 {
-			return cost * 2, "this picture is a 16-bit PNG too large to read; save it as an ordinary 8-bit picture"
-		}
-		return cost, "this picture is too large to read; make it smaller"
+		return int64(len(body)) + pngCost(body, w, h), advice
 	}
-	progressive, components, samples := jpegFrame(body)
-	cost := samples
-	if progressive {
-		cost += 4 * samples
+	f, _, ok := jpegHeader(body)
+	if !ok || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
+		f = dearestFrame(cfg)
 	}
-	if components == 4 {
-		cost += 4
-	}
+	cost = int64(len(body)) + jpegCost(f)
 	if orientation >= 2 {
-		cost += 4
+		cost += 4 * w * h
 	}
-	if progressive {
+	if f.progressive {
 		return cost, "this photo is a progressive JPEG too large to read; save it as an ordinary JPEG, or make it smaller"
 	}
 	return cost, "this photo is too large to read; make it smaller"
 }
 
-// jpegSegments calls fn with each marker segment of a JPEG before its first
-// scan, until fn returns false.
-func jpegSegments(b []byte, fn func(marker byte, seg []byte) bool) {
-	if len(b) < 4 || b[0] != jpegMarker || b[1] != jpegStart {
-		return
+func dearestFrame(cfg image.Config) jpegHead {
+	return jpegHead{progressive: true, width: cfg.Width, height: cfg.Height, components: []sampling{{1, 1}, {1, 1}, {1, 1}, {1, 1}}}
+}
+
+// pngCost follows image/png's decoder (Go 1.27, reader.go readImagePass): a
+// grey or palette picture decodes to a byte a pixel, one with colour or
+// transparency to four, twice that at 16 bits, and an interlaced one decodes
+// each pass into a picture of its own beside the whole.
+func pngCost(body []byte, w, h int64) int64 {
+	depth, colour, interlaced := body[24], body[25], body[28] == 1
+	per := int64(4)
+	if colour == 3 || colour == 0 && !pngMayBeTransparent(body) {
+		per = 1
 	}
-	for i := 2; i+4 <= len(b); {
-		if b[i] != jpegMarker {
-			return
+	if depth == 16 {
+		per *= 2
+	}
+	if interlaced {
+		per *= 2
+	}
+	return per * w * h
+}
+
+func pngMayBeTransparent(b []byte) bool {
+	for b = b[8:]; len(b) >= 8; {
+		switch string(b[4:8]) {
+		case "tRNS":
+			return true
+		case "IDAT":
+			return false
 		}
-		marker := b[i+1]
-		if marker == jpegMarker { // a fill byte before the marker
+		next := 12 + uint64(binary.BigEndian.Uint32(b))
+		if next > uint64(len(b)) {
+			break
+		}
+		b = b[next:]
+	}
+	return true
+}
+
+func components(m color.Model) int {
+	switch m {
+	case color.GrayModel:
+		return 1
+	case color.YCbCrModel, color.RGBAModel:
+		return 3
+	case color.CMYKModel:
+		return 4
+	}
+	return 0
+}
+
+type sampling struct{ h, v int }
+
+type jpegHead struct {
+	progressive   bool
+	width, height int
+	components    []sampling
+}
+
+// jpegHeader walks a JPEG's markers up to its first scan the way image/jpeg's
+// decoder does (Go 1.27, reader.go decoder.decode): a byte before a marker
+// that is not 0xFF, a 0xFF fill byte, "\xff\x00" and a restart marker are
+// skipped without a length, and every other segment by its length.
+func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
+	orientation = 1
+	exif := false
+	if len(b) < 2 || b[0] != jpegMarker || b[1] != jpegStart {
+		return f, orientation, false
+	}
+	for i := 2; ; {
+		if i+2 > len(b) {
+			return f, orientation, false
+		}
+		prev, marker := b[i], b[i+1]
+		i += 2
+		for prev != jpegMarker {
+			if i >= len(b) {
+				return f, orientation, false
+			}
+			prev, marker = marker, b[i]
 			i++
+		}
+		if marker == 0 {
 			continue
 		}
-		if marker == jpegScan || marker == jpegEnd {
-			return
+		for marker == jpegMarker {
+			if i >= len(b) {
+				return f, orientation, false
+			}
+			marker = b[i]
+			i++
 		}
-		size := int(binary.BigEndian.Uint16(b[i+2:]))
-		if size < 2 || i+2+size > len(b) {
-			return
+		if marker == jpegEnd {
+			return f, orientation, false
 		}
-		if !fn(marker, b[i+4:i+2+size]) {
-			return
+		if jpegRestart0 <= marker && marker <= jpegRestart7 {
+			continue
 		}
-		i += 2 + size
+		if i+2 > len(b) {
+			return f, orientation, false
+		}
+		n := int(binary.BigEndian.Uint16(b[i:])) - 2
+		i += 2
+		if n < 0 || i+n > len(b) {
+			return f, orientation, false
+		}
+		seg := b[i : i+n]
+		i += n
+		switch {
+		case marker == jpegBaseline || marker == jpegExtended || marker == jpegProgressive:
+			if f.components != nil {
+				return f, orientation, false
+			}
+			if f, ok = jpegFrame(marker, seg); !ok {
+				return f, orientation, false
+			}
+		case marker == jpegScan:
+			return f, orientation, f.components != nil
+		case marker == jpegApp1:
+			if !exif && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
+				exif, orientation = true, tiffOrientation(seg[6:])
+			}
+		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
+			jpegApp0 <= marker && marker <= jpegApp15 || marker == jpegComment:
+		default:
+			return f, orientation, false
+		}
 	}
 }
 
-// jpegOrientation reads the EXIF orientation of a JPEG, 1 (as stored) when it
-// has none. A phone saves a photo the way the sensor sits and records how it
-// was held; throwing the EXIF away without applying it would turn every
-// portrait photo on its side.
-func jpegOrientation(b []byte) int {
-	o := 1
-	jpegSegments(b, func(marker byte, seg []byte) bool {
-		if marker == jpegApp1 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
-			o = tiffOrientation(seg[6:])
-			return false
+// A one-component picture's sampling counts as 1 × 1 whatever it says, as
+// image/jpeg's processSOF takes it.
+func jpegFrame(marker byte, seg []byte) (jpegHead, bool) {
+	f := jpegHead{progressive: marker == jpegProgressive}
+	if len(seg) < 6 || seg[0] != 8 {
+		return f, false
+	}
+	n := int(seg[5])
+	if n != 1 && n != 3 && n != 4 || len(seg) != 6+3*n {
+		return f, false
+	}
+	f.height, f.width = int(binary.BigEndian.Uint16(seg[1:])), int(binary.BigEndian.Uint16(seg[3:]))
+	for c := range n {
+		s := sampling{int(seg[7+3*c] >> 4), int(seg[7+3*c] & 15)}
+		if s.h < 1 || s.h > 4 || s.v < 1 || s.v > 4 || s.h == 3 || s.v == 3 {
+			return f, false
 		}
-		return true
-	})
-	return o
+		if n == 1 {
+			s = sampling{1, 1}
+		}
+		f.components = append(f.components, s)
+	}
+	return f, true
 }
 
-// jpegFrame reads a JPEG's frame header: whether it is progressive, how many
-// components it has, and how many samples a pixel carries once each
-// component's subsampling is counted. A frame it cannot read counts as the
-// dearest the standard library decodes: progressive, full-resolution colour.
-func jpegFrame(b []byte) (progressive bool, components int, samples float64) {
-	progressive, components, samples = true, 3, 3
-	jpegSegments(b, func(marker byte, seg []byte) bool {
-		if marker < jpegBaseline || marker > jpegProgressive {
-			return true
+// jpegCost follows what image/jpeg allocates for a frame (Go 1.27, scan.go
+// makeImg and processSOS, reader.go applyBlack and convertToRGB): the picture
+// in whole blocks, grey or YCbCr, full size in every channel when the chroma
+// is not at one of the six usual ratios; for four components a black channel
+// and then a CMYK picture; for three an RGB picture, since a marker after the
+// first scan can still ask for one; and for a progressive picture every
+// coefficient, four bytes a sample, until the last scan.
+func jpegCost(f jpegHead) int64 {
+	maxH, maxV := 1, 1
+	for _, c := range f.components {
+		maxH, maxV = max(maxH, c.h), max(maxV, c.v)
+	}
+	mxx, myy := int64((f.width+8*maxH-1)/(8*maxH)), int64((f.height+8*maxV-1)/(8*maxV))
+	pw, ph := 8*int64(maxH)*mxx, 8*int64(maxV)*myy
+	pixels := int64(f.width) * int64(f.height)
+	cost := pw * ph
+	if len(f.components) > 1 {
+		cw, ch := pw, ph
+		if hr, vr, ok := chromaRatio(f.components, maxH, maxV); ok {
+			cw, ch = pw/int64(hr), ph/int64(vr)
 		}
-		n := 0
-		if len(seg) >= 6 {
-			n = int(seg[5])
+		cost += 2 * cw * ch
+	}
+	switch len(f.components) {
+	case 3:
+		cost += 4 * pixels
+	case 4:
+		cost += pw*ph + 4*pixels
+	}
+	if f.progressive {
+		for _, c := range f.components {
+			cost += mxx * myy * int64(c.h*c.v) * 64 * 4
 		}
-		if n == 0 || len(seg) < 6+3*n {
-			return false
-		}
-		var hmax, vmax, blocks int
-		for c := range n {
-			h, v := int(seg[7+3*c]>>4), int(seg[7+3*c]&15)
-			hmax, vmax, blocks = max(hmax, h), max(vmax, v), blocks+h*v
-		}
-		if hmax > 0 && vmax > 0 {
-			progressive, components, samples = marker == jpegProgressive, n, float64(blocks)/float64(hmax*vmax)
-		}
-		return false
-	})
-	return progressive, components, samples
+	}
+	return cost
+}
+
+func chromaRatio(c []sampling, maxH, maxV int) (hr, vr int, ok bool) {
+	if c[1] != c[2] || c[0].h != maxH || c[0].v != maxV {
+		return 0, 0, false
+	}
+	hr, vr = maxH/c[1].h, maxV/c[1].v
+	switch hr<<4 | vr {
+	case 0x11, 0x12, 0x21, 0x22, 0x41, 0x42:
+		return hr, vr, true
+	}
+	return 0, 0, false
 }
 
 func tiffOrientation(t []byte) int {
