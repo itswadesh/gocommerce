@@ -109,14 +109,14 @@ func coreMigrations() []Migration {
 		{ID: "0091_fulfillment_tracking", SQL: migration0091FulfillmentTracking},
 		{ID: "0092_order_payment_fee", SQL: migration0092OrderPaymentFee},
 		{ID: "0093_discount_prepaid_only", SQL: migration0093DiscountPrepaidOnly},
-		{ID: "0095_category_hsn", SQL: migration0095CategoryHSN},
+		{ID: "0094_category_hsn", SQL: migration0094CategoryHSN},
 	}
 }
 
-// M95 — a category's HSN code, which a GST invoice uses for a product under it
-// whose variant has none of its own (D169), so a store can classify once per
+// M94 — a category's HSN code, which a GST invoice uses for a product under it
+// whose variant has none of its own (D170), so a store can classify once per
 // category. Same check as a variant's hs_code (M88).
-const migration0095CategoryHSN = `
+const migration0094CategoryHSN = `
 ALTER TABLE categories ADD COLUMN hsn_code text NOT NULL DEFAULT ''
     CHECK (hsn_code = '' OR hsn_code ~ '^[0-9]{4,10}$');
 `

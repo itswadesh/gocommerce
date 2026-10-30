@@ -895,7 +895,7 @@ func (p *Plugins) Public(ctx context.Context) ([]PluginPublic, error) {
 			v, ok := pl.Settings[f.Key]
 			// A public secret is told as whether it is set, never as what
 			// it is: the storefront needs to know a closed store has a
-			// password to ask for (D168), and nothing more.
+			// password to ask for (D169), and nothing more.
 			if f.Kind == "secret" {
 				pub.Settings[f.Key] = ok
 				continue

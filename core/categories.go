@@ -51,7 +51,7 @@ type Category struct {
 	Attributes []CategoryAttribute `json:"attributes,omitempty"`
 	// HSNCode is the GST tariff number for what this category holds, used on a
 	// tax invoice for any product filed under it, or under a subcategory of it,
-	// whose variant has no hs_code of its own (D169). Empty is "none here".
+	// whose variant has no hs_code of its own (D170). Empty is "none here".
 	HSNCode   string    `json:"hsn_code"`
 	Metadata  Metadata  `json:"metadata"`
 	CreatedAt time.Time `json:"created_at"`
