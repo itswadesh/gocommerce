@@ -99,7 +99,8 @@ func (o orderFact) profit() int64 {
 		tax = o.Tax * kept / o.Total
 	}
 	if kept <= 0 {
-		return 0
+		// Refunded in full: what the goods that did not come back cost is lost.
+		return -o.Cost
 	}
 	return kept - tax - o.Cost
 }
@@ -221,6 +222,8 @@ func (m *Module) facts(ctx context.Context, w window) ([]orderFact, error) {
 		  LEFT JOIN (SELECT rl.order_line_id, sum(rl.quantity) AS qty
 		               FROM order_return_lines rl
 		               JOIN order_returns r ON r.id = rl.return_id AND r.status = 'received'
+		              -- A unit back but not restocked (damaged) is still the shop's loss.
+		              WHERE rl.restocked
 		              GROUP BY rl.order_line_id) back ON back.order_line_id = l.id
 		 WHERE l.order_id = ANY($1)
 		 GROUP BY l.order_id`, ids)
@@ -476,7 +479,8 @@ func (m *Module) handleOrders(rw http.ResponseWriter, r *http.Request) {
 	}
 	want := channel{q["source"], q["medium"], q["campaign"]}.key()
 	out := []OrderRow{}
-	for i := len(orders) - 1; i >= 0; i-- {
+	// ponytail: the newest 200; page it if a row ever needs more than a screen.
+	for i := len(orders) - 1; i >= 0 && len(out) < 200; i-- {
 		o := orders[i]
 		if o.Currency != q["currency"] || o.Attr.touch(w.touch).channel().key() != want {
 			continue

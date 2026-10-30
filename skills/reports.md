@@ -266,7 +266,8 @@ PUT    /api/admin/x/ads/settings
   `(direct)`. No attribution is `(not recorded)`. Source and medium are
   lower-cased.
 - **Gross profit** is net sales less the tax in them (in proportion to what was
-  kept) and less the variant's cost **now** for the units not returned: an
+  kept) and less the variant's cost **now** for the units not returned to
+  stock (a unit back but damaged is still a loss): an
   order line keeps no cost. A unit without a cost is counted in
   `uncosted_units` and costs nothing, so such a row's profit is a ceiling.
   Shipping charged stays in; what delivery cost the shop is not known.

@@ -22,6 +22,7 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { ensureSettings, settings } from "$lib/settings.svelte.js";
 
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     /* The engine reads at most two years, so "All time" is not offered. */
@@ -172,13 +173,14 @@
         }
     }
 
-    async function setWeekly(on) {
+    async function setWeekly(on, box) {
         savingWeekly = true;
         try {
             weekly = !!(await ads.saveSettings({ weekly_summary: on }))?.weekly_summary;
             toast.success(on ? "A summary of each week will be made on Monday." : "Weekly summaries are off.");
         } catch (err) {
             toast.error(err);
+            box.checked = weekly;
         } finally {
             savingWeekly = false;
         }
@@ -189,15 +191,20 @@
 
     // ----------------------------------------------------------------- spend
 
-    let entry = $state({ source: "", medium: "", campaign: "", from: "", to: "", amount: "", currency: "" });
-    let importing = $state({ format: "google", source: "google", medium: "cpc", currency: "" });
+    let entry = $state({ source: "", medium: "", campaign: "", from: "", to: "", amount: "" });
+    let importing = $state({ format: "google", source: "google", medium: "cpc" });
     let file = $state(null);
     let busy = $state(false);
-    const storeCurrency = $derived(blocks[0]?.currency ?? "INR");
+    /* The store's own currency: spend with no currency named is saved in it
+       by the engine, so the form names the same one. */
+    $effect(() => {
+        ensureSettings();
+    });
+    const storeCurrency = $derived(settings.currency);
 
     async function addSpend(e) {
         e.preventDefault();
-        const currency = (entry.currency || storeCurrency).toUpperCase();
+        const currency = storeCurrency;
         const amount = toMinor(entry.amount, currency);
         if (amount === null || amount < 0) {
             toast.error("Enter the amount spent, such as 4000 or 4000.50.");
@@ -233,7 +240,9 @@
         busy = true;
         try {
             const csv = decodeExport(await file.arrayBuffer());
-            const res = await ads.importSpend({ ...importing, currency: importing.currency || storeCurrency, csv });
+            // No currency: the engine uses the file's, else the store's.
+            const { format, source, medium } = importing;
+            const res = await ads.importSpend({ format, source, medium, csv });
             toast.success(
                 `Imported ${count(res.days)} ${pluralize(res.days, "day")} for ${count(res.campaigns)} ${pluralize(res.campaigns, "campaign")}: ` +
                     res.totals.map(formatMoney).join(", "),
@@ -506,7 +515,7 @@
 
                     {#if writable}
                         <label class="ads-switch">
-                            <input type="checkbox" checked={weekly} disabled={savingWeekly} onchange={(e) => setWeekly(e.currentTarget.checked)} />
+                            <input type="checkbox" checked={weekly} disabled={savingWeekly} onchange={(e) => setWeekly(e.currentTarget.checked, e.currentTarget)} />
                             <span>Make a summary of each week, every Monday</span>
                         </label>
                     {/if}
@@ -516,7 +525,8 @@
                     <h2 class="recovery-report-title" id="ads-spend-title">Ad spend</h2>
                     <p class="txt-hint txt-sm recovery-card-desc">
                         Spend meets orders by source, medium and campaign: use what your ads put in utm_source, utm_medium and
-                        utm_campaign. A day entered again replaces the old figure.
+                        utm_campaign. An ad whose link carries no utm_campaign (Google's auto-tagging alone) is counted under
+                        "(no campaign)" and cannot meet its spend. A day entered again replaces the old figure.
                     </p>
 
                     {#if writable}
@@ -553,7 +563,7 @@
                                     <label class="field"><span class="txt-sm">Campaign</span><input required bind:value={entry.campaign} /></label>
                                     <label class="field"><span class="txt-sm">From</span><input type="date" required bind:value={entry.from} /></label>
                                     <label class="field"><span class="txt-sm">To</span><input type="date" bind:value={entry.to} /></label>
-                                    <label class="field"><span class="txt-sm">Amount ({entry.currency || storeCurrency})</span><input inputmode="decimal" required bind:value={entry.amount} /></label>
+                                    <label class="field"><span class="txt-sm">Amount ({storeCurrency})</span><input inputmode="decimal" required bind:value={entry.amount} /></label>
                                 </div>
                                 <button type="submit" class="btn sm ads-press" class:btn-loading={busy} disabled={busy}>Save spend</button>
                             </form>
