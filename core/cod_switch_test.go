@@ -168,3 +168,45 @@ func TestCashOnDeliveryIsSwitchedPerStore(t *testing.T) {
 		t.Fatalf("store b never switched it and is offered %v / %v", codes, named)
 	}
 }
+
+// The owner types the extra charge as they would say it; checkout adds it to a
+// cash order's total, says it on the order, and the storefront is told it
+// beside the method. A gateway order is not charged it.
+func TestCashOnDeliveryAddsTheStoresExtraCharge(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	rec := do(t, app, http.MethodPatch, "/api/admin/plugins/"+CODPluginKey, withAdmin,
+		jsonBody(t, PluginPatch{Settings: map[string]any{"fee": 60}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set the extra charge: %d %s", rec.Code, rec.Body)
+	}
+
+	var fee *Money
+	for _, m := range app.Pay().InstalledFor(ctx) {
+		if m.Code == CodeCOD {
+			fee = m.Fee
+		}
+	}
+	if fee == nil || fee.AmountMinor != 6000 {
+		t.Fatalf("the storefront is told a fee of %+v, want 6000 minor", fee)
+	}
+
+	product := simpleProduct(t, app, "COD-FEE-1", 1000, 5)
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	res, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := res.Order
+	if o.PaymentFee.AmountMinor != 6000 {
+		t.Fatalf("payment_fee is %d, want 6000", o.PaymentFee.AmountMinor)
+	}
+	want := o.Subtotal.AmountMinor + o.Shipping.AmountMinor - o.Discount.AmountMinor + 6000
+	if !o.TaxInclusive {
+		want += o.Tax.AmountMinor
+	}
+	if o.Total.AmountMinor != want {
+		t.Fatalf("total is %d, want %d with the extra charge in it", o.Total.AmountMinor, want)
+	}
+}

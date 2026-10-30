@@ -66,6 +66,9 @@ func (p *Payments) MethodsFor(ctx context.Context) []string {
 type PaymentMethod struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
+	// Fee is what choosing this method adds to the order, so the storefront
+	// can say so beside the radio button. Absent charges nothing.
+	Fee *Money `json:"fee,omitempty"`
 }
 
 // Installed lists the same methods as [Payments.Methods], with the name each
@@ -87,8 +90,14 @@ func (p *Payments) Installed() []PaymentMethod { return p.InstalledFor(context.B
 func (p *Payments) InstalledFor(ctx context.Context) []PaymentMethod {
 	codes := p.MethodsFor(ctx)
 	out := make([]PaymentMethod, 0, len(codes))
+	currency := p.app.Currency(ctx)
 	for _, code := range codes {
-		out = append(out, PaymentMethod{Code: code, Name: p.name(code)})
+		m := PaymentMethod{Code: code, Name: p.name(code)}
+		if fee := p.paymentFeeMinor(ctx, code, currency); fee > 0 {
+			f := money(fee, currency)
+			m.Fee = &f
+		}
+		out = append(out, m)
 	}
 	return out
 }
@@ -864,6 +873,27 @@ func (c codProvider) Configured(ctx context.Context) bool {
 }
 
 func (codProvider) pluginKey() string { return CODPluginKey }
+
+// feeMinor is what the store adds to an order paid in cash on delivery, in
+// currency's minor units. The setting is typed as the owner says it, "60" for
+// ₹60, so it is converted here; one that does not read as money charges
+// nothing rather than refusing every cash order.
+func (c codProvider) feeMinor(ctx context.Context, currency string) int64 {
+	fee, err := parseMoney(c.plugins.String(ctx, CODPluginKey, "fee"), CurrencyExponent(currency))
+	if err != nil || fee < 0 {
+		return 0
+	}
+	return fee
+}
+
+// paymentFeeMinor is what choosing method code adds to an order. Only cash on
+// delivery charges one.
+func (p *Payments) paymentFeeMinor(ctx context.Context, code, currency string) int64 {
+	if c, ok := p.providers[code].(codProvider); ok {
+		return c.feeMinor(ctx, currency)
+	}
+	return 0
+}
 
 // switchedByPlugin is a built-in provider with a plugin of its own to switch
 // it, which the provider screens need named: a module's provider is found by
