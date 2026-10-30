@@ -610,6 +610,81 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
+// scanBomb is a progressive grey JPEG of a DC scan and then AC scans that are
+// each a few end-of-band runs over every block: 66 bytes a scan at
+// 16384 × 2441, and for the decoder a pass over all 625,000 blocks.
+func scanBomb(w, h, scans int) []byte {
+	b := []byte{0xFF, jpegStart}
+	q := bytes.Repeat([]byte{1}, 65)
+	q[0] = 0
+	b = append(b, segment(jpegQuant, q)...)
+	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
+	// One AC code, 0, for an end-of-band run of 2^14 blocks and more.
+	b = append(b, segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), 0xE0))...)
+	b = append(b, segment(jpegProgressive, []byte{8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0})...)
+	blocks := ((w + 7) / 8) * ((h + 7) / 8)
+	b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
+	b = append(b, make([]byte, (blocks+7)/8)...)
+	var bits []bool
+	for left := blocks; left > 0; left -= 32767 {
+		bits = append(bits, false)
+		for range 14 {
+			bits = append(bits, true)
+		}
+	}
+	for len(bits)%8 != 0 {
+		bits = append(bits, true)
+	}
+	ac := segment(jpegScan, []byte{1, 1, 0x00, 1, 63, 0})
+	for i := 0; i < len(bits); i += 8 {
+		var x byte
+		for j := range 8 {
+			if bits[i+j] {
+				x |= 1 << (7 - j)
+			}
+		}
+		ac = append(ac, x)
+		if x == 0xFF {
+			ac = append(ac, 0)
+		}
+	}
+	for range scans - 1 {
+		b = append(b, ac...)
+	}
+	return append(b, 0xFF, jpegEnd)
+}
+
+func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	grey := jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x11}, adobe: -1})
+	scan := grey[bytes.Index(grey, []byte{0xFF, jpegScan}) : len(grey)-2]
+	for name, tc := range map[string]struct {
+		body []byte
+		want int
+	}{
+		"progressive, 99 scans":                 {scanBomb(512, 512, 99), http.StatusCreated},
+		"progressive, 100 scans":                {scanBomb(512, 512, 100), http.StatusUnprocessableEntity},
+		"colour, a scan for each component":     {jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}), http.StatusCreated},
+		"grey, its one component scanned twice": {append(append(bytes.Clone(grey[:len(grey)-2]), scan...), 0xFF, jpegEnd), http.StatusUnprocessableEntity},
+	} {
+		rec := h.uploadRaw("", "file", tc.body)
+		if rec.Code != tc.want || tc.want == http.StatusUnprocessableEntity && !strings.Contains(errorCode(t, rec), "too_many_scans") {
+			t.Errorf("%s = %d %s, want %d", name, rec.Code, rec.Body, tc.want)
+		}
+	}
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- h.uploadRaw("", "file", scanBomb(16384, 2441, 10_000)) }()
+	select {
+	case rec := <-done:
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("10,000 scans of 16384 × 2441 = %d %s, want 422", rec.Code, rec.Body)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("10,000 scans of 16384 × 2441 are still being decoded after 5 s; want them refused unread")
+	}
+}
+
 type jpegSpec struct {
 	w, h      int
 	sof       byte
