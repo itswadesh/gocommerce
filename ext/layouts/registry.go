@@ -441,9 +441,9 @@ func (s SectionType) allowedOn(page string) bool {
 var Fonts = []Option{
 	{"inter", "Inter"}, {"roboto", "Roboto"}, {"poppins", "Poppins"}, {"montserrat", "Montserrat"},
 	{"lato", "Lato"}, {"open-sans", "Open Sans"}, {"nunito", "Nunito"}, {"dm-sans", "DM Sans"},
-	{"work-sans", "Work Sans"}, {"playfair-display", "Playfair Display"}, {"lora", "Lora"},
-	{"merriweather", "Merriweather"}, {"cormorant-garamond", "Cormorant Garamond"},
-	{"libre-baskerville", "Libre Baskerville"}, {"eb-garamond", "EB Garamond"},
+	{"work-sans", "Work Sans"}, {"source-sans-3", "Source Sans 3"}, {"playfair-display", "Playfair Display"},
+	{"lora", "Lora"}, {"merriweather", "Merriweather"}, {"cormorant-garamond", "Cormorant Garamond"},
+	{"libre-baskerville", "Libre Baskerville"}, {"eb-garamond", "EB Garamond"}, {"noto-serif", "Noto Serif"},
 }
 
 // SettingGroup is a titled set of theme settings, as the editor shows them.

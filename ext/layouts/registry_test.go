@@ -126,6 +126,13 @@ func TestThemeSettingsAreCleaned(t *testing.T) {
 	if pics.ThemeSettings["product_image_ratio"] != "square" || pics.ThemeSettings["product_image_fit"] != "fill" {
 		t.Fatalf("theme settings = %v, want the picture shape and fit kept", pics.ThemeSettings)
 	}
+	fonts, err := Validate("home", doc(t, `{"theme_settings":{"heading_font":"noto-serif","body_font":"source-sans-3"},"sections":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fonts.ThemeSettings["heading_font"] != "noto-serif" || fonts.ThemeSettings["body_font"] != "source-sans-3" {
+		t.Fatalf("theme settings = %v, want Noto Serif headings and Source Sans 3 body kept", fonts.ThemeSettings)
+	}
 	if got, _ := Validate("home", doc(t, `{"sections":[]}`)); got.ThemeSettings != nil {
 		t.Fatalf("no theme settings = %v, want none stored", got.ThemeSettings)
 	}
