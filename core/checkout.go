@@ -336,6 +336,15 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// rule's targets are read under. A code that expired while the shopper
 		// was typing their address is refused by the same mechanism that refuses
 		// a sold-out line.
+		// No code entered: the automatic discount that saves this basket the
+		// most, if any applies (D179). One a shopper typed always wins.
+		if strings.TrimSpace(cartCode) == "" {
+			if cartCode, err = s.app.discounts.bestAutoCode(ctx, tx, discountRequest{
+				Email: in.Email, Lines: dlines, Method: code,
+			}, shipping); err != nil {
+				return err
+			}
+		}
 		applied, eligible, err := s.app.discounts.applyTx(ctx, tx, discountRequest{
 			Code: cartCode, Email: in.Email, Lines: dlines, Method: code,
 		})
