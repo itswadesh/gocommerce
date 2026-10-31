@@ -64,8 +64,9 @@ design and adds that; remove the old line.
 - **The print file** is `round(width_mm / 25.4 × dpi)` by
   `round(height_mm / 25.4 × dpi)` pixels. The print area has the same shape,
   within 2%, so scaling it up by one factor fills the print file. A setup
-  never asks for more than 4 megapixels, so the print file saved as a PNG
-  from a canvas fits an upload whatever it shows: a 75 × 150 mm case at
+  never asks for more than 3.8 megapixels or 16384 pixels a side, so the
+  print file saved as a PNG from a canvas fits an upload whatever it
+  shows, noise with varying transparency included: a 75 × 150 mm case at
   300 dpi is 886 × 1772. A larger print waits for print files rendered on
   the server (below).
 - **Fonts** are keys from the theme editor's list. Load each family the way
@@ -82,10 +83,11 @@ design and adds that; remove the old line.
 | | |
 |---|---|
 | Types | JPEG and PNG. WebP, HEIC and the rest answer 415: draw them into a canvas and send a JPEG (a photo) or a PNG (anything with transparency) |
-| Size | 15 MB at most (413) and 40 megapixels at most (422). A picture that would take more than 256 MB to decode and turn is refused too (422), with what to do in the message: a 16-bit PNG that large is to be saved as an 8-bit one, a progressive JPEG as an ordinary one. A 12-megapixel phone photo, ordinary or progressive, is well inside it |
-| Time | The file must arrive within 15 seconds of the request reaching the engine, or the answer is 400 |
+| Size | 15 MB at most (413), and 40 megapixels and 16384 pixels a side at most (422). A picture that would take more than 256 MB to decode, turn and write again is refused too (422), with what to do in the message: a 16-bit PNG that large is to be saved as an 8-bit one, a progressive JPEG as an ordinary one. A 12-megapixel phone photo, ordinary or progressive, is well inside it |
+| Time | The file may take up to 3 minutes to arrive, as long as no 15 seconds pass without a byte; otherwise the answer is 400 `upload_too_slow`, which a shopper can act on by moving to a steadier connection |
 | What is kept | The picture, decoded and written again: EXIF and its GPS position are dropped, a JPEG is first turned the way its camera was held, so `width` and `height` are the picture as it is seen, and a 16-bit PNG is kept at 8 bits |
-| Where | The store's media storage under a random name, not the media library |
+| Where | The store's media storage under a random name, not the media library. While it arrives and is decoded it is a file in the engine's temporary directory, which must be writable ([operations](operations.md#in-a-container)) |
+| Busy | Uploads are decoded one at a time. When eight are already waiting, or this one has waited 30 seconds, the answer is 503 `busy` with `Retry-After`, and nothing is kept: send it again then |
 | Limit | 30 an hour per address (429, with `Retry-After`) |
 | Kept for | 30 days, then deleted, unless a design in a basket or on an order names it |
 
@@ -217,6 +219,7 @@ download with its size, the original photos and the words and fonts used.
 
 Templates, the "same design" add-ons (a grip or a keychain printed to match),
 rendering the print file on the server, and a customization fee are later
-phases. A print over 4 megapixels waits for the print file rendered on the
-server: a browser's PNG of one can be larger than an upload takes. The data is shaped for them: a design names its product and variant,
-so a matching add-on is a design of its own made from the same document.
+phases. A print over 3.8 megapixels waits for the print file rendered on
+the server: a browser's PNG of one can be larger than an upload takes. The
+data is shaped for them: a design names its product and variant, so a
+matching add-on is a design of its own made from the same document.

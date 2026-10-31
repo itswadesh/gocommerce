@@ -3,6 +3,7 @@ package customizer
 import (
 	"bufio"
 	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -13,10 +14,14 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,6 +108,7 @@ type pngHeader struct {
 	depth, colour byte
 	interlaced    bool
 	transparent   bool
+	pixels        bool
 }
 
 func pngBomb(p pngHeader) []byte {
@@ -119,10 +125,32 @@ func pngBomb(p pngHeader) []byte {
 		ihdr[12] = 1
 	}
 	chunk("IHDR", ihdr)
-	if p.transparent {
-		chunk("tRNS", make([]byte, map[byte]int{0: 2, 2: 6}[p.colour]))
+	if p.colour == 3 {
+		chunk("PLTE", []byte{10, 20, 30, 40, 50, 60})
 	}
-	chunk("IDAT", nil)
+	if p.transparent {
+		chunk("tRNS", make([]byte, map[byte]int{0: 2, 2: 6, 3: 1}[p.colour]))
+	}
+	var idat bytes.Buffer
+	if p.pixels {
+		bits := int(p.depth) * map[byte]int{0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[p.colour]
+		passes := [][4]int{{1, 1, 0, 0}}
+		if p.interlaced {
+			passes = [][4]int{{8, 8, 0, 0}, {8, 8, 4, 0}, {4, 8, 0, 4}, {4, 4, 2, 0}, {2, 4, 0, 2}, {2, 2, 1, 0}, {1, 2, 0, 1}}
+		}
+		row := bytes.Repeat([]byte{0x80}, 1+(bits*int(p.w)+7)/8)
+		row[0] = 0
+		z, _ := zlib.NewWriterLevel(&idat, zlib.BestSpeed)
+		for _, q := range passes {
+			w, h := (int(p.w)-q[2]+q[0]-1)/q[0], (int(p.h)-q[3]+q[1]-1)/q[1]
+			for range h * min(w, 1) {
+				_, _ = z.Write(row[:1+(bits*w+7)/8])
+			}
+		}
+		_ = z.Close()
+	}
+	chunk("IDAT", idat.Bytes())
+	chunk("IEND", nil)
 	return out
 }
 
@@ -247,13 +275,14 @@ func (h *harness) uploadRaw(store, field string, file []byte) *httptest.Response
 	return h.do(http.MethodPost, "/x/customizer/uploads", store, contentType, body, "")
 }
 
-func (h *harness) server(readTimeout time.Duration) *httptest.Server {
+func (h *harness) server(readTimeout, writeTimeout time.Duration) *httptest.Server {
 	inner := h.app.Handler()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Host = "example.com"
 		inner.ServeHTTP(w, r)
 	}))
 	srv.Config.ReadTimeout = readTimeout
+	srv.Config.WriteTimeout = writeTimeout
 	srv.Start()
 	h.t.Cleanup(srv.Close)
 	return srv
@@ -425,9 +454,12 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 		{"print too big", func(s *SetupInput) { s.PrintSize.WidthMM = 1001 }, "between 0 and 1000 mm"},
 		{"dpi too low", func(s *SetupInput) { s.PrintSize.DPI = 71 }, "between 72 and 600 dpi"},
 		{"dpi too high", func(s *SetupInput) { s.PrintSize.DPI = 601 }, "between 72 and 600 dpi"},
-		{"print file over 4 megapixels", func(s *SetupInput) {
+		{"print file over 3.8 megapixels", func(s *SetupInput) {
 			s.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 520}
-		}, "1433 × 2866 pixels, over 4 megapixels"},
+		}, "1433 × 2866 pixels, and can be at most 3.8 megapixels and 16384 pixels a side"},
+		{"print file over 16384 pixels a side", func(s *SetupInput) {
+			s.PrintSize = &PrintSize{WidthMM: 1000, HeightMM: 5, DPI: 600}
+		}, "23622 × 118 pixels"},
 		{"unknown font", func(s *SetupInput) { s.Fonts = []string{"comic-sans"} }, "not a font"},
 		{"font twice", func(s *SetupInput) { s.Fonts = []string{"inter", "inter"} }, "chosen twice"},
 		{"words with no font", func(s *SetupInput) { s.Fonts = []string{} }, "choose a font"},
@@ -461,7 +493,7 @@ func TestEveryRefusalOfASetup(t *testing.T) {
 	sharpest := c.in
 	sharpest.PrintSize = &PrintSize{WidthMM: 70, HeightMM: 140, DPI: 500}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, sharpest); err != nil {
-		t.Errorf("a 1378 × 2756 print file, under 4 megapixels = %v, want it saved", err)
+		t.Errorf("a 1378 × 2756 print file, under 3.8 megapixels = %v, want it saved", err)
 	}
 	draft := SetupInput{Mockup: &Picture{URL: jpegMockup.URL, Width: 200, Height: 400}}
 	if _, err := h.mod.Save(h.ctx, c.product.ID, draft); err != nil {
@@ -559,53 +591,165 @@ func TestAPictureIsReckonedAsTheDecoderReadsIt(t *testing.T) {
 	}
 }
 
-func FuzzTheWalkFindsTheFrameTheDecoderDecodes(f *testing.F) {
-	f.Add(jpegRedTop(24, 16))
-	f.Add(withExif(jpegRedTop(16, 8), 6, ""))
+func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	for name, p := range map[string]pngHeader{
+		"16-bit colour, 33,000,000 × 1":   {w: 33_000_000, h: 1, depth: 16, colour: 2},
+		"RGBA, 40,000,000 × 1":            {w: 40_000_000, h: 1, depth: 8, colour: 6},
+		"interlaced RGBA, 30,000,000 × 1": {w: 30_000_000, h: 1, depth: 8, colour: 6, interlaced: true},
+		"RGBA, 4,000,000 × 10":            {w: 4_000_000, h: 10, depth: 8, colour: 6},
+		"RGBA, 10 × 4,000,000":            {w: 10, h: 4_000_000, depth: 8, colour: 6},
+	} {
+		if rec := h.uploadRaw("", "file", pngBomb(p)); rec.Code != http.StatusUnprocessableEntity ||
+			!strings.Contains(errorCode(t, rec), "16384 pixels a side") {
+			t.Errorf("%s = %d %s, want 422: too wide", name, rec.Code, rec.Body)
+		}
+	}
+	if up := h.upload("", pngBomb(pngHeader{w: maxUploadSide, h: 2, depth: 16, colour: 6, pixels: true})); up.Width != maxUploadSide {
+		t.Errorf("a 16384 × 2 PNG = %+v, want it taken", up)
+	}
+}
+
+type jpegSpec struct {
+	w, h      int
+	sof       byte
+	ids       []byte
+	hv        []byte
+	adobe     int // the APP14 transform; -1 for no APP14
+	split     bool
+	beforeSOF []byte
+}
+
+func segment(marker byte, data []byte) []byte {
+	return append([]byte{0xFF, marker, byte((len(data) + 2) >> 8), byte(len(data) + 2)}, data...)
+}
+
+func jpegOf(s jpegSpec) []byte {
+	n := len(s.hv)
+	if s.ids == nil {
+		s.ids = []byte{1, 2, 3, 4}[:n]
+	}
+	b := []byte{0xFF, jpegStart}
+	if s.adobe >= 0 {
+		b = append(b, segment(0xEE, []byte{'A', 'd', 'o', 'b', 'e', 0, 100, 0, 0, 0, 0, byte(s.adobe)})...)
+	}
+	q := bytes.Repeat([]byte{1}, 65)
+	q[0] = 0
+	b = append(b, segment(jpegQuant, q)...)
+	// A DC and an AC table, each one one-bit code for 0.
+	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
+	b = append(b, segment(jpegHuffman, append([]byte{0x10, 1}, make([]byte, 16)...))...)
+	b = append(b, s.beforeSOF...)
+	frame := []byte{8, byte(s.h >> 8), byte(s.h), byte(s.w >> 8), byte(s.w), byte(n)}
+	maxH, maxV := 1, 1
+	for c, hv := range s.hv {
+		frame = append(frame, s.ids[c], hv, 0)
+		maxH, maxV = max(maxH, int(hv>>4)), max(maxV, int(hv&15))
+	}
+	b = append(b, segment(s.sof, frame)...)
+	if n == 1 {
+		maxH, maxV = 1, 1
+	}
+	mxx, myy := (s.w+8*maxH-1)/(8*maxH), (s.h+8*maxV-1)/(8*maxV)
+	scan := func(comps []int, from, to byte) {
+		hdr, blocks := []byte{byte(len(comps))}, 0
+		for _, c := range comps {
+			hdr = append(hdr, s.ids[c], 0)
+			h, v := int(s.hv[c]>>4), int(s.hv[c]&15)
+			if n == 1 {
+				h, v = 1, 1
+			}
+			blocks += mxx * myy * h * v
+		}
+		b = append(b, segment(jpegScan, append(hdr, from, to, 0))...)
+		b = append(b, make([]byte, (2*blocks+7)/8+8)...)
+	}
+	last := byte(63)
+	if s.sof == jpegProgressive {
+		last = 0
+	}
+	if s.split || n == 1 {
+		for c := range n {
+			scan([]int{c}, 0, last)
+		}
+	} else {
+		scan([]int{0, 1, 2, 3}[:n], 0, last)
+	}
+	if s.sof == jpegProgressive {
+		for c := range n {
+			scan([]int{c}, 1, 63)
+		}
+	}
+	return append(b, 0xFF, jpegEnd)
+}
+
+// codecSlack is what the decoders and encoders keep whatever the picture:
+// buffers, tables, a turned photo's row.
+const codecSlack = 128 << 10
+
+func withinItsReckoning(t *testing.T, b []byte) {
+	t.Helper()
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil || cfg.Width*cfg.Height > 4<<20 {
+		return
+	}
+	mime := http.DetectContentType(b)
+	orientation := 1
+	if mime == "image/jpeg" {
+		_, orientation, _ = jpegHeader(b)
+	}
+	cost, _ := decodeCost(b, mime, cfg, orientation)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, _, err = redraw(b, io.Discard)
+	runtime.ReadMemStats(&after)
+	if got, want := int64(after.TotalAlloc-before.TotalAlloc), cost-int64(len(b)); err == nil && got > want+codecSlack {
+		t.Fatalf("writing a %d × %d %s again allocated %d bytes, reckoned at %d", cfg.Width, cfg.Height, mime, got, want)
+	}
+}
+
+func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x22, 0x12}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11}, adobe: -1}))
+		f.Add(jpegOf(jpegSpec{w: 96, h: 16, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, ids: []byte("RGB")}))
+	}
+	f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: jpegBaseline, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, beforeSOF: []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF}}))
+	f.Add(withExif(jpegRedTop(24, 16), 6, ""))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
-	f.Add(jpegBomb(16, 16, jpegBaseline, "rgb", 0x11, 0x11, 0x11))
-	var grey bytes.Buffer
-	_ = jpeg.Encode(&grey, image.NewGray(image.Rect(0, 0, 9, 9)), nil)
-	f.Add(grey.Bytes())
-	ratios := map[[2]int]image.YCbCrSubsampleRatio{{1, 1}: image.YCbCrSubsampleRatio444, {1, 2}: image.YCbCrSubsampleRatio440,
-		{2, 1}: image.YCbCrSubsampleRatio422, {2, 2}: image.YCbCrSubsampleRatio420, {4, 1}: image.YCbCrSubsampleRatio411,
-		{4, 2}: image.YCbCrSubsampleRatio410}
-	f.Fuzz(func(t *testing.T, b []byte) {
-		cfg, err := jpeg.DecodeConfig(bytes.NewReader(b))
-		if err != nil || cfg.Width*cfg.Height > 1<<20 {
+	f.Fuzz(func(t *testing.T, b []byte) { withinItsReckoning(t, b) })
+}
+
+func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, p := range []pngHeader{
+		{w: maxUploadSide, h: 1, depth: 16, colour: 2},
+		{w: maxUploadSide, h: 3, depth: 8, colour: 6, interlaced: true},
+		{w: 1, h: maxUploadSide, depth: 16, colour: 6},
+		{w: 300, h: 200, depth: 8, colour: 3, transparent: true},
+		{w: 97, h: 61, depth: 16, colour: 0, interlaced: true, transparent: true},
+		{w: 64, h: 64, depth: 8, colour: 4},
+		{w: 2000, h: 3, depth: 1, colour: 0},
+	} {
+		f.Add(p.w, p.h, p.depth, p.colour, p.interlaced, p.transparent)
+	}
+	f.Fuzz(func(t *testing.T, w, h uint32, depth, colour byte, interlaced, transparent bool) {
+		if w > maxUploadSide || h > maxUploadSide || uint64(w)*uint64(h) > 1<<20 {
 			return
 		}
-		img, err := jpeg.Decode(bytes.NewReader(b))
-		if err != nil {
-			return
-		}
-		frame, _, ok := jpegHeader(b)
-		want := map[string]int{"*image.Gray": 1, "*image.YCbCr": 3, "*image.RGBA": 3, "*image.CMYK": 4}[fmt.Sprintf("%T", img)]
-		if !ok || frame.width != cfg.Width || frame.height != cfg.Height || len(frame.components) != want {
-			t.Fatalf("walked to %+v (ok %v); the decoder made a %d × %d %T", frame, ok, cfg.Width, cfg.Height, img)
-		}
-		if y, isYCbCr := img.(*image.YCbCr); isYCbCr {
-			maxH, maxV := 1, 1
-			for _, c := range frame.components {
-				maxH, maxV = max(maxH, c.h), max(maxV, c.v)
-			}
-			ratio := image.YCbCrSubsampleRatio444
-			if hr, vr, known := chromaRatio(frame.components, maxH, maxV); known {
-				ratio = ratios[[2]int{hr, vr}]
-			}
-			if y.SubsampleRatio != ratio {
-				t.Fatalf("walked to %+v, chroma at %v; the decoder kept it at %v", frame, ratio, y.SubsampleRatio)
-			}
-		}
+		withinItsReckoning(t, pngBomb(pngHeader{w, h, depth, colour, interlaced, transparent, true}))
 	})
 }
 
 func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	uploadDeadline = 500 * time.Millisecond
-	t.Cleanup(func() { uploadDeadline = 15 * time.Second })
-	srv := h.server(0)
+	uploadIdle = 500 * time.Millisecond
+	t.Cleanup(func() { uploadIdle = 15 * time.Second })
+	srv := h.server(0, 0)
 	body, contentType := form("file", jpegRedTop(400, 300))
 
 	stalled := make([]net.Conn, 5)
@@ -645,9 +789,53 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	}
 }
 
+func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	uploadIdle, uploadWithin = 500*time.Millisecond, 3*time.Second
+	t.Cleanup(func() { uploadIdle, uploadWithin = 15*time.Second, 3*time.Minute })
+	srv := h.server(0, 0)
+	body, contentType := form("file", append(jpegRedTop(64, 64), make([]byte, 600<<10)...))
+	send := func(chunk int) (int, string) {
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+			contentType, len(body))
+		go func() {
+			for rest := body; len(rest) > 0; rest = rest[min(chunk, len(rest)):] {
+				if _, err := c.Write(rest[:min(chunk, len(rest))]); err != nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+		_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		answer, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(answer)
+	}
+
+	start := time.Now()
+	if code, answer := send(16 << 10); code != http.StatusCreated {
+		t.Errorf("600 KB at 320 KB/s, 2 s in all, never 0.5 s without a byte = %d %s after %v; want 201",
+			code, answer, time.Since(start).Round(100*time.Millisecond))
+	}
+	start = time.Now()
+	if code, answer := send(64); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") {
+		t.Errorf("1.3 KB/s for ever = %d %s after %v; want 400 at 3 s, too long to arrive",
+			code, answer, time.Since(start).Round(100*time.Millisecond))
+	}
+}
+
 func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
-	srv := h.server(300 * time.Millisecond)
+	srv := h.server(300*time.Millisecond, 0)
 	body, contentType := form("file", jpegRedTop(40, 30))
 	h.mod.decodes <- struct{}{}
 	go func() {
@@ -661,6 +849,154 @@ func TestWaitingToBeDecodedCostsAnUploadNothing(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("an upload that waited a second to be decoded = %d, want 201", resp.StatusCode)
+	}
+}
+
+func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	spooled := func() int {
+		files, _ := os.ReadDir(spool)
+		return len(files)
+	}
+	refused := func(what string) {
+		t.Helper()
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() { done <- h.uploadRaw("", "file", jpegRedTop(40, 30)) }()
+		select {
+		case rec := <-done:
+			if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" ||
+				!strings.Contains(errorCode(t, rec), "busy: too many photos") {
+				t.Errorf("%s = %d %s, want 503 with Retry-After", what, rec.Code, rec.Body)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s still waits after 5 s; want it refused", what)
+		}
+	}
+
+	h.mod.decodes <- struct{}{}
+	codes := make(chan int, decodeQueue)
+	for range decodeQueue {
+		go func() { codes <- h.uploadRaw("", "file", jpegRedTop(40, 30)).Code }()
+	}
+	for deadline := time.Now().Add(5 * time.Second); spooled() < decodeQueue && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	refused(fmt.Sprintf("an upload behind %d waiting", decodeQueue))
+	if n := spooled(); n != decodeQueue {
+		t.Errorf("%d files on disk, want the %d waiting and not the one refused", n, decodeQueue)
+	}
+	<-h.mod.decodes
+	for range decodeQueue {
+		if code := <-codes; code != http.StatusCreated {
+			t.Errorf("an upload that waited its turn = %d, want 201", code)
+		}
+	}
+
+	decodeWait = 300 * time.Millisecond
+	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	h.mod.decodes <- struct{}{}
+	refused("an upload with no turn for 300 ms")
+	<-h.mod.decodes
+	if n := spooled(); n != 0 {
+		t.Errorf("%d files left on disk, want none", n)
+	}
+}
+
+func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	srv := h.server(0, time.Second)
+	client := srv.Client()
+	client.Timeout = 5 * time.Second
+	body, contentType := form("file", jpegRedTop(40, 30))
+	post := func() string {
+		resp, err := client.Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+		if err != nil {
+			return err.Error()
+		}
+		resp.Body.Close()
+		return strconv.Itoa(resp.StatusCode)
+	}
+	stored := func() (n int) {
+		if err := h.app.DB().QueryRow(`SELECT count(*) FROM customizer_uploads`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	h.mod.decodes <- struct{}{}
+	go func() {
+		time.Sleep(2 * time.Second)
+		<-h.mod.decodes
+	}()
+	if got := post(); got != "201" || stored() != 1 {
+		t.Errorf("an upload that waited 2 s behind a 1 s write timeout = %s with %d stored; want 201 and it stored", got, stored())
+	}
+
+	decodeWait = 1500 * time.Millisecond
+	t.Cleanup(func() { decodeWait = 30 * time.Second })
+	h.mod.decodes <- struct{}{}
+	if got := post(); got != "503" || stored() != 1 {
+		t.Errorf("an upload that waited past its 1.5 s = %s with %d stored; want 503 and nothing more stored", got, stored())
+	}
+	<-h.mod.decodes
+}
+
+func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	func() {
+		defer func() { _ = recover() }()
+		_, _ = h.mod.keep(h.ctx, nil)
+	}()
+	done := make(chan int, 1)
+	go func() { done <- h.uploadRaw("", "file", jpegRedTop(8, 8)).Code }()
+	select {
+	case code := <-done:
+		if code != http.StatusCreated {
+			t.Errorf("an upload after a decode that panicked = %d, want 201", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an upload after a decode that panicked still waits for its turn after 5 s")
+	}
+}
+
+func TestStartRemovesTheFilesAStoppedEngineLeft(t *testing.T) {
+	h := newHarness(t, Config{})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	left, live, other := filepath.Join(spool, "customizer-upload-1"), filepath.Join(spool, "customizer-upload-2"),
+		filepath.Join(spool, "someone-elses")
+	for _, f := range []string{left, live, other} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	twoHoursAgo := time.Now().Add(-2 * time.Hour)
+	for _, f := range []string{left, other} {
+		if err := os.Chtimes(f, twoHoursAgo, twoHoursAgo); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(f string) bool {
+		_, err := os.Stat(f)
+		return err == nil
+	}
+
+	ctx, cancel := context.WithCancel(h.ctx)
+	defer cancel()
+	if err := h.mod.start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); exists(left) && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if exists(left) || !exists(live) || !exists(other) {
+		t.Errorf("after start: a left upload's file there %v, a live one's %v, another program's %v; want false, true, true",
+			exists(left), exists(live), exists(other))
 	}
 }
 

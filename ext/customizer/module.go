@@ -68,6 +68,7 @@ type Module struct {
 	uploads *throttle
 	designs *throttle
 	decodes chan struct{}
+	waiting chan struct{}
 }
 
 // New constructs the module.
@@ -83,6 +84,7 @@ func New(cfg Config) *Module {
 		uploads: newThrottle(cfg.UploadsPerHour, time.Hour),
 		designs: newThrottle(cfg.DesignsPerHour, time.Hour),
 		decodes: make(chan struct{}, decodeSlots),
+		waiting: make(chan struct{}, decodeQueue),
 	}
 }
 
@@ -244,6 +246,9 @@ func (m *Module) start(ctx context.Context) error {
 		t := time.NewTicker(sweepEvery)
 		defer t.Stop()
 		for {
+			if n := sweepSpool(); n > 0 {
+				m.app.Log().Info("customizer: removed the files of uploads a stopped engine left", "files", n)
+			}
 			// Every store, a suspended one too: its shoppers' photos are kept
 			// no longer than RetentionDays whether or not it is serving.
 			err := m.app.ForEveryStore(ctx, func(ctx context.Context) error {
