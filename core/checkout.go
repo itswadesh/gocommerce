@@ -23,10 +23,15 @@ type CheckoutInput struct {
 	// ShippingRateID is the rate the shopper picked, from GET
 	// /api/checkout/rates. Omitted means "whichever this store lists first",
 	// which is what keeps a client written before D52 working unchanged.
-	ShippingRateID *int64            `json:"shipping_rate_id,omitempty"`
-	PaymentData    map[string]string `json:"payment_data"`
-	ReturnURL      string            `json:"return_url"`
-	Metadata       Metadata          `json:"metadata"`
+	ShippingRateID *int64 `json:"shipping_rate_id,omitempty"`
+	// QuotedTotalMinor is the total the shopper was shown, from GET
+	// /api/checkout/quote. Given, checkout refuses with a conflict carrying
+	// the new figures when its own total differs, so a rate, a code or a tax
+	// that moved after the quote is never charged unseen (D185).
+	QuotedTotalMinor *int64            `json:"quoted_total_minor,omitempty"`
+	PaymentData      map[string]string `json:"payment_data"`
+	ReturnURL        string            `json:"return_url"`
+	Metadata         Metadata          `json:"metadata"`
 }
 
 // CheckoutResult is the order and what the client must do to pay for it.
@@ -466,19 +471,24 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			total += tax
 		}
 
+		figures := CheckoutQuote{
+			Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
+			ShippingMethod: shippingMethod, Tax: money(tax, currency), TaxInclusive: inclusive,
+			PaymentFee: money(paymentFee, currency), Total: money(total, currency),
+		}
+		if applied != nil {
+			figures.Discount = &QuotedDiscount{
+				Code: applied.Code, Title: applied.Title, AutoApplied: autoApplied,
+				Amount: money(discount, currency), FreeShipping: applied.FreeShipping,
+			}
+		}
 		if quote != nil {
-			*quote = CheckoutQuote{
-				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
-				ShippingMethod: shippingMethod, Tax: money(tax, currency), TaxInclusive: inclusive,
-				PaymentFee: money(paymentFee, currency), Total: money(total, currency),
-			}
-			if applied != nil {
-				quote.Discount = &QuotedDiscount{
-					Code: applied.Code, Title: applied.Title, AutoApplied: autoApplied,
-					Amount: money(discount, currency), FreeShipping: applied.FreeShipping,
-				}
-			}
+			*quote = figures
 			return errQuoted
+		}
+		if in.QuotedTotalMinor != nil && *in.QuotedTotalMinor != total {
+			return Conflictf("the total is now %d, not the %d quoted; show the shopper the new figures",
+				total, *in.QuotedTotalMinor).WithDetails(figures)
 		}
 
 		// The modules' last word, with every figure final and nothing written

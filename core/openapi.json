@@ -11749,7 +11749,7 @@
           "409": {
             "description": "A line moved, or the cart is already checked out."
           },
-          "422": {
+          "400": {
             "description": "A required parameter is missing, or the store does not deliver there."
           }
         }
@@ -19210,6 +19210,14 @@
           },
           "address": {
             "$ref": "#/components/schemas/Address"
+          },
+          "shipping_rate_id": {
+            "type": "integer",
+            "description": "The delivery option chosen, from GET /api/checkout/rates. Omitted takes the first."
+          },
+          "quoted_total_minor": {
+            "type": "integer",
+            "description": "The total the shopper was shown, from GET /api/checkout/quote. Given and different from checkout's own total, checkout answers 409 with the new figures (the quote's shape) as details and places nothing (D185)."
           },
           "payment_data": {
             "type": "object",
