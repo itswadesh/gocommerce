@@ -283,11 +283,9 @@ func (m *Module) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	// A body is optional here: a storefront that only wants a token posts
 	// nothing at all.
-	if r.ContentLength > 0 {
-		if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
-			gocommerce.RespondError(w, r, err)
-			return
-		}
+	if err := gocommerce.DecodeOptionalJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
 	}
 	email, err := cleanEmail(in.Email)
 	if err != nil {
