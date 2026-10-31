@@ -7,10 +7,12 @@
 # Every variable is listed, secrets as placeholders, in .env.example; copy it
 # to .env and fill it in, or set the same names in the host's environment tab.
 #
-# On Dokploy this is a Compose service. Dokploy runs its own Traefik on ports
-# 80 and 443, so set PROXY_REPLICAS=0 there: the caddy service then starts no
-# container, and Dokploy's domain entries route to gocommerce:8080 (the panel)
-# and storefront:3000 (the shops) by service name. Set the variables in the
+# Caddy is in the "proxy" profile, which .env.example switches on
+# (COMPOSE_PROFILES=proxy), so the command above starts it once .env is copied
+# from there. On Dokploy this is a Compose service whose environment is its
+# own tab: leave COMPOSE_PROFILES out, since Dokploy's Traefik holds ports 80
+# and 443, and no Caddy container is made. Dokploy's domain entries route to
+# gocommerce:8080 (the panel) and storefront:3000 (the shops) by service name. Set the variables in the
 # panel's Environment tab rather than committing them — POSTGRES_PASSWORD and
 # GOCOMMERCE_ADMIN_TOKEN are secrets, and the admin password is used once.
 
@@ -258,13 +260,14 @@ services:
   # browser asks for it, and only for a name the engine says is a store's
   # (GET /internal/caddy/ask). See scripts/Caddyfile.
   #
-  # PROXY_REPLICAS=0 starts no container for it, for a host whose own proxy
-  # already holds ports 80 and 443 (Dokploy).
+  # Opt-in (D176): started only with the "proxy" profile on. Off by default,
+  # because on a host whose own proxy holds ports 80 and 443 (Dokploy) a
+  # Caddy container fails the whole deploy on the port, and a forgotten
+  # switch there must not.
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
-    deploy:
-      replicas: ${PROXY_REPLICAS:-1}
+    profiles: [proxy]
     depends_on:
       - gocommerce
       - storefront
