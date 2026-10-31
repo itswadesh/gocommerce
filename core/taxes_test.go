@@ -127,6 +127,55 @@ func TestTaxInclusiveIsExtracted(t *testing.T) {
 	}
 }
 
+// A store says its own prices include tax on an install whose default is
+// that they do not (D177): checkout extracts the tax, the settings report it,
+// and switching back adds tax on top again. An order keeps what it was
+// placed under.
+func TestAStoreSaysItsPricesIncludeTax(t *testing.T) {
+	app := newTaxApp(t, func(*Config) {})
+	ctx := context.Background()
+	product := simpleProduct(t, app, "TAX-OWN", 1050, 5)
+	newTaxRate(t, app, TaxRateInput{Name: "GST 5%", RateBP: 500, Country: "IN"})
+
+	setInclusive := func(on bool) {
+		t.Helper()
+		cur, err := app.Profile().Get(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cur.PricesIncludeTax = &on
+		if _, err := app.Profile().Set(ctx, *cur, nil); err != nil {
+			t.Fatalf("save prices_include_tax=%v: %v", on, err)
+		}
+	}
+	setInclusive(true)
+	if !app.SettingsFor(ctx).PricesIncludeTax {
+		t.Error("the settings do not report the store's inclusive prices")
+	}
+	inside, err := checkoutTo(t, app, product.DefaultVariant().ID, 1, "IN", "MP")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	// 1050 inclusive of 5% is 1000 net and 50 tax, and the total stays 1050.
+	if !inside.TaxInclusive || inside.Tax.AmountMinor != 50 ||
+		inside.Total.AmountMinor != inside.Subtotal.AmountMinor+inside.Shipping.AmountMinor {
+		t.Fatalf("inclusive order: inclusive=%v tax=%d total=%d subtotal=%d", inside.TaxInclusive,
+			inside.Tax.AmountMinor, inside.Total.AmountMinor, inside.Subtotal.AmountMinor)
+	}
+
+	setInclusive(false)
+	added, err := checkoutTo(t, app, product.DefaultVariant().ID, 1, "IN", "MP")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if added.TaxInclusive || added.Total.AmountMinor != added.Subtotal.AmountMinor+added.Shipping.AmountMinor+added.Tax.AmountMinor {
+		t.Errorf("exclusive order: inclusive=%v tax=%d total=%d", added.TaxInclusive, added.Tax.AmountMinor, added.Total.AmountMinor)
+	}
+	if again, err := app.Order().Get(ctx, inside.ID); err != nil || !again.TaxInclusive {
+		t.Errorf("the first order lost the answer it was placed under: %v %v", again, err)
+	}
+}
+
 // The most specific rule that fits a line is the one that applies, and a rule
 // on a category reaches the whole subtree under it.
 func TestTaxRateSpecificity(t *testing.T) {

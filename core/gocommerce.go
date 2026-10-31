@@ -261,7 +261,8 @@ type Config struct {
 	//
 	// False — tax added at checkout — is the default because it is what a store
 	// with no rates configured already does, so turning tax on cannot silently
-	// change any total.
+	// change any total. It is the default for a store that has not said; a
+	// store says on Store details (D177).
 	PricesIncludeTax bool
 
 	// FlatShippingMinor is added to every order, in minor units. It is the

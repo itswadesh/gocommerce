@@ -48,11 +48,13 @@ type ProviderInfo struct {
 // No names are reserved on it any more: "modules" and "notifier_channels" were
 // held for the readout below and are now served.
 type StoreSettings struct {
-	Version          string   `json:"version"`
-	Currency         string   `json:"currency"`
-	DefaultLanguage  string   `json:"default_language"`
-	Languages        []string `json:"languages"`
-	PricesIncludeTax bool     `json:"prices_include_tax"`
+	Version         string   `json:"version"`
+	Currency        string   `json:"currency"`
+	DefaultLanguage string   `json:"default_language"`
+	Languages       []string `json:"languages"`
+	// PricesIncludeTax is the store's own answer (D177), set on Store details,
+	// else the install's default.
+	PricesIncludeTax bool `json:"prices_include_tax"`
 	// FlatShipping crosses as Money and not as a bare integer, for the reason
 	// every other amount does: the number is meaningless without the code that
 	// says how many decimals it has.
@@ -125,7 +127,7 @@ func (a *App) SettingsFor(ctx context.Context) StoreSettings {
 		Currency:         a.Currency(ctx),
 		DefaultLanguage:  langs[0],
 		Languages:        langs,
-		PricesIncludeTax: a.cfg.PricesIncludeTax,
+		PricesIncludeTax: a.settingsPricesIncludeTax(ctx),
 		FlatShipping:     money(a.cfg.FlatShippingMinor, a.Currency(ctx)),
 		OrderPrefix:      a.cfg.OrderPrefix,
 		// applyDefaults guarantees both are positive, so the division is safe
@@ -221,4 +223,17 @@ func (a *App) fulfillmentInfo(ctx context.Context) []ProviderInfo {
 		out = append(out, info)
 	}
 	return out
+}
+
+// settingsPricesIncludeTax is the store's answer for the settings report,
+// which cannot fail: an unreadable one reports the install's default.
+func (a *App) settingsPricesIncludeTax(ctx context.Context) bool {
+	if a.db == nil {
+		return a.cfg.PricesIncludeTax
+	}
+	inclusive, err := a.pricesIncludeTax(ctx, a.db)
+	if err != nil {
+		return a.cfg.PricesIncludeTax
+	}
+	return inclusive
 }
