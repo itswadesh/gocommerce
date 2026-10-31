@@ -19217,7 +19217,7 @@
           },
           "quoted_total_minor": {
             "type": "integer",
-            "description": "The total the shopper was shown, from GET /api/checkout/quote. Given and different from checkout's own total, checkout answers 409 with the new figures (the quote's shape) as details and places nothing (D185)."
+            "description": "The total the shopper was shown, from GET /api/checkout/quote. Given and different from checkout's own total, checkout answers 409 `total_changed` with the new figures (the quote's shape) as details and places nothing (D185)."
           },
           "payment_data": {
             "type": "object",

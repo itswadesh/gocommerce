@@ -701,7 +701,8 @@ func TestAQuoteIsWhatCheckoutCharges(t *testing.T) {
 	in := checkoutInput(cart.Token)
 	stale := q.Total.AmountMinor + 1
 	in.QuotedTotalMinor = &stale
-	if _, err := app.Order().Checkout(ctx, CodeCOD, in, ""); !errors.Is(err, ErrConflict) {
+	var api *APIError
+	if _, err := app.Order().Checkout(ctx, CodeCOD, in, ""); !errors.Is(err, ErrConflict) || !errors.As(err, &api) || api.Code != "total_changed" {
 		t.Fatalf("checkout against a stale quote = %v, want a conflict", err)
 	}
 	in.QuotedTotalMinor = &q.Total.AmountMinor
