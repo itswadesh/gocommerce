@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -128,7 +129,7 @@ func TestTheLookSettingsPublishAndRollBack(t *testing.T) {
 func TestACollectionListShowsItsCollections(t *testing.T) {
 	app := layoutsApp(t)
 	ctx := context.Background()
-	rings, err := app.Collections().Create(ctx, gocommerce.CollectionInput{Title: "Rings", Metadata: gocommerce.Metadata{"image": "/media/rings.jpg"}})
+	rings, err := app.Collections().Create(ctx, gocommerce.CollectionInput{Title: "Rings", Description: "Bands in gold and silver \r\n\r\nEach one sized to order.", Metadata: gocommerce.Metadata{"image": "/media/rings.jpg"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +147,21 @@ func TestACollectionListShowsItsCollections(t *testing.T) {
 	if len(cs) != 2 || cs[0].ID != chains.ID || cs[1].ID != rings.ID {
 		t.Fatalf("collections = %+v, want chains then rings, the deleted one skipped", cs)
 	}
-	if cs[1].Title != "Rings" || cs[1].Slug != rings.Slug || cs[1].Image != "/media/rings.jpg" || cs[0].Image != "" {
+	if cs[1].Title != "Rings" || cs[1].Slug != rings.Slug || cs[1].Image != "/media/rings.jpg" || cs[0].Image != "" ||
+		cs[1].Description != "Bands in gold and silver" || cs[0].Description != "" {
 		t.Fatalf("collection cards = %+v", cs)
+	}
+}
+
+func TestACardCarriesAtMostAboutOneHundredAndSixtyCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"Bands in gold and silver \r\n\r\nEach one sized to order.": "Bands in gold and silver",
+		strings.Repeat("Gold and silver bangles ", 12):              strings.Repeat("Gold and silver bangles ", 6) + "Gold and silver…",
+		strings.Repeat("चूड़ी", 60):                                 string([]rune(strings.Repeat("चूड़ी", 60))[:160]) + "…",
+	} {
+		if got := cardLine(in); got != want {
+			t.Errorf("cardLine(%.30q…) = %q, want %q", in, got, want)
+		}
 	}
 }
 

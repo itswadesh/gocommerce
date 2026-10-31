@@ -206,6 +206,9 @@ type PublicCollection struct {
 	Title string `json:"title"`
 	// Image is the collection's picture (its metadata's image), or empty.
 	Image string `json:"image,omitempty"`
+	// Description is the first line of the collection's description, cut
+	// at a word near 160 characters (cardLine).
+	Description string `json:"description,omitempty"`
 }
 
 // PublicTheme is the design tokens every page of the storefront applies:
@@ -422,9 +425,25 @@ func (m *Module) collectionCards(ctx context.Context, ids []int64) []PublicColle
 		if !safeURL(image) {
 			image = ""
 		}
-		out = append(out, PublicCollection{ID: c.ID, Slug: c.Slug, Title: c.Title, Image: image})
+		out = append(out, PublicCollection{ID: c.ID, Slug: c.Slug, Title: c.Title, Image: image, Description: cardLine(c.Description)})
 	}
 	return out
+}
+
+// cardLine is the first line of a description, cut at a word near 160
+// characters: a card shows a line or two, and a screen reader reads all of
+// what is sent as the card's name.
+func cardLine(description string) string {
+	line, _, _ := strings.Cut(description, "\n")
+	line = strings.TrimSpace(line)
+	if r := []rune(line); len(r) > 160 {
+		cut := string(r[:160])
+		if i := strings.LastIndex(cut, " "); i > 0 {
+			cut = cut[:i]
+		}
+		line = strings.TrimRight(cut, " ,.;:") + "…"
+	}
+	return line
 }
 
 func (m *Module) inCollection(ctx context.Context, id, channelID int64, limit int) ([]*gocommerce.Product, error) {

@@ -158,6 +158,9 @@ var Sections = []SectionType{
 			{Key: "products", Label: "Products", Kind: KindProducts, MaxItems: 24, ShowWhen: map[string]string{"source": "products"}},
 			{Key: "limit", Label: "How many to show", Kind: KindNumber, Default: 8, Min: 1, Max: 24},
 			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 4, Min: 2, Max: 4},
+			{Key: "mobile_layout", Label: "On a phone", Kind: KindSelect, Default: "grid",
+				Help:    "One row shows the products side by side for a thumb to swipe through. Tablets and computers always show the grid.",
+				Options: []Option{{"grid", "Two across, in rows"}, {"row", "One row that scrolls sideways"}}},
 			viewAllText,
 			viewAllLink,
 			dividerField,
@@ -229,6 +232,9 @@ var Sections = []SectionType{
 		Type: "collection-list", Label: "Collection list", Icon: "ri-folders-line",
 		Description: "Collections you pick, each with its picture and title, linking to it.",
 		Fields: []Field{
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "below",
+				Help:    "On the picture puts the title and the first line of the collection's description over a dark fade at the foot of a square picture.",
+				Options: []Option{{"below", "Title under the picture"}, {"overlay", "Title on the picture"}}},
 			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			subtitleField,
@@ -300,12 +306,15 @@ var Sections = []SectionType{
 	},
 	{
 		Type: "multi-column", Label: "Columns", Icon: "ri-layout-column-line",
-		Description: "Up to four columns side by side, each a picture, heading, text and link.",
+		Description: "Up to six columns side by side, each a picture, heading, text and link.",
 		Fields: []Field{
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "tiles",
+				Help:    "Tiles put each picture on a quiet block with its heading and an arrow, and columns with text stay columns. Captioned shows square pictures with the heading under each, up to six across: a row of categories.",
+				Options: []Option{{"tiles", "Tiles"}, {"captioned", "Square pictures, heading under each"}}},
 			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			subtitleField,
-			{Key: "items", Label: "Columns", Kind: KindList, Required: true, MaxItems: 4, Fields: []Field{
+			{Key: "items", Label: "Columns", Kind: KindList, Required: true, MaxItems: 6, Fields: []Field{
 				{Key: "image", Label: "Picture", Kind: KindImage},
 				{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 				{Key: "text", Label: "Text", Kind: KindTextarea, MaxLen: 600},
