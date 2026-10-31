@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -696,7 +697,15 @@ func TestAQuoteIsWhatCheckoutCharges(t *testing.T) {
 		t.Fatalf("the quote left %d units reserved", reserved)
 	}
 
-	result, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+	// A total that moved after the quote is refused, not charged unseen.
+	in := checkoutInput(cart.Token)
+	stale := q.Total.AmountMinor + 1
+	in.QuotedTotalMinor = &stale
+	if _, err := app.Order().Checkout(ctx, CodeCOD, in, ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("checkout against a stale quote = %v, want a conflict", err)
+	}
+	in.QuotedTotalMinor = &q.Total.AmountMinor
+	result, err := app.Order().Checkout(ctx, CodeCOD, in, "")
 	if err != nil {
 		t.Fatalf("checkout after the quote: %v", err)
 	}
