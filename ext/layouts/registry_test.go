@@ -348,3 +348,53 @@ func TestTheStarterBenefitsHaveIcons(t *testing.T) {
 		}
 	}
 }
+
+func TestASectionHeadingCarriesItsWords(t *testing.T) {
+	got, err := Validate("home", doc(t, `{"theme_settings":{"eyebrow_case":"upper"},"sections":[
+		{"id":"g","type":"product-grid","enabled":true,"settings":{"eyebrow":" Most  loved ","heading":"Best selling","subtitle":"The ones people\nkeep coming back for.","view_all_text":"Shop all","view_all_link":"/collections/best"}},
+		{"id":"c","type":"collection-list","enabled":true,"settings":{"eyebrow":"Shop by collection","collections":[1],"view_all_text":"All collections","view_all_link":"/collections"}},
+		{"id":"m","type":"multi-column","enabled":true,"settings":{"subtitle":"Pick what you need.","items":[{"heading":"Keychains","link":"/c/keychains"}],"view_all_link":"https://example.com/all"}},
+		{"id":"r","type":"rich-text","enabled":true,"settings":{"eyebrow":"The whole range","heading":"Everything","subtitle":"dropped"}},
+		{"id":"q","type":"faq","enabled":true,"settings":{"eyebrow":"Help","subtitle":"Ask us anything.","items":[{"question":"Q","answer":"A"}]}},
+		{"id":"b","type":"benefits","enabled":true,"settings":{"eyebrow":"Why us","subtitle":"Three promises.","items":[{"title":"Fast"}]}},
+		{"id":"plain","type":"product-grid","enabled":true,"settings":{"heading":"New in"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ThemeSettings["eyebrow_case"] != "upper" {
+		t.Errorf("eyebrow_case = %v, want upper", got.ThemeSettings["eyebrow_case"])
+	}
+	words := []string{"eyebrow", "subtitle", "view_all_text", "view_all_link"}
+	want := map[string]map[string]any{
+		"g":     {"eyebrow": "Most loved", "subtitle": "The ones people keep coming back for.", "view_all_text": "Shop all", "view_all_link": "/collections/best"},
+		"c":     {"eyebrow": "Shop by collection", "view_all_text": "All collections", "view_all_link": "/collections"},
+		"m":     {"subtitle": "Pick what you need.", "view_all_link": "https://example.com/all"},
+		"r":     {"eyebrow": "The whole range"},
+		"q":     {"eyebrow": "Help", "subtitle": "Ask us anything."},
+		"b":     {"eyebrow": "Why us", "subtitle": "Three promises."},
+		"plain": {},
+	}
+	for _, s := range got.Sections {
+		kept := map[string]any{}
+		for _, k := range words {
+			if v, ok := s.Settings[k]; ok {
+				kept[k] = v
+			}
+		}
+		if !reflect.DeepEqual(kept, want[s.ID]) {
+			t.Errorf("%s (%s) heading words = %v, want %v", s.ID, s.Type, kept, want[s.ID])
+		}
+	}
+
+	for name, c := range map[string]struct{ raw, want string }{
+		"long eyebrow":       {`{"sections":[{"id":"a","type":"faq","settings":{"eyebrow":"` + strings.Repeat("x", 81) + `","items":[{"question":"Q","answer":"A"}]}}]}`, "longer than 80"},
+		"script view all":    {`{"sections":[{"id":"a","type":"collection-list","settings":{"collections":[1],"view_all_link":"javascript:alert(1)"}}]}`, "web address"},
+		"other site as path": {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"}],"view_all_link":"//evil.example/"}}]}`, "web address"},
+		"long view all text": {`{"sections":[{"id":"a","type":"product-grid","settings":{"view_all_text":"` + strings.Repeat("x", 61) + `"}}]}`, "longer than 60"},
+		"unknown case":       {`{"theme_settings":{"eyebrow_case":"caps"},"sections":[]}`, "Small line above a heading must be one of its choices"},
+	} {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+	}
+}

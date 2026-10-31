@@ -103,6 +103,13 @@ const (
 	maxLong  = 5000
 )
 
+var (
+	eyebrowField  = Field{Key: "eyebrow", Label: "Small line above the heading", Kind: KindText, MaxLen: 80}
+	subtitleField = Field{Key: "subtitle", Label: "Line under the heading", Kind: KindText, MaxLen: maxShort}
+	viewAllText   = Field{Key: "view_all_text", Label: "\"View all\" link text", Kind: KindText, MaxLen: 60, Help: "Empty says \"View all\"."}
+	viewAllLink   = Field{Key: "view_all_link", Label: "\"View all\" link", Kind: KindURL}
+)
+
 // Sections is the registry: the panel's section library and the engine's
 // validation both read it, so a type added here is offered everywhere.
 var Sections = []SectionType{
@@ -118,7 +125,7 @@ var Sections = []SectionType{
 		Type: "hero", Label: "Hero", Icon: "ri-image-2-line",
 		Description: "A large picture with a heading, a line of text and a button.",
 		Fields: []Field{
-			{Key: "eyebrow", Label: "Small line above the heading", Kind: KindText, MaxLen: 80},
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, Required: true, MaxLen: maxShort},
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 600},
 			{Key: "image", Label: "Picture", Kind: KindImage, Help: "Wide, for computers."},
@@ -134,14 +141,17 @@ var Sections = []SectionType{
 		Type: "product-grid", Label: "Product grid", Icon: "ri-layout-grid-line",
 		Description: "Products from a collection, or ones you pick, with live prices and stock.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
 			{Key: "source", Label: "Products from", Kind: KindSelect, Default: "collection",
 				Options: []Option{{"collection", "A collection"}, {"products", "Products I pick"}, {"newest", "The newest products"}}},
 			{Key: "collection", Label: "Collection", Kind: KindCollection, ShowWhen: map[string]string{"source": "collection"}},
 			{Key: "products", Label: "Products", Kind: KindProducts, MaxItems: 24, ShowWhen: map[string]string{"source": "products"}},
 			{Key: "limit", Label: "How many to show", Kind: KindNumber, Default: 8, Min: 1, Max: 24},
 			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 4, Min: 2, Max: 4},
-			{Key: "view_all_link", Label: "\"View all\" link", Kind: KindURL},
+			viewAllText,
+			viewAllLink,
 		},
 	},
 	{
@@ -152,7 +162,7 @@ var Sections = []SectionType{
 			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
 			{Key: "image_side", Label: "Picture on the", Kind: KindSelect, Default: "left",
 				Options: []Option{{"left", "Left"}, {"right", "Right"}}},
-			{Key: "eyebrow", Label: "Small line above the heading", Kind: KindText, MaxLen: 80},
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 2000},
 			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
@@ -163,6 +173,7 @@ var Sections = []SectionType{
 		Type: "rich-text", Label: "Text", Icon: "ri-text",
 		Description: "A heading and paragraphs of text.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: maxLong, Help: "A blank line starts a new paragraph."},
 			{Key: "align", Label: "Alignment", Kind: KindSelect, Default: "center",
@@ -173,7 +184,9 @@ var Sections = []SectionType{
 		Type: "benefits", Label: "Benefits strip", Icon: "ri-shield-check-line",
 		Description: "Short promises in a row: shipping, returns, secure checkout.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
 			{Key: "items", Label: "Benefits", Kind: KindList, Required: true, MaxItems: 6, Fields: []Field{
 				{Key: "title", Label: "Title", Kind: KindText, Required: true, MaxLen: 80},
 				{Key: "body", Label: "Line under it", Kind: KindText, MaxLen: maxShort},
@@ -202,9 +215,13 @@ var Sections = []SectionType{
 		Type: "collection-list", Label: "Collection list", Icon: "ri-folders-line",
 		Description: "Collections you pick, each with its picture and title, linking to it.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
 			{Key: "collections", Label: "Collections", Kind: KindCollections, Required: true, MaxItems: 12},
 			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 3, Min: 2, Max: 4},
+			viewAllText,
+			viewAllLink,
 		},
 	},
 	{
@@ -253,7 +270,9 @@ var Sections = []SectionType{
 		Type: "faq", Label: "Questions and answers", Icon: "ri-question-answer-line",
 		Description: "Questions a shopper opens one at a time to read the answer.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
 			{Key: "items", Label: "Questions", Kind: KindList, Required: true, MaxItems: 30, Fields: []Field{
 				{Key: "question", Label: "Question", Kind: KindText, Required: true, MaxLen: maxShort},
 				{Key: "answer", Label: "Answer", Kind: KindTextarea, Required: true, MaxLen: 2000, Help: "A blank line starts a new paragraph."},
@@ -264,7 +283,9 @@ var Sections = []SectionType{
 		Type: "multi-column", Label: "Columns", Icon: "ri-layout-column-line",
 		Description: "Up to four columns side by side, each a picture, heading, text and link.",
 		Fields: []Field{
+			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
 			{Key: "items", Label: "Columns", Kind: KindList, Required: true, MaxItems: 4, Fields: []Field{
 				{Key: "image", Label: "Picture", Kind: KindImage},
 				{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
@@ -272,6 +293,8 @@ var Sections = []SectionType{
 				{Key: "link_text", Label: "Link text", Kind: KindText, MaxLen: 60},
 				{Key: "link", Label: "Link", Kind: KindURL},
 			}},
+			viewAllText,
+			viewAllLink,
 		},
 	},
 
@@ -472,6 +495,8 @@ var ThemeSettings = []SettingGroup{
 			Options: []Option{{"compact", "Compact (14px text)"}, {"standard", "Standard (16px text)"}, {"large", "Large (18px text)"}}},
 		{Key: "heading_weight", Label: "Heading weight", Kind: KindSelect,
 			Options: []Option{{"medium", "Medium"}, {"semibold", "Semibold"}, {"bold", "Bold"}, {"extrabold", "Extra bold"}}},
+		{Key: "eyebrow_case", Label: "Small line above a heading", Kind: KindSelect, Help: "Capitals draws it in spaced capital letters, whatever was typed.",
+			Options: []Option{{"sentence", "As typed"}, {"upper", "Capitals"}}},
 	}},
 	{Label: "Spacing", Fields: []Field{
 		{Key: "density", Label: "Density", Kind: KindSelect, Help: "The room around sections, cards and lists.",
