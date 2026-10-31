@@ -157,6 +157,13 @@ type Discount struct {
 	// PrepaidOnly refuses the code on an order paid in cash on delivery: the
 	// discount is the reason to pay up front.
 	PrepaidOnly bool `json:"prepaid_only"`
+	// AutoApply puts the code on an order whose shopper entered none, when
+	// it is the one that takes the most off their basket (D179). A code the
+	// shopper types wins: an order has one discount (D28).
+	AutoApply bool `json:"auto_apply"`
+	// Hidden keeps the code out of the basket's offers even while the store
+	// shows every active code (D180): a code meant for some people only.
+	Hidden bool `json:"hidden"`
 
 	Active    bool      `json:"active"`
 	Metadata  Metadata  `json:"metadata"`
@@ -245,6 +252,8 @@ type DiscountInput struct {
 	UsageLimit       *int       `json:"usage_limit"`
 	OncePerEmail     bool       `json:"once_per_email"`
 	PrepaidOnly      bool       `json:"prepaid_only"`
+	AutoApply        bool       `json:"auto_apply"`
+	Hidden           bool       `json:"hidden"`
 	Listed           *bool      `json:"listed"`
 	Active           *bool      `json:"active"`
 	Metadata         Metadata   `json:"metadata"`
@@ -277,6 +286,8 @@ type DiscountPatch struct {
 	UsageLimit   NullableInt64 `json:"usage_limit"`
 	OncePerEmail *bool         `json:"once_per_email"`
 	PrepaidOnly  *bool         `json:"prepaid_only"`
+	AutoApply    *bool         `json:"auto_apply"`
+	Hidden       *bool         `json:"hidden"`
 	Listed       *bool         `json:"listed"`
 	Active       *bool         `json:"active"`
 	Metadata     *Metadata     `json:"metadata"`
@@ -296,14 +307,14 @@ type DiscountQuery struct {
 const discountColumns = `id, coalesce(code, ''), title, kind,
 	coalesce(value_bp, 0), coalesce(value_minor, 0), scope, min_subtotal_minor,
 	starts_at, ends_at, usage_limit, used_count, once_per_email, listed, active,
-	metadata, created_at, updated_at, prepaid_only`
+	metadata, created_at, updated_at, prepaid_only, auto_apply, hidden`
 
 func scanDiscount(row interface{ Scan(...any) error }) (*Discount, error) {
 	var d Discount
 	var meta []byte
 	if err := row.Scan(&d.ID, &d.Code, &d.Title, &d.Kind, &d.ValueBP, &d.ValueMinor,
 		&d.Scope, &d.MinSubtotalMinor, &d.StartsAt, &d.EndsAt, &d.UsageLimit,
-		&d.UsedCount, &d.OncePerEmail, &d.Listed, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt, &d.PrepaidOnly); err != nil {
+		&d.UsedCount, &d.OncePerEmail, &d.Listed, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt, &d.PrepaidOnly, &d.AutoApply, &d.Hidden); err != nil {
 		return nil, err
 	}
 	if err := scanMetadata(meta, &d.Metadata); err != nil {
@@ -561,6 +572,9 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		return nil, Validationf("title is required")
 	}
 	targets := dedupeIDs(in.TargetIDs)
+	if in.AutoApply && strings.TrimSpace(in.Code) == "" {
+		return nil, errAutoApplyNeedsCode
+	}
 	if err := validateDiscount(in.Kind, in.Scope, in.ValueBP, in.ValueMinor, targets); err != nil {
 		return nil, err
 	}
@@ -597,13 +611,13 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		d, derr = scanDiscount(tx.QueryRowContext(ctx, `
 			INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
 			                       min_subtotal_minor, starts_at, ends_at, usage_limit,
-			                       once_per_email, active, metadata, sample, listed, prepaid_only)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			                       once_per_email, active, metadata, sample, listed, prepaid_only, auto_apply, hidden)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 			RETURNING `+discountColumns,
 			nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
 			nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
 			in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
-			in.OncePerEmail, active, meta, in.sample, in.Listed != nil && *in.Listed, in.PrepaidOnly))
+			in.OncePerEmail, active, meta, in.sample, in.Listed != nil && *in.Listed, in.PrepaidOnly, in.AutoApply, in.Hidden))
 		if derr != nil {
 			return translateDiscountErr(derr)
 		}
@@ -898,6 +912,23 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 	if patch.PrepaidOnly != nil {
 		add("prepaid_only", *patch.PrepaidOnly)
 	}
+	if patch.AutoApply != nil {
+		add("auto_apply", *patch.AutoApply)
+	}
+	if patch.Hidden != nil {
+		add("hidden", *patch.Hidden)
+	}
+	// Judged on the rule as it will be, since either half can be the change.
+	autoAfter, codeAfter := current.AutoApply, current.Code
+	if patch.AutoApply != nil {
+		autoAfter = *patch.AutoApply
+	}
+	if patch.Code != nil {
+		codeAfter = strings.TrimSpace(*patch.Code)
+	}
+	if autoAfter && codeAfter == "" {
+		return errAutoApplyNeedsCode
+	}
 	if patch.Active != nil {
 		add("active", *patch.Active)
 	}
@@ -932,6 +963,8 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 		"once_per_email": current.OncePerEmail,
 		"listed":         current.Listed,
 		"prepaid_only":   current.PrepaidOnly,
+		"auto_apply":     current.AutoApply,
+		"hidden":         current.Hidden,
 		"target_ids":     current.TargetIDs,
 	} {
 		if _, changed := after[col]; changed {
@@ -1752,4 +1785,86 @@ func eligibleSubtotalForOrder(ctx context.Context, tx *sql.Tx, orderID, discount
 		}
 	}
 	return base, nil
+}
+
+// errAutoApplyNeedsCode refuses an automatic discount without a code: the
+// code is what the order, the reports and the shopper's receipt name it by.
+var errAutoApplyNeedsCode = Validationf("a discount applied automatically needs a code, which the order and reports show")
+
+// bestAutoCode is the code of the automatic discount that takes the most off
+// this basket (D179), or "" when none applies. shipping is what the basket's
+// delivery costs, the saving a free-shipping rule is worth. Ties go to the
+// oldest rule, so the answer does not change between two identical baskets.
+// Nothing is claimed here: applyTx claims the one chosen, under its lock.
+func (s *Discounts) bestAutoCode(ctx context.Context, tx *sql.Tx, req discountRequest, shipping int64) (string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT `+discountColumns+` FROM discounts
+		WHERE auto_apply AND active AND code IS NOT NULL
+		  AND (starts_at IS NULL OR starts_at <= now())
+		  AND (ends_at IS NULL OR ends_at > now())
+		  AND (usage_limit IS NULL OR used_count < usage_limit)
+		ORDER BY id`)
+	if err != nil {
+		return "", err
+	}
+	var candidates []*Discount
+	for rows.Next() {
+		d, err := scanDiscount(rows)
+		if err != nil {
+			rows.Close()
+			return "", err
+		}
+		candidates = append(candidates, d)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	best, bestValue := "", int64(0)
+	for _, d := range candidates {
+		_, base, err := s.eligible(ctx, tx, d, req)
+		if err != nil {
+			var api *APIError
+			if errors.As(err, &api) && api.Code == ErrValidation.Code {
+				continue // this basket does not qualify; another rule may
+			}
+			return "", err
+		}
+		a := applyDiscount(d, base)
+		value := a.AmountMinor
+		if a.FreeShipping {
+			value = shipping
+		}
+		if value > bestValue {
+			best, bestValue = d.Code, value
+		}
+	}
+	return best, nil
+}
+
+// DiscountSettings is how a store's codes reach its shoppers (D180).
+type DiscountSettings struct {
+	// ShowAllCodes lists every active code in the basket's offers, not only
+	// the ones marked to be shown, except a code marked hidden and one a
+	// shopper may not be able to use: once per address, or prepaid only.
+	ShowAllCodes bool `json:"show_all_codes"`
+}
+
+// Settings reads the store's discount settings.
+func (s *Discounts) Settings(ctx context.Context) (DiscountSettings, error) {
+	var out DiscountSettings
+	err := s.app.db.QueryRowContext(ctx, `SELECT show_all_codes FROM store_profile WHERE id = 1`).Scan(&out.ShowAllCodes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return out, nil
+	}
+	return out, err
+}
+
+// SetSettings saves them.
+func (s *Discounts) SetSettings(ctx context.Context, in DiscountSettings) (DiscountSettings, error) {
+	if _, err := s.app.db.ExecContext(ctx,
+		`UPDATE store_profile SET show_all_codes = $1, updated_at = now() WHERE id = 1`, in.ShowAllCodes); err != nil {
+		return DiscountSettings{}, err
+	}
+	return s.Settings(ctx)
 }

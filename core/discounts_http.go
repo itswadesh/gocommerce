@@ -14,6 +14,10 @@ func (a *App) mountDiscountRoutes() {
 
 	// A promotion is catalog work: a manager runs one, staff may look at it.
 	a.HandleAdminFunc("GET /api/admin/discounts", a.handleListDiscounts, RightDiscountsRead)
+	// How the store's codes reach shoppers (D180), under the discounts
+	// rights: it is a promotions decision, not the shop's legal details.
+	a.HandleAdminFunc("GET /api/admin/discount-settings", a.handleGetDiscountSettings, RightDiscountsRead)
+	a.HandleAdminFunc("PUT /api/admin/discount-settings", a.handleSetDiscountSettings, RightDiscountsWrite)
 	a.HandleAdminFunc("POST /api/admin/discounts", a.handleCreateDiscount, RightDiscountsWrite)
 	a.HandleAdminFunc("GET /api/admin/discounts/{id}", a.handleGetDiscount, RightDiscountsRead)
 	a.HandleAdminFunc("PATCH /api/admin/discounts/{id}", a.handleUpdateDiscount, RightDiscountsWrite)
@@ -265,4 +269,27 @@ func (a *App) handleDeleteDiscount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) handleGetDiscountSettings(w http.ResponseWriter, r *http.Request) {
+	out, err := a.discounts.Settings(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, out)
+}
+
+func (a *App) handleSetDiscountSettings(w http.ResponseWriter, r *http.Request) {
+	var in DiscountSettings
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	out, err := a.discounts.SetSettings(r.Context(), in)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, out)
 }

@@ -8048,6 +8048,31 @@
         "description": "Clearing the code is the same write as setting one, with an empty code. A cart that has already been checked out refuses this for the same reason PUT does."
       }
     },
+    "/api/admin/discount-settings": {
+      "get": {
+        "tags": ["admin:discounts"],
+        "summary": "How the store's codes reach its shoppers",
+        "security": [{"adminToken": []}],
+        "description": "`show_all_codes`: whether a basket's offers list every active code (D180), not only the ones marked to be shown, except a code marked hidden and one a shopper may not be able to use (once per address, prepaid only). Automatic codes are always listed. Needs discounts.read.",
+        "responses": {
+          "200": {"description": "The settings.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      },
+      "put": {
+        "tags": ["admin:discounts"],
+        "summary": "Change how the store's codes reach its shoppers",
+        "security": [{"adminToken": []}],
+        "description": "Sets `show_all_codes` (D180). Needs discounts.write.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}},
+        "responses": {
+          "200": {"description": "The settings as saved.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
     "/api/admin/discounts": {
       "get": {
         "tags": [
@@ -18822,6 +18847,10 @@
           },
           "reason": {
             "type": "string"
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "description": "Checkout applies this code by itself when the shopper enters none and it saves the most (D179), so the basket can say so."
           }
         }
       },
@@ -20188,6 +20217,18 @@
             "type": "boolean",
             "description": "Per email, not per customer, and named so. Guest checkout is permanent (D22), so there is no customer to count against — this is a deterrent, not a control."
           },
+          "prepaid_only": {
+            "type": "boolean",
+            "description": "Refused on an order paid in cash on delivery (D166): the discount is the reason to pay online."
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "description": "Applied by checkout when the shopper enters no code, if it is the automatic code that saves the basket most (D179). A typed code always wins; needs a code."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Never listed in a basket's offers, even while the store shows every active code (D180)."
+          },
           "active": {
             "type": "boolean"
           },
@@ -20336,6 +20377,18 @@
           "once_per_email": {
             "type": "boolean",
             "description": "Per email, not per customer, and named so. Guest checkout is permanent (D22), so there is no customer to count against — this is a deterrent, not a control."
+          },
+          "prepaid_only": {
+            "type": "boolean",
+            "description": "Refused on an order paid in cash on delivery (D166): the discount is the reason to pay online."
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "description": "Applied by checkout when the shopper enters no code, if it is the automatic code that saves the basket most (D179). A typed code always wins; needs a code."
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Never listed in a basket's offers, even while the store shows every active code (D180)."
           },
           "active": {
             "type": "boolean"

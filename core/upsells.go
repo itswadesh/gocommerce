@@ -640,23 +640,36 @@ type CartOffer struct {
 	// Reason is the engine's sentence when it does not apply for another
 	// reason: a scoped code with none of its products in the basket.
 	Reason string `json:"reason,omitempty"`
+	// AutoApply is a code checkout applies by itself when the shopper enters
+	// none and it saves the most (D179), so the basket can say so.
+	AutoApply bool `json:"auto_apply,omitempty"`
 }
 
 // maxCartOffers bounds the list a basket is shown.
 const maxCartOffers = 20
 
-// CartOffers are the codes the shop listed (Discount.Listed) that are live
+// CartOffers are the codes the shop listed (Discount.Listed) or applies by
+// itself (Discount.AutoApply, D179) that are live
 // now, judged against this basket without claiming anything. A code with a
 // usage limit already reached, or not started, or ended, is not listed.
 func (s *Discounts) CartOffers(ctx context.Context, cart *Cart) ([]CartOffer, error) {
+	settings, err := s.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// An automatic code is always shown, since checkout applies it anyway; a
+	// hidden one never is otherwise; a listed one is; and with the store
+	// showing every code (D180), so is the rest, bar a code a shopper may not
+	// be able to use: once per address, or prepaid only.
 	rows, err := s.app.db.QueryContext(ctx, `
 		SELECT `+discountColumns+` FROM discounts
-		WHERE listed AND active AND code IS NOT NULL
+		WHERE active AND code IS NOT NULL
+		  AND (auto_apply OR (NOT hidden AND (listed OR ($2 AND NOT once_per_email AND NOT prepaid_only))))
 		  AND (starts_at IS NULL OR starts_at <= now())
 		  AND (ends_at IS NULL OR ends_at > now())
 		  AND (usage_limit IS NULL OR used_count < usage_limit)
 		ORDER BY coalesce(min_subtotal_minor, 0), id
-		LIMIT $1`, maxCartOffers)
+		LIMIT $1`, maxCartOffers, settings.ShowAllCodes)
 	if err != nil {
 		return nil, err
 	}
@@ -677,7 +690,7 @@ func (s *Discounts) CartOffers(ctx context.Context, cart *Cart) ([]CartOffer, er
 	out := make([]CartOffer, 0, len(ds))
 	for _, d := range ds {
 		o := CartOffer{Code: d.Code, Title: d.Title, Kind: d.Kind, ValueBP: d.ValueBP, ValueMinor: d.ValueMinor,
-			MinSubtotalMinor: d.MinSubtotalMinor}
+			MinSubtotalMinor: d.MinSubtotalMinor, AutoApply: d.AutoApply}
 		if d.MinSubtotalMinor != nil && cart.Subtotal.AmountMinor < *d.MinSubtotalMinor {
 			m := money(*d.MinSubtotalMinor-cart.Subtotal.AmountMinor, cart.Currency)
 			o.Remaining = &m

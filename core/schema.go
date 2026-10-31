@@ -113,8 +113,26 @@ func coreMigrations() []Migration {
 		{ID: "0095_category_hsn", SQL: migration0095CategoryHSN},
 		{ID: "0096_line_designs", SQL: migration0096LineDesigns},
 		{ID: "0097_store_prices_include_tax", SQL: migration0097StorePricesIncludeTax},
+		{ID: "0098_discount_auto_apply", SQL: migration0098DiscountAutoApply},
+		{ID: "0099_show_all_codes", SQL: migration0099ShowAllCodes},
 	}
 }
+
+// M99 — a store that lists every active code to its shoppers, and a code
+// that is never listed (D180). Both start false, which is what every store
+// and code did before.
+const migration0099ShowAllCodes = `
+ALTER TABLE store_profile ADD COLUMN show_all_codes boolean NOT NULL DEFAULT false;
+ALTER TABLE discounts ADD COLUMN hidden boolean NOT NULL DEFAULT false;
+`
+
+// M98 — a discount checkout applies by itself when the shopper enters no code
+// (D179). It needs a code, which the order and the reports name it by.
+const migration0098DiscountAutoApply = `
+ALTER TABLE discounts
+    ADD COLUMN auto_apply boolean NOT NULL DEFAULT false,
+    ADD CONSTRAINT discounts_auto_apply_needs_code CHECK (NOT auto_apply OR code IS NOT NULL);
+`
 
 // M97 — whether a store's catalog prices already contain tax (D177). Null is
 // the install's Config.PricesIncludeTax, which is what every store did before
