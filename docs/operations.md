@@ -138,8 +138,12 @@ gets no certificate and cannot use up the install's Let's Encrypt allowance.
 The route is reachable only on the compose network; the panel's site answers
 `/internal/*` with 404.
 
-**Where another proxy holds 80 and 443**, as Dokploy's Traefik does, set
-`PROXY_REPLICAS=0`: Compose then starts no Caddy container. Add Dokploy domain
+Caddy is in the compose file's `proxy` profile, which `.env.example` switches
+on with `COMPOSE_PROFILES=proxy`; without it, Compose starts no Caddy container.
+
+**Where another proxy holds 80 and 443**, as Dokploy's Traefik does, leave
+`COMPOSE_PROFILES` out of the service's environment: no Caddy container is
+made, so a deploy cannot fail on the port. Add Dokploy domain
 entries for the panel (service `gocommerce`, port 8080) and the shops (service
 `storefront`, port 3000), and use [the Traefik provider](#a-stores-own-domain-without-touching-the-proxy)
 with `GOCOMMERCE_TRAEFIK_UPSTREAM=http://storefront:3000` for stores' own
