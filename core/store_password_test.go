@@ -101,3 +101,42 @@ func TestStorePasswordTriesAreLimited(t *testing.T) {
 		t.Errorf("try %d answered %d, want 429 even for the right password", storePasswordTriesPerWindow+1, right.Code)
 	}
 }
+
+// Sealing is randomised and a pass is keyed by the sealed password, so a save
+// that left the password as it was must keep its envelope: editing the
+// message signs nobody out, and a new password still does.
+func TestEditingTheClosedMessageKeepsVisitorsIn(t *testing.T) {
+	app := keyedApp(t, keyedDSN(t), newSecretsKey(t), "")
+	ctx := context.Background()
+	on := true
+	if _, err := app.Plugins().Update(ctx, storeCloseKey, PluginPatch{Enabled: &on,
+		Settings: map[string]any{"message": "Launching soon", "password": "launch-day-7731"}}); err != nil {
+		t.Fatalf("close the store: %v", err)
+	}
+	try := func(body string) (int, StorePass) {
+		t.Helper()
+		rec := doBody(t, app, http.MethodPost, "/api/store/password", body)
+		var pass StorePass
+		if rec.Code == http.StatusOK {
+			decodeData(t, rec, &pass)
+		}
+		return rec.Code, pass
+	}
+	code, pass := try(`{"password":"launch-day-7731"}`)
+	if code != http.StatusOK {
+		t.Fatalf("the right password = %d", code)
+	}
+	if _, err := app.Plugins().Update(ctx, storeCloseKey, PluginPatch{Settings: map[string]any{
+		"message": "Opening Monday", "password": SecretMask}}); err != nil {
+		t.Fatalf("edit the message: %v", err)
+	}
+	if code, _ := try(`{"token":"` + pass.Token + `"}`); code != http.StatusOK {
+		t.Errorf("a pass after a message edit answered %d, want it still good", code)
+	}
+	if _, err := app.Plugins().Update(ctx, storeCloseKey, PluginPatch{Settings: map[string]any{"password": "another-one"}}); err != nil {
+		t.Fatalf("change the password: %v", err)
+	}
+	if code, _ := try(`{"token":"` + pass.Token + `"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("an old pass after a new password answered %d, want 422", code)
+	}
+}
