@@ -6066,6 +6066,19 @@
         ]
       }
     },
+    "/api/admin/import/products/template": {
+      "get": {
+        "tags": ["admin:data"],
+        "summary": "A product import file to fill in",
+        "security": [{"adminToken": []}],
+        "description": "A CSV in exactly the layout POST /api/admin/import/products reads: the export's header, with this store's stock_on_hand columns, and one example product in two sizes (a draft, so importing it unedited puts nothing on sale). Prices are in the currency's minor unit (99900 is 999.00), options are Name=Value joined by |, tags are comma-separated, and a product's own columns are filled on its first row only. Needs data.import.",
+        "responses": {
+          "200": {"description": "The template.", "content": {"text/csv": {"schema": {"type": "string"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
     "/api/admin/import/products": {
       "post": {
         "tags": [

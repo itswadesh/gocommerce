@@ -1072,3 +1072,49 @@ func splitList(s, sep string) []string {
 	}
 	return out
 }
+
+// ProductTemplate writes a file to fill in for an import: the export's own
+// header, with this store's stock columns, and one example product in two
+// sizes. It is the export's header and not a list of its own, so the
+// template cannot drift from what the import reads. The example is a draft,
+// so a template imported unedited never puts a made-up product on sale.
+func (t *Transfer) ProductTemplate(ctx context.Context, out io.Writer) error {
+	stockCols, err := t.productStockColumns(ctx)
+	if err != nil {
+		return err
+	}
+	header := productHeaderFor(stockCols)
+	example := []map[string]string{{
+		"product_slug": "cotton-kurta", "product_title": "Cotton kurta",
+		"product_description": "Soft cotton, for everyday wear.", "product_status": "draft",
+		"product_type": "Kurta", "tags": "cotton,summer",
+		"sku": "KURTA-M", "variant_options": "Size=M", "price_minor": "99900",
+		"compare_at_price_minor": "129900", "taxable": "true", "requires_shipping": "true",
+		"track_inventory": "true", "active": "true", "weight_grams": "250", "weight_unit": "g",
+		"origin_country": "IN", "hs_code": "6211",
+	}, {
+		"product_slug": "cotton-kurta", "sku": "KURTA-L", "variant_options": "Size=L",
+		"price_minor": "99900", "compare_at_price_minor": "129900", "taxable": "true",
+		"requires_shipping": "true", "track_inventory": "true", "active": "true",
+		"weight_grams": "270", "weight_unit": "g", "origin_country": "IN", "hs_code": "6211",
+	}}
+	w := csv.NewWriter(out)
+	if err := w.Write(header); err != nil {
+		return err
+	}
+	for _, values := range example {
+		row := make([]string, len(header))
+		for i, name := range header {
+			if name == "stock_on_hand" || strings.HasPrefix(name, stockColumnPrefix) {
+				row[i] = "10"
+				continue
+			}
+			row[i] = values[name]
+		}
+		if err := w.Write(row); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	return w.Error()
+}

@@ -13,6 +13,9 @@ func (a *App) mountTransferRoutes() {
 	// two members.
 	a.HandleAdminFunc("GET /api/admin/export/admin-products", a.handleExportProducts, RightDataExport)
 	a.HandleAdminFunc("POST /api/admin/import/products", a.handleImportProducts, RightDataImport)
+	// The file to fill in for that import: under the import's right, since it
+	// is who fills it in that needs it, and it holds none of the store's data.
+	a.HandleAdminFunc("GET /api/admin/import/products/template", a.handleProductTemplate, RightDataImport)
 	a.HandleAdminFunc("GET /api/admin/export/admin-orders", a.handleExportOrders, RightDataExport)
 	a.HandleAdminFunc("POST /api/admin/import/orders", a.handleImportOrders, RightDataImport)
 	// data.export and not customers.read, which is the same judgement the other
@@ -118,6 +121,14 @@ func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
 		// and let the truncated file be the signal — pretending it succeeded
 		// would be worse.
 		a.log.Error("product export failed midway", "error", err)
+	}
+}
+
+func (a *App) handleProductTemplate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="products-template.csv"`)
+	if err := a.transfer.ProductTemplate(r.Context(), w); err != nil {
+		a.log.Error("product template failed midway", "error", err)
 	}
 }
 
