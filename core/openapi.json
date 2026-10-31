@@ -7877,7 +7877,7 @@
           "cart"
         ],
         "summary": "The discount codes a basket can apply",
-        "description": "The codes the shop listed (`listed` on a discount), live now and not used up, each judged against this basket without claiming anything: whether it applies and for how much, or how much more the basket needs (D133). An unlisted code is never shown.",
+        "description": "The codes a shopper may be shown, live now and not used up, each judged against this basket without claiming anything: whether it applies and for how much, or how much more the basket needs (D133). Shown: every code applied automatically (`auto_apply`, D179); every code the shop listed (`listed`); and, while the store shows every active code (`show_all_codes`, D180), the rest too, except a code marked `hidden` and one a shopper may be refused (once per email, prepaid only). With that switch off, a code neither listed nor automatic is never shown.",
         "parameters": [
           {
             "name": "cartId",
