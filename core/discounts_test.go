@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -564,5 +565,105 @@ func TestDiscountPrepaidOnly(t *testing.T) {
 	}
 	if res.Order.Discount.AmountMinor != 100 {
 		t.Fatalf("a prepaid order got a discount of %d, want 100", res.Order.Discount.AmountMinor)
+	}
+}
+
+// An automatic code goes on an order whose shopper entered none, and the one
+// that saves the basket most is chosen; one the shopper types wins; a basket
+// below a rule's minimum gets nothing from it; and a rule without a code is
+// refused, since the code is what the order names it by (D179).
+func TestAutomaticDiscounts(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	product := simpleProduct(t, app, "DISC-AUTO", 1000, 50)
+	newDiscount(t, app, DiscountInput{Code: "AUTO50", Title: "Fifty off", Kind: DiscountFixed, ValueMinor: 50, AutoApply: true})
+	newDiscount(t, app, DiscountInput{Code: "AUTO10PC", Title: "Ten percent", Kind: DiscountPercentage, ValueBP: 1000, AutoApply: true})
+	big := int64(100000)
+	newDiscount(t, app, DiscountInput{Code: "AUTOBIG", Title: "Big baskets", Kind: DiscountFixed, ValueMinor: 900, AutoApply: true, MinSubtotalMinor: &big})
+	newDiscount(t, app, DiscountInput{Code: "TYPED", Title: "Typed", Kind: DiscountFixed, ValueMinor: 20})
+
+	// 10% of 2000 is 200, more than the 50 off; the big-basket rule's minimum is not met.
+	order, err := checkoutWithCode(t, app, "", product.DefaultVariant().ID, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(order.Discounts) != 1 || order.Discounts[0].Code != "AUTO10PC" || order.Discount.AmountMinor != 200 {
+		t.Fatalf("automatic discount = %+v (%d off), want AUTO10PC taking 200", order.Discounts, order.Discount.AmountMinor)
+	}
+
+	typed, err := checkoutWithCode(t, app, "TYPED", product.DefaultVariant().ID, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(typed.Discounts) != 1 || typed.Discounts[0].Code != "TYPED" {
+		t.Fatalf("with a typed code the order got %+v, want TYPED alone", typed.Discounts)
+	}
+
+	if _, err := app.Discounts().Create(ctx, DiscountInput{Title: "No code", Kind: DiscountFixed, ValueMinor: 10, AutoApply: true}); err == nil {
+		t.Error("an automatic discount without a code was accepted")
+	}
+
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	got, err := app.Cart().GetByToken(ctx, cart.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offers, err := app.Discounts().CartOffers(ctx, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto := 0
+	for _, o := range offers {
+		if o.AutoApply {
+			auto++
+		}
+	}
+	if auto != 3 {
+		t.Errorf("the basket's offers flag %d automatic codes, want 3: %+v", auto, offers)
+	}
+}
+
+// With the store showing every active code (D180), the basket lists the
+// codes nobody marked to show too, except one marked hidden and one a shopper
+// may not be able to use; off, only listed and automatic codes are shown.
+func TestAStoreShowsEveryActiveCode(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	product := simpleProduct(t, app, "DISC-SHOWALL", 1000, 50)
+	listed := true
+	newDiscount(t, app, DiscountInput{Code: "LISTED", Title: "Listed", Kind: DiscountFixed, ValueMinor: 10, Listed: &listed})
+	newDiscount(t, app, DiscountInput{Code: "PLAIN", Title: "Plain", Kind: DiscountFixed, ValueMinor: 10})
+	newDiscount(t, app, DiscountInput{Code: "SECRET", Title: "Secret", Kind: DiscountFixed, ValueMinor: 10, Hidden: true})
+	newDiscount(t, app, DiscountInput{Code: "ONCE", Title: "Once", Kind: DiscountFixed, ValueMinor: 10, OncePerEmail: true})
+	newDiscount(t, app, DiscountInput{Code: "PREPAID", Title: "Prepaid", Kind: DiscountFixed, ValueMinor: 10, PrepaidOnly: true})
+
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 1)
+	codes := func() string {
+		t.Helper()
+		got, err := app.Cart().GetByToken(ctx, cart.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		offers, err := app.Discounts().CartOffers(ctx, got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, o := range offers {
+			out = append(out, o.Code)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := codes(); got != "LISTED" {
+		t.Fatalf("with the switch off the basket lists %q, want LISTED only", got)
+	}
+	rec := doBody(t, app, http.MethodPut, "/api/admin/discount-settings", `{"show_all_codes":true}`, withAdmin)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("switch on = %d %s", rec.Code, rec.Body)
+	}
+	if got := codes(); got != "LISTED,PLAIN" {
+		t.Fatalf("with every code shown the basket lists %q, want LISTED,PLAIN", got)
 	}
 }

@@ -61,6 +61,33 @@
     const writable = $derived(can("discounts.write"));
 
     /*
+     * The store's switch for which codes a basket lists (D180): only the ones
+     * marked to show, or every active one bar the hidden and those a shopper
+     * may not be able to use. Read once; saved the moment it is flipped.
+     */
+    let showAllCodes = $state(false);
+    let savingShowAll = $state(false);
+    $effect(() => {
+        if (!readable) return;
+        api.get("/api/admin/discount-settings")
+            .then((r) => (showAllCodes = !!r?.show_all_codes))
+            .catch(() => {});
+    });
+    async function setShowAll(on) {
+        savingShowAll = true;
+        try {
+            const r = await api.put("/api/admin/discount-settings", { show_all_codes: on });
+            showAllCodes = !!r?.show_all_codes;
+            toast.success(showAllCodes ? "Every active code is shown to shoppers" : "Only codes marked to show are listed");
+        } catch (err) {
+            showAllCodes = !on;
+            toast.error(err);
+        } finally {
+            savingShowAll = false;
+        }
+    }
+
+    /*
      * The rules an operator has picked. "Every expired code, switched off" was
      * one drawer at a time — open, untick, save, close, again — and the State
      * column is right there telling them which ones.
@@ -263,6 +290,8 @@
             usage_limit: "",
             once_per_email: false,
             prepaid_only: false,
+            auto_apply: false,
+            hidden: false,
             listed: false,
             active: true,
         };
@@ -298,6 +327,8 @@
             usage_limit: d.usage_limit ? String(d.usage_limit) : "",
             once_per_email: d.once_per_email,
             prepaid_only: !!d.prepaid_only,
+            auto_apply: !!d.auto_apply,
+            hidden: !!d.hidden,
             listed: !!d.listed,
             active: d.active,
         };
@@ -467,6 +498,10 @@
             kind: form.kind,
             once_per_email: form.once_per_email,
             prepaid_only: form.prepaid_only,
+            // Without a code neither can hold (D179, D180), so a code cleared
+            // in the form clears them rather than being refused.
+            auto_apply: form.auto_apply && !!form.code.trim(),
+            hidden: form.hidden && !!form.code.trim(),
             listed: form.listed,
             active: form.active,
             value_bp: 0,
@@ -694,6 +729,24 @@
                 {/if}
             </div>
         </header>
+
+        <div class="field show-all-codes">
+            <input
+                type="checkbox"
+                class="switch"
+                id="d-show-all"
+                checked={showAllCodes}
+                disabled={!writable || savingShowAll}
+                onchange={(e) => setShowAll(e.currentTarget.checked)}
+            />
+            <label for="d-show-all">Show every active code to shoppers</label>
+        </div>
+        <p class="field-help m-b-base">
+            On, the basket and checkout list every live code, except one marked "Never show to
+            shoppers" and those a shopper may not be able to use (once per email, prepaid only).
+            Off, only codes marked "Show in the basket's offers" are listed. Codes applied
+            automatically are always shown.
+        </p>
 
         <div class="page-table-wrapper tw:rounded-xl tw:border">
             <table class="table">
@@ -1110,6 +1163,24 @@
         <div class="field-help">
             Refused when the shopper chooses cash on delivery, so the discount is a reason to pay
             online.
+        </div>
+
+        <div class="field m-t-sm">
+            <input id="d-auto" type="checkbox" bind:checked={form.auto_apply} disabled={!form.code.trim()} />
+            <label for="d-auto">Apply automatically</label>
+        </div>
+        <div class="field-help">
+            Put on an order whose shopper enters no code, when it is the automatic code that saves
+            the basket the most. A code the shopper types always wins: an order takes one discount.
+        </div>
+
+        <div class="field m-t-sm">
+            <input id="d-hidden" type="checkbox" bind:checked={form.hidden} disabled={!form.code.trim()} />
+            <label for="d-hidden">Never show to shoppers</label>
+        </div>
+        <div class="field-help">
+            Kept out of the basket's list even while the store shows every active code: for a code
+            only some people should know.
         </div>
 
         <div class="field m-t-sm">
