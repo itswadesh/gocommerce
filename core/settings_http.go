@@ -6,9 +6,10 @@ import "net/http"
 //
 // Read-only because everything it serves is a decision the binary was started
 // with. A store that could rewrite its settlement currency from a browser
-// would be rewriting what every order in flight means, which is the same
-// argument Config.PricesIncludeTax makes about tax: these are restarts with a
-// different Config, not a form.
+// would be rewriting what every order in flight means: these are restarts with
+// a different Config, not a form. Whether prices include tax is reported here
+// as the store's answer, and changed on Store details (D177); each order keeps
+// the answer it was placed under.
 //
 // No right because every screen formats money before it can draw anything. An
 // operator who could not read this would read prices in the wrong currency and

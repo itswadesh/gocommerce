@@ -362,7 +362,10 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				Taxable:   l.Taxable,
 			}
 		}
-		inclusive := s.app.cfg.PricesIncludeTax
+		inclusive, err := s.app.pricesIncludeTax(ctx, tx)
+		if err != nil {
+			return err
+		}
 		// An address in a tax-exempt group is charged none, on any line (D76).
 		// The prices do not move: in an exclusive store nothing is added to
 		// them, and in an inclusive one the price the cart showed is the price

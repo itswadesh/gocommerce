@@ -1229,6 +1229,10 @@
                           "type": "string",
                           "description": "A Google Maps link or \"latitude,longitude\" for a storefront's map (D156). Empty when the store has set none; a storefront may then map the address, if it has one."
                         },
+                        "prices_include_tax": {
+                          "type": "boolean",
+                          "description": "Whether the store's prices already contain tax (D177), so a storefront says \"inclusive of all taxes\" only where it is true."
+                        },
                         "opening_hours": {
                           "type": "array",
                           "description": "When the shop is open (D156): one range per open day, Monday first, on the store's own clock. A day not listed is closed; an empty list says nothing. One range per day, closing the same day.",
@@ -13805,6 +13809,10 @@
                           "type": "boolean",
                           "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
                         },
+                        "prices_include_tax": {
+                          "type": "boolean",
+                          "description": "Whether the catalog prices already contain tax (D177): on, checkout works the tax out of the price and the shopper pays the price shown; off, tax is added on top. Read, the store's answer, else the install's default; absent on a save leaves it as it is. Each order keeps the answer it was placed under as tax_inclusive."
+                        },
                         "map_location": {
                           "type": "string",
                           "maxLength": 2000,
@@ -13983,6 +13991,10 @@
                     "type": "boolean",
                     "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
                   },
+                  "prices_include_tax": {
+                    "type": "boolean",
+                    "description": "Whether the catalog prices already contain tax (D177): on, checkout works the tax out of the price and the shopper pays the price shown; off, tax is added on top. Read, the store's answer, else the install's default; absent on a save leaves it as it is. Each order keeps the answer it was placed under as tax_inclusive."
+                  },
                   "map_location": {
                     "type": "string",
                     "maxLength": 2000,
@@ -14124,6 +14136,10 @@
                         "show_address": {
                           "type": "boolean",
                           "description": "Publish the address on GET /api/store, for a storefront's contact page and its map (D156). Off by default: it is the address an invoice prints. Absent leaves it as it is."
+                        },
+                        "prices_include_tax": {
+                          "type": "boolean",
+                          "description": "Whether the catalog prices already contain tax (D177): on, checkout works the tax out of the price and the shopper pays the price shown; off, tax is added on top. Read, the store's answer, else the install's default; absent on a save leaves it as it is. Each order keeps the answer it was placed under as tax_inclusive."
                         },
                         "map_location": {
                           "type": "string",

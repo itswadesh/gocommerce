@@ -200,10 +200,15 @@
                 (draft.map_location ?? "") !== (profile.map_location ?? "") ||
                 JSON.stringify(draft.opening_hours ?? []) !== JSON.stringify(profile.opening_hours ?? [])),
     );
+    // Whether the catalog's prices contain tax (D177).
+    const taxChanged = $derived(!!profile && !!draft && !!draft.prices_include_tax !== !!profile.prices_include_tax);
     const dirty = $derived(
         !!profile &&
             !!draft &&
-            (languagesChanged || contactChanged || FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? ""))),
+            (languagesChanged ||
+                contactChanged ||
+                taxChanged ||
+                FIELDS.some((f) => (draft[f.key] ?? "") !== (profile[f.key] ?? ""))),
     );
 
     /*
@@ -255,6 +260,7 @@
         try {
             const before = profile?.currency;
             const languagesBefore = (profile?.languages ?? []).join();
+            const taxBefore = !!profile?.prices_include_tax;
             // Without the pictures, which the Logo and icon card saves: ids
             // read when the page opened would put back one changed since.
             const { logo_media_id, logo_dark_media_id, icon_media_id, ...details } = draft;
@@ -263,9 +269,14 @@
             toast.success("Store details saved");
             // Every price on every screen is formatted in the store's currency,
             // and the languages decide what Translations and the message
-            // editors offer; both are read once into the settings, so a change
-            // has to reach them now.
-            if (profile.currency !== before || profile.languages.join() !== languagesBefore) {
+            // editors offer, and the Taxes screen reads whether prices include
+            // tax; all are read once into the settings, so a change has to
+            // reach them now.
+            if (
+                profile.currency !== before ||
+                profile.languages.join() !== languagesBefore ||
+                !!profile.prices_include_tax !== taxBefore
+            ) {
                 loadSettings({ force: true }).catch(() => {});
             }
             // The name here is the store's name, so the account menu and the
@@ -428,6 +439,24 @@
                                     </div>
                                 </div>
                             {/each}
+                            <div class="col-12">
+                                <div class="field">
+                                    <input
+                                        type="checkbox"
+                                        class="switch"
+                                        id="sp-prices-include-tax"
+                                        disabled={!editable}
+                                        bind:checked={draft.prices_include_tax}
+                                    />
+                                    <label for="sp-prices-include-tax">Prices include tax</label>
+                                </div>
+                                <div class="field-help">
+                                    On, the prices you enter already contain tax: checkout works the tax out of
+                                    them and the shopper pays the price shown, as is usual for GST in India. Off,
+                                    tax is added on top at checkout. Orders already placed keep the way they were
+                                    charged.
+                                </div>
+                            </div>
                             <div class="col-12">
                                 <fieldset class="contact-page" disabled={!editable}>
                                     <legend class="langs-title">Contact page</legend>
@@ -607,9 +636,6 @@
                         <span class="txt-hint txt-sm">Fixed when the engine starts; read only</span>
                         <i class="ri-arrow-down-s-line map-fold-chevron" aria-hidden="true"></i>
                         <span class="map-fold-values">
-                            <span class="map-fold-value">
-                                prices {store?.prices_include_tax ? "include tax" : "have tax added at checkout"}
-                            </span>
                             <span class="map-fold-value">version {store?.version ?? "—"}</span>
                         </span>
                     </summary>
@@ -618,17 +644,6 @@
                             <div class="field readonly">
                                 <label for="version">Engine version</label>
                                 <input id="version" type="text" readonly value={store?.version ?? ""} />
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="field readonly">
-                                <label for="tax">Catalog prices</label>
-                                <input
-                                    id="tax"
-                                    type="text"
-                                    readonly
-                                    value={store?.prices_include_tax ? "Include tax" : "Have tax added at checkout"}
-                                />
                             </div>
                         </div>
                         <div class="col-md-4">

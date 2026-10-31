@@ -97,6 +97,11 @@ type StoreProfile struct {
 	// is the address an invoice prints, and for a shop run from home that is
 	// somebody's front door.
 	ShowAddress *bool `json:"show_address"`
+	// PricesIncludeTax says the catalog's prices already contain tax, so
+	// checkout works the tax out of them rather than adding it (D177). Read,
+	// it is the store's answer, the install's default until the store has
+	// given one. Absent on a save leaves it as it is.
+	PricesIncludeTax *bool `json:"prices_include_tax"`
 	// MapLocation pins the shop when the address alone would put the pin in
 	// the wrong place: a Google Maps link, or "latitude,longitude". It exists
 	// only for the storefront, so it is public whenever it is set.
@@ -260,6 +265,11 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 		return nil, Internalf(err, "read the store profile")
 	}
 	out.ShowAddress, out.MapLocation = &showAddress, &mapLocation
+	inclusive, err := p.app.pricesIncludeTax(ctx, p.app.db)
+	if err != nil {
+		return nil, Internalf(err, "read whether prices include tax")
+	}
+	out.PricesIncludeTax = &inclusive
 	if err := json.Unmarshal(hours, &out.OpeningHours); err != nil {
 		return nil, Internalf(err, "read the store's opening hours")
 	}
@@ -462,13 +472,14 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		    timezone = $13, updated_at = now(), updated_by = $14,
 		    show_address = coalesce($15, show_address),
 		    map_location = coalesce($16, map_location),
-		    opening_hours = coalesce($17::jsonb, opening_hours)
+		    opening_hours = coalesce($17::jsonb, opening_hours),
+		    prices_include_tax = coalesce($18, prices_include_tax)
 		WHERE id = 1`,
 			in.Name, in.LegalName, in.Email, in.Phone,
 			in.AddressLine1, in.AddressLine2, in.City, in.State,
 			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
 			in.Timezone, updatedBy,
-			in.ShowAddress, in.MapLocation, hours); err != nil {
+			in.ShowAddress, in.MapLocation, hours, in.PricesIncludeTax); err != nil {
 			return err
 		}
 		// A store has one name: this one, which is what the store list and
@@ -620,6 +631,10 @@ type publicStore struct {
 	Address      *publicAddress `json:"address"`
 	MapLocation  string         `json:"map_location"`
 	OpeningHours []OpeningHours `json:"opening_hours"`
+	// PricesIncludeTax is the store's answer (D177), so a storefront says
+	// "inclusive of all taxes" only where it is true. Every price the
+	// storefront shows already tells a shopper which, so it is no secret.
+	PricesIncludeTax bool `json:"prices_include_tax"`
 }
 
 // publicAddress is the shape a vendor's address has on the wire.
@@ -641,7 +656,8 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 	out := publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
 		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context())),
 		LogoURL: p.LogoURL, LogoDarkURL: p.LogoDarkURL, IconURL: p.IconURL,
-		Country: p.Country, MapLocation: *p.MapLocation, OpeningHours: p.OpeningHours}
+		Country: p.Country, MapLocation: *p.MapLocation, OpeningHours: p.OpeningHours,
+		PricesIncludeTax: *p.PricesIncludeTax}
 	// A country on its own is no address to show.
 	if *p.ShowAddress && p.AddressLine1+p.AddressLine2+p.City+p.State+p.PostalCode != "" {
 		out.Address = &publicAddress{Line1: p.AddressLine1, Line2: p.AddressLine2, City: p.City,
@@ -672,4 +688,20 @@ func (a *App) handleSetStoreProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	a.log.Info("store profile changed", "name", saved.Name)
 	Respond(w, http.StatusOK, saved)
+}
+
+// pricesIncludeTax is whether the catalog prices of the store ctx is bound to
+// already contain tax (D177): the store's own answer, else the install's
+// Config.PricesIncludeTax. q is the caller's transaction, so checkout reads it
+// under the lock it prices under.
+func (a *App) pricesIncludeTax(ctx context.Context, q rowQuerier) (bool, error) {
+	var own sql.NullBool
+	err := q.QueryRowContext(ctx, `SELECT prices_include_tax FROM store_profile WHERE id = 1`).Scan(&own)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !own.Valid) {
+		return a.cfg.PricesIncludeTax, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return own.Bool, nil
 }
