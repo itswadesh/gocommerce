@@ -108,6 +108,9 @@ var (
 	subtitleField = Field{Key: "subtitle", Label: "Line under the heading", Kind: KindText, MaxLen: maxShort}
 	viewAllText   = Field{Key: "view_all_text", Label: "\"View all\" link text", Kind: KindText, MaxLen: 60, Help: "Empty says \"View all\"."}
 	viewAllLink   = Field{Key: "view_all_link", Label: "\"View all\" link", Kind: KindURL}
+	dividerField  = Field{Key: "divider", Label: "Divider", Kind: KindSelect, Default: "none",
+		Help:    "Sets the section apart from the one above it. The band is a pale tint of the Quiet backgrounds colour.",
+		Options: []Option{{"none", "None"}, {"line", "Thin line above"}, {"band", "Quiet band behind"}}}
 )
 
 // Sections is the registry: the panel's section library and the engine's
@@ -125,6 +128,9 @@ var Sections = []SectionType{
 		Type: "hero", Label: "Hero", Icon: "ri-image-2-line",
 		Description: "A large picture with a heading, a line of text and a button.",
 		Fields: []Field{
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "block",
+				Help:    "Faded puts the picture across the whole width, fading into the background behind the words on the left, so keep what matters in it on the right.",
+				Options: []Option{{"block", "Words on a colour block"}, {"fade", "Picture across the width, faded"}}},
 			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, Required: true, MaxLen: maxShort},
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 600},
@@ -133,7 +139,9 @@ var Sections = []SectionType{
 			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
 			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
 			{Key: "button_link", Label: "Button link", Kind: KindURL},
-			{Key: "align", Label: "Text position", Kind: KindSelect, Default: "left",
+			{Key: "secondary_button_text", Label: "Second button text", Kind: KindText, MaxLen: 60, ShowWhen: map[string]string{"style": "fade"}},
+			{Key: "secondary_button_link", Label: "Second button link", Kind: KindURL, ShowWhen: map[string]string{"style": "fade"}},
+			{Key: "align", Label: "Text position", Kind: KindSelect, Default: "left", ShowWhen: map[string]string{"style": "block"},
 				Options: []Option{{"left", "Left"}, {"center", "Centre"}}},
 		},
 	},
@@ -152,6 +160,7 @@ var Sections = []SectionType{
 			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 4, Min: 2, Max: 4},
 			viewAllText,
 			viewAllLink,
+			dividerField,
 		},
 	},
 	{
@@ -167,6 +176,7 @@ var Sections = []SectionType{
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 2000},
 			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
 			{Key: "button_link", Label: "Button link", Kind: KindURL},
+			dividerField,
 		},
 	},
 	{
@@ -178,12 +188,16 @@ var Sections = []SectionType{
 			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: maxLong, Help: "A blank line starts a new paragraph."},
 			{Key: "align", Label: "Alignment", Kind: KindSelect, Default: "center",
 				Options: []Option{{"left", "Left"}, {"center", "Centre"}}},
+			dividerField,
 		},
 	},
 	{
 		Type: "benefits", Label: "Benefits strip", Icon: "ri-shield-check-line",
 		Description: "Short promises in a row: shipping, returns, secure checkout.",
 		Fields: []Field{
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "band",
+				Help:    "A scrolling strip moves slowly sideways, stops while the pointer is on it and has a button to pause it. On a device set to reduce motion it stands still.",
+				Options: []Option{{"band", "A band, all at once"}, {"marquee", "A scrolling strip"}}},
 			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			subtitleField,
@@ -222,6 +236,7 @@ var Sections = []SectionType{
 			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 3, Min: 2, Max: 4},
 			viewAllText,
 			viewAllLink,
+			dividerField,
 		},
 	},
 	{
@@ -233,6 +248,7 @@ var Sections = []SectionType{
 			{Key: "video_file", Label: "Or a video from Files", Kind: KindVideo, Help: "An MP4. Used when there is no link above."},
 			{Key: "poster", Label: "Picture before it plays", Kind: KindImage},
 			{Key: "caption", Label: "Line under it", Kind: KindText, MaxLen: maxShort},
+			dividerField,
 		},
 		Check: func(s map[string]any) error {
 			link, _ := s["video_url"].(string)
@@ -254,6 +270,7 @@ var Sections = []SectionType{
 			{Key: "text", Label: "Text", Kind: KindTextarea, MaxLen: 600},
 			{Key: "button_text", Label: "Button text", Kind: KindText, Default: "Subscribe", MaxLen: 40},
 			{Key: "success_text", Label: "After signing up", Kind: KindText, MaxLen: maxShort, Help: "Empty says the address was added."},
+			dividerField,
 		},
 	},
 	// The store's rating and reviews from Google, read live by the storefront
@@ -264,6 +281,7 @@ var Sections = []SectionType{
 		Description: "Your Google rating and latest Google reviews, with Google's attribution and a link to all of them on Google Maps. Shows nothing until Google reviews is set up under Plugins.",
 		Fields: []Field{
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort, Help: "Empty says \"Reviews on Google\"."},
+			dividerField,
 		},
 	},
 	{
@@ -277,6 +295,7 @@ var Sections = []SectionType{
 				{Key: "question", Label: "Question", Kind: KindText, Required: true, MaxLen: maxShort},
 				{Key: "answer", Label: "Answer", Kind: KindTextarea, Required: true, MaxLen: 2000, Help: "A blank line starts a new paragraph."},
 			}},
+			dividerField,
 		},
 	},
 	{
@@ -295,6 +314,7 @@ var Sections = []SectionType{
 			}},
 			viewAllText,
 			viewAllLink,
+			dividerField,
 		},
 	},
 

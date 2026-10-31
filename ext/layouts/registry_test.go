@@ -398,3 +398,52 @@ func TestASectionHeadingCarriesItsWords(t *testing.T) {
 		}
 	}
 }
+
+func TestASectionChoosesItsLook(t *testing.T) {
+	got, err := Validate("home", doc(t, `{"sections":[
+		{"id":"h","type":"hero","enabled":true,"settings":{"style":"fade","heading":"Hello","secondary_button_text":" Our  story ","secondary_button_link":"/pages/about"}},
+		{"id":"b","type":"benefits","enabled":true,"settings":{"style":"marquee","items":[{"title":"Fast"}]}},
+		{"id":"g","type":"product-grid","enabled":true,"settings":{"divider":"line"}},
+		{"id":"q","type":"faq","enabled":true,"settings":{"divider":"band","items":[{"question":"Q","answer":"A"}]}},
+		{"id":"s","type":"slideshow","enabled":true,"settings":{"divider":"band","slides":[{"image":"/a.webp"}]}},
+		{"id":"oldh","type":"hero","enabled":true,"settings":{"heading":"Before"}},
+		{"id":"oldb","type":"benefits","enabled":true,"settings":{"items":[{"title":"Fast"}]}},
+		{"id":"oldg","type":"product-grid","enabled":true,"settings":{}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	looks := []string{"style", "divider", "secondary_button_text", "secondary_button_link"}
+	want := map[string]map[string]any{
+		"h":    {"style": "fade", "secondary_button_text": "Our story", "secondary_button_link": "/pages/about"},
+		"b":    {"style": "marquee"},
+		"g":    {"divider": "line"},
+		"q":    {"divider": "band"},
+		"s":    {},
+		"oldh": {"style": "block"},
+		"oldb": {"style": "band"},
+		"oldg": {"divider": "none"},
+	}
+	for _, s := range got.Sections {
+		kept := map[string]any{}
+		for _, k := range looks {
+			if v, ok := s.Settings[k]; ok {
+				kept[k] = v
+			}
+		}
+		if !reflect.DeepEqual(kept, want[s.ID]) {
+			t.Errorf("%s (%s) look = %v, want %v", s.ID, s.Type, kept, want[s.ID])
+		}
+	}
+
+	for name, c := range map[string]struct{ raw, want string }{
+		"unknown hero style":   {`{"sections":[{"id":"a","type":"hero","settings":{"heading":"H","style":"split"}}]}`, "Style must be one of its choices"},
+		"unknown strip style":  {`{"sections":[{"id":"a","type":"benefits","settings":{"style":"ticker","items":[{"title":"T"}]}}]}`, "Style must be one of its choices"},
+		"unknown divider":      {`{"sections":[{"id":"a","type":"rich-text","settings":{"divider":"dots"}}]}`, "Divider must be one of its choices"},
+		"script second button": {`{"sections":[{"id":"a","type":"hero","settings":{"heading":"H","secondary_button_link":"javascript:alert(1)"}}]}`, "web address"},
+		"long second button":   {`{"sections":[{"id":"a","type":"hero","settings":{"heading":"H","secondary_button_text":"` + strings.Repeat("x", 61) + `"}}]}`, "longer than 60"},
+	} {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+	}
+}
