@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -487,8 +488,11 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			return errQuoted
 		}
 		if in.QuotedTotalMinor != nil && *in.QuotedTotalMinor != total {
-			return Conflictf("the total is now %d, not the %d quoted; show the shopper the new figures",
-				total, *in.QuotedTotalMinor).WithDetails(figures)
+			// Its own code, a kind of conflict, so a storefront tells it from
+			// a moved line without reading the details' shape.
+			return (&APIError{Status: http.StatusConflict, Code: "total_changed", kind: "conflict",
+				Message: fmt.Sprintf("the total is now %d, not the %d quoted; show the shopper the new figures",
+					total, *in.QuotedTotalMinor)}).WithDetails(figures)
 		}
 
 		// The modules' last word, with every figure final and nothing written
