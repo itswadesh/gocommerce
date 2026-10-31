@@ -21,6 +21,7 @@
         unsavedImport,
     } from "$lib/importer.js";
     import { hasModule } from "$lib/modules.svelte.js";
+    import { downloadFile } from "$lib/download.js";
     import { rise } from "$lib/motion.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
@@ -421,6 +422,24 @@
                 {#if kind === "products" || kind === "inventory" || kind === "orders"}
                     Either layout: the store's own, or a file exported from Shopify, as it is.
                     The engine reads which off the first line.
+                    {#if kind === "products"}
+                        <!-- The file to fill in: the export's own columns and an example
+                             product in two sizes, saved as a draft if imported as it is. -->
+                        <div class="m-t-sm">
+                            <button
+                                type="button"
+                                class="btn sm secondary"
+                                onclick={() => downloadFile("/api/admin/import/products/template", "products-template.csv", "text/csv")}
+                            >
+                                <i class="ri-file-download-line" aria-hidden="true"></i>
+                                <span class="txt">Download a template</span>
+                            </button>
+                            <span class="txt-hint txt-sm">
+                                One row per variant; a product's own columns on its first row.
+                                Prices in paise (99900 is ₹999), sizes as <code>Size=M</code>.
+                            </span>
+                        </div>
+                    {/if}
                 {:else if kind === "categories"}
                     The trail from the root in one cell — <code>Apparel / Clothing / Shirts</code>
                     — with <code>slug</code>, <code>position</code> and <code>metadata</code> beside
