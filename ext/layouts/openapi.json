@@ -1005,6 +1005,10 @@
                       },
                       "image": {
                         "type": "string"
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "The first line of the collection's description, cut at a word near 160 characters; absent when it has none."
                       }
                     }
                   }
