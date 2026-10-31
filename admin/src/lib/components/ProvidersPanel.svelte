@@ -90,7 +90,13 @@
      */
     const inUse = $derived(cards.filter((c) => c.module === "core" || c.configured || c.plugin?.enabled));
     const idle = $derived(cards.filter((c) => !inUse.includes(c)));
+    // Open on Payment methods, so every gateway this store could switch on is
+    // in view (the owner asked not to have them folded away); folded on
+    // Shipping providers, where the list is long and rarely wanted.
     let idleOpen = $state(false);
+    $effect(() => {
+        idleOpen = kind === "payments";
+    });
 
     async function toggle(card) {
         const p = card.plugin;
