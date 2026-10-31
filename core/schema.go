@@ -112,8 +112,16 @@ func coreMigrations() []Migration {
 		{ID: "0094_cart_phone", SQL: `ALTER TABLE carts ADD COLUMN phone text;`},
 		{ID: "0095_category_hsn", SQL: migration0095CategoryHSN},
 		{ID: "0096_line_designs", SQL: migration0096LineDesigns},
+		{ID: "0097_store_prices_include_tax", SQL: migration0097StorePricesIncludeTax},
 	}
 }
+
+// M97 — whether a store's catalog prices already contain tax (D177). Null is
+// the install's Config.PricesIncludeTax, which is what every store did before
+// it could say, so no store's checkout changes until its owner switches it.
+const migration0097StorePricesIncludeTax = `
+ALTER TABLE store_profile ADD COLUMN prices_include_tax boolean;
+`
 
 // M95 — a category's HSN code, which a GST invoice uses for a product under it
 // whose variant has none of its own (D171), so a store can classify once per

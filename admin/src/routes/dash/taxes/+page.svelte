@@ -9,6 +9,7 @@
      * states also has to be able to read the table by place, by rate or by
      * name, and clearing the sort puts resolution order back.
      */
+    import { base } from "$app/paths";
     import { api, can, gst } from "$lib/api.js";
     import { onNewShortcut } from "$lib/shortcuts.js";
     import { rowKey } from "$lib/rowkey.js";
@@ -91,8 +92,8 @@
     /*
      * A rate table means one thing if the price on the product page already has
      * the tax in it and the opposite if it does not, and this screen never said
-     * which. The setting is read-only configuration the binary was started
-     * with, served by GET /api/admin/settings.
+     * which. The store's answer is set on Store details (D177) and served by
+     * GET /api/admin/settings.
      */
     const inclusive = $derived(settings.pricesIncludeTax);
 
@@ -893,10 +894,11 @@
                     <i class="ri-price-tag-3-line" aria-hidden="true"></i>
                     Catalog prices <strong>already include tax</strong>, so a rate here is
                     extracted from the price rather than added to it.
+                    <a href="{base}/dash/settings">Change on Store details</a>.
                 {:else}
                     <i class="ri-price-tag-3-line" aria-hidden="true"></i>
                     Catalog prices <strong>exclude tax</strong>, so a rate here is added at
-                    checkout.
+                    checkout. <a href="{base}/dash/settings">Change on Store details</a>.
                 {/if}
             </span>
             <div class="flex-fill"></div>
