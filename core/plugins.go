@@ -242,7 +242,10 @@ type pluginRow struct {
 	// sealed again on write whatever the descriptor now says: a release that
 	// drops a secret field, or makes it text, must not have the next save
 	// write the credential out in the clear.
-	sealed    map[string]bool
+	sealed map[string]bool
+	// stored is each sealed field's envelope as read, so a save that sends
+	// the same value back keeps it rather than sealing it afresh.
+	stored    map[string]string
 	updatedAt *time.Time
 	present   bool
 }
@@ -290,17 +293,22 @@ func (p *Plugins) openSettings(ctx context.Context, key string, r *pluginRow) {
 			continue
 		}
 		if r.sealed == nil {
-			r.sealed = map[string]bool{}
+			r.sealed, r.stored = map[string]bool{}, map[string]string{}
 		}
 		r.sealed[k] = true
+		r.stored[k] = s
 		r.settings[k] = plain
 	}
 }
 
 // sealSettings is what a row stores: every secret sealed when the install has
 // a key — a field of kind secret, and any field whose value was stored sealed
-// — and the secrets that would not open and this save kept, as they were.
-func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, wasSealed map[string]bool, kept map[string]any) (map[string]any, error) {
+// — and the secrets that would not open and this save kept, as they were. A
+// secret saved unchanged keeps the envelope it had: sealing is randomised, and
+// a store's passes are keyed by the store password's envelope (D170), so
+// editing the closed-store message must not sign every visitor out.
+func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[string]any, current pluginRow, kept map[string]any) (map[string]any, error) {
+	wasSealed := current.sealed
 	secret := map[string]bool{}
 	for _, f := range def.Fields {
 		secret[f.Key] = f.Kind == "secret"
@@ -310,7 +318,9 @@ func (p *Plugins) sealSettings(ctx context.Context, def PluginDef, settings map[
 	}
 	out := make(map[string]any, len(settings)+len(kept))
 	for k, v := range settings {
-		if s, ok := v.(string); ok && secret[k] {
+		if s, ok := v.(string); ok && secret[k] && current.sealed[k] && current.settings[k] == s {
+			v = current.stored[k]
+		} else if s, ok := v.(string); ok && secret[k] {
 			sealed, err := p.app.SealSecret(ctx, pluginSecretField(def.Key, k), s)
 			if err != nil {
 				return nil, err
@@ -518,7 +528,7 @@ func (p *Plugins) Update(ctx context.Context, key string, patch PluginPatch) (*P
 				return requiredSettingsError(def, missing, wasOn)
 			}
 		}
-		stored, err := p.sealSettings(ctx, def, settings, current.sealed, kept)
+		stored, err := p.sealSettings(ctx, def, settings, current, kept)
 		if err != nil {
 			return err
 		}
