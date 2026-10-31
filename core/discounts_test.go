@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -665,5 +666,44 @@ func TestAStoreShowsEveryActiveCode(t *testing.T) {
 	}
 	if got := codes(); got != "LISTED,PLAIN" {
 		t.Fatalf("with every code shown the basket lists %q, want LISTED,PLAIN", got)
+	}
+}
+
+// The quote is checkout's own arithmetic, rolled back (D185): the automatic
+// code it names and the total it gives are what the order then gets, and
+// asking for it reserves nothing and leaves the cart open.
+func TestAQuoteIsWhatCheckoutCharges(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	product := simpleProduct(t, app, "DISC-QUOTE", 1000, 5)
+	newDiscount(t, app, DiscountInput{Code: "AUTO10PC", Title: "Ten percent", Kind: DiscountPercentage, ValueBP: 1000, AutoApply: true})
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, product.DefaultVariant().ID, 2)
+
+	rec := do(t, app, http.MethodGet, "/api/checkout/quote?country=US&method="+CodeCOD+"&cart="+cart.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("quote = %d %s", rec.Code, rec.Body)
+	}
+	var body struct{ Data CheckoutQuote }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	q := body.Data
+	if q.Discount == nil || q.Discount.Code != "AUTO10PC" || !q.Discount.AutoApplied || q.Discount.Amount.AmountMinor != 200 {
+		t.Fatalf("quoted discount = %+v, want AUTO10PC applied automatically, 200 off", q.Discount)
+	}
+	if _, reserved := variantStock(t, app, product.DefaultVariant().ID); reserved != 0 {
+		t.Fatalf("the quote left %d units reserved", reserved)
+	}
+
+	result, err := app.Order().Checkout(ctx, CodeCOD, checkoutInput(cart.Token), "")
+	if err != nil {
+		t.Fatalf("checkout after the quote: %v", err)
+	}
+	if result.Order.Total.AmountMinor != q.Total.AmountMinor {
+		t.Errorf("the order's total is %d, the quote said %d", result.Order.Total.AmountMinor, q.Total.AmountMinor)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/checkout/quote?country=US&cart="+cart.Token); rec.Code != http.StatusConflict {
+		t.Errorf("quoting a checked-out cart = %d, want 409", rec.Code)
 	}
 }

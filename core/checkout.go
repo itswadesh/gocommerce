@@ -103,13 +103,62 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 		}
 	}
 
-	order, err := s.createOrderFromCart(ctx, code, in, scope, idempotencyKey, hash)
+	order, err := s.createOrderFromCart(ctx, code, in, scope, idempotencyKey, hash, nil)
 	if err != nil {
 		return nil, err
 	}
 	s.app.nudgeOutbox()
 
 	return s.initiatePayment(ctx, provider, order, in, scope, idempotencyKey)
+}
+
+// CheckoutQuote is what checkout would charge for this cart now, figure by
+// figure, without placing anything.
+type CheckoutQuote struct {
+	Subtotal       Money           `json:"subtotal"`
+	Shipping       Money           `json:"shipping"`
+	ShippingMethod string          `json:"shipping_method,omitempty"`
+	Discount       *QuotedDiscount `json:"discount"`
+	Tax            Money           `json:"tax"`
+	TaxInclusive   bool            `json:"tax_inclusive"`
+	PaymentFee     Money           `json:"payment_fee"`
+	Total          Money           `json:"total"`
+}
+
+// QuotedDiscount is the code a quote took off. AutoApplied says the shopper
+// typed none and checkout chose it (D179).
+type QuotedDiscount struct {
+	Code         string `json:"code"`
+	Title        string `json:"title"`
+	AutoApplied  bool   `json:"auto_applied"`
+	Amount       Money  `json:"amount"`
+	FreeShipping bool   `json:"free_shipping,omitempty"`
+}
+
+// Quote runs checkout's arithmetic on a cart and rolls it back (D185): the
+// same lines, delivery, discount, tax and payment charge an order placed now
+// would get, so the payment step can show the total before it is charged. An
+// empty method is a preview with none chosen yet: no payment charge, and a
+// prepaid-only code still counts. A line that moved answers as checkout does,
+// a conflict naming it, with the cart's prices refreshed.
+func (s *Orders) Quote(ctx context.Context, method string, in CheckoutInput) (*CheckoutQuote, error) {
+	if method != "" {
+		provider, ok := s.app.payments.provider(method)
+		if !ok || !configured(ctx, provider) {
+			return nil, NotFoundf("no payment method named %q", method)
+		}
+	}
+	if in.CartID == "" {
+		return nil, Validationf("cart is required")
+	}
+	if in.Address.Country == "" {
+		return nil, Validationf("country is required")
+	}
+	var q CheckoutQuote
+	if _, err := s.createOrderFromCart(ctx, method, in, "", "", "", &q); err != nil {
+		return nil, err
+	}
+	return &q, nil
 }
 
 // replayCheckout looks up a previous attempt under the same key.
@@ -155,8 +204,13 @@ func (s *Orders) replayCheckout(ctx context.Context, scope, key, hash string) (*
 	return nil, nil, nil
 }
 
-// createOrderFromCart is phase A: one transaction, no network calls.
-func (s *Orders) createOrderFromCart(ctx context.Context, code string, in CheckoutInput, scope, key, hash string) (*Order, error) {
+// errQuoted rolls back a quote's transaction once its figures are taken.
+var errQuoted = errors.New("quoted")
+
+// createOrderFromCart is phase A: one transaction, no network calls. With a
+// quote it stops once every figure is final, fills the quote and rolls back,
+// so the total a shopper is shown is this arithmetic and not a copy of it.
+func (s *Orders) createOrderFromCart(ctx context.Context, code string, in CheckoutInput, scope, key, hash string, quote *CheckoutQuote) (*Order, error) {
 	var orderID int64
 
 	err := InTx(ctx, s.app.db, func(tx *sql.Tx) error {
@@ -338,7 +392,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// a sold-out line.
 		// No code entered: the automatic discount that saves this basket the
 		// most, if any applies (D179). One a shopper typed always wins.
+		autoApplied := false
 		if strings.TrimSpace(cartCode) == "" {
+			autoApplied = true
 			if cartCode, err = s.app.discounts.bestAutoCode(ctx, tx, discountRequest{
 				Email: in.Email, Lines: dlines, Method: code,
 			}, shipping); err != nil {
@@ -408,6 +464,21 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		total := subtotal + shipping - discount + paymentFee
 		if !inclusive {
 			total += tax
+		}
+
+		if quote != nil {
+			*quote = CheckoutQuote{
+				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
+				ShippingMethod: shippingMethod, Tax: money(tax, currency), TaxInclusive: inclusive,
+				PaymentFee: money(paymentFee, currency), Total: money(total, currency),
+			}
+			if applied != nil {
+				quote.Discount = &QuotedDiscount{
+					Code: applied.Code, Title: applied.Title, AutoApplied: autoApplied,
+					Amount: money(discount, currency), FreeShipping: applied.FreeShipping,
+				}
+			}
+			return errQuoted
 		}
 
 		// The modules' last word, with every figure final and nothing written
@@ -546,6 +617,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		return s.app.outbox.write(ctx, tx, EventOrderCreated, AggregateOrder, orderID, ev)
 	})
 
+	if errors.Is(err, errQuoted) {
+		return nil, nil
+	}
 	if err != nil {
 		var ce *conflictError
 		if errors.As(err, &ce) {
