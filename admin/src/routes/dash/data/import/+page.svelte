@@ -423,7 +423,7 @@
                     Either layout: the store's own, or a file exported from Shopify, as it is.
                     The engine reads which off the first line.
                     {#if kind === "products"}
-                        <!-- The file to fill in: the export's own columns and an example
+                        <!-- The file to fill in: Shopify's columns (D182) and an example
                              product in two sizes, saved as a draft if imported as it is. -->
                         <div class="m-t-sm">
                             <button
@@ -435,8 +435,8 @@
                                 <span class="txt">Download a template</span>
                             </button>
                             <span class="txt-hint txt-sm">
-                                One row per variant; a product's own columns on its first row.
-                                Prices in paise (99900 is ₹999), sizes as <code>Size=M</code>.
+                                Shopify's product CSV, so a file exported from Shopify imports as it
+                                is. The file explains every column at the top.
                             </span>
                         </div>
                     {/if}
