@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"runtime/debug"
 	"slices"
@@ -193,10 +194,29 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // DecodeJSON reads a JSON request body under a size limit, rejecting unknown
 // fields so a typo in a client payload fails loudly instead of being ignored.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	return decodeJSON(w, r, v, false)
+}
+
+// DecodeOptionalJSON is DecodeJSON for a route whose body may be left out:
+// no body, or an empty one, leaves v as it is. It reads the body rather than
+// trusting Content-Length, which a streamed request (a storefront's proxy)
+// reports as -1: a length check skipped such a body, so a partial refund sent
+// through one became a full one.
+func DecodeOptionalJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	if r.Body == nil || r.Body == http.NoBody {
+		return nil
+	}
+	return decodeJSON(w, r, v, true)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any, optional bool) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
+		if optional && errors.Is(err, io.EOF) {
+			return nil
+		}
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			return Validationf("request body exceeds %d bytes", maxJSONBytes)

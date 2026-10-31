@@ -34,11 +34,9 @@ func (a *App) handleCreateCart(w http.ResponseWriter, r *http.Request) {
 	}
 	// A cart may be created with no body at all: shopping starts before a
 	// shopper has told you anything about themselves.
-	if r.ContentLength > 0 {
-		if err := DecodeJSON(w, r, &in); err != nil {
-			RespondError(w, r, err)
-			return
-		}
+	if err := DecodeOptionalJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
 	}
 	// The header is the storefront-wide way to say it; the body wins when both
 	// are present, because a client that named one in the request meant that one.
@@ -419,11 +417,9 @@ func (a *App) handleCancelOrder(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Reason string `json:"reason"`
 	}
-	if r.ContentLength > 0 {
-		if err := DecodeJSON(w, r, &in); err != nil {
-			RespondError(w, r, err)
-			return
-		}
+	if err := DecodeOptionalJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
 	}
 	order, err := a.orders.Cancel(r.Context(), id, in.Reason)
 	if err != nil {
@@ -443,11 +439,9 @@ func (a *App) handleMarkPaid(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Reference string `json:"reference"`
 	}
-	if r.ContentLength > 0 {
-		if err := DecodeJSON(w, r, &in); err != nil {
-			RespondError(w, r, err)
-			return
-		}
+	if err := DecodeOptionalJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
 	}
 	order, err := a.payments.MarkPaid(r.Context(), id, in.Reference)
 	if err != nil {
@@ -490,11 +484,9 @@ func (a *App) handleMarkPaymentFailed(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Reason string `json:"reason"`
 	}
-	if r.ContentLength > 0 {
-		if err := DecodeJSON(w, r, &in); err != nil {
-			RespondError(w, r, err)
-			return
-		}
+	if err := DecodeOptionalJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
 	}
 	order, err := a.payments.MarkFailed(r.Context(), id, in.Reason)
 	if err != nil {
@@ -636,11 +628,9 @@ func (a *App) handleRefund(w http.ResponseWriter, r *http.Request) {
 	var in RefundRequest
 	// A bodyless POST still means "send back whatever is left", which is what
 	// this route has always accepted.
-	if r.ContentLength > 0 {
-		if err := DecodeJSON(w, r, &in); err != nil {
-			RespondError(w, r, err)
-			return
-		}
+	if err := DecodeOptionalJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
 	}
 	// The acting operator comes from the session and never from the body — the
 	// same pairing RoleRights.Set uses, with the same meaning when it is nil: a
