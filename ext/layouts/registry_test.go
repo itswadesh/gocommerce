@@ -272,7 +272,7 @@ func TestTheNewSectionTypes(t *testing.T) {
 		"youtube without id":    {`{"sections":[{"id":"a","type":"video","settings":{"video_url":"https://www.youtube.com/"}}]}`, "YouTube or Vimeo"},
 		"script video file":     {`{"sections":[{"id":"a","type":"video","settings":{"video_file":"javascript:x"}}]}`, "web address"},
 		"faq without answer":    {`{"sections":[{"id":"a","type":"faq","settings":{"items":[{"question":"Q"}]}}]}`, "Answer is required"},
-		"five columns":          {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"}]}}]}`, "at most 4"},
+		"seven columns":         {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"},{"heading":"6"},{"heading":"7"}]}}]}`, "at most 6"},
 		"column script link":    {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1","link":"javascript:x"}]}}]}`, "web address"},
 	} {
 		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -448,6 +448,54 @@ func TestASectionChoosesItsLook(t *testing.T) {
 		"unknown divider":      {`{"sections":[{"id":"a","type":"rich-text","settings":{"divider":"dots"}}]}`, "Divider must be one of its choices"},
 		"script second button": {`{"sections":[{"id":"a","type":"hero","settings":{"heading":"H","secondary_button_link":"javascript:alert(1)"}}]}`, "web address"},
 		"long second button":   {`{"sections":[{"id":"a","type":"hero","settings":{"heading":"H","secondary_button_text":"` + strings.Repeat("x", 61) + `"}}]}`, "longer than 60"},
+	} {
+		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
+		}
+	}
+}
+
+func TestTilesCollectionsAndShelvesChooseTheirLook(t *testing.T) {
+	six := `[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"},{"heading":"6"}]`
+	got, err := Validate("home", doc(t, `{"sections":[
+		{"id":"m","type":"multi-column","enabled":true,"settings":{"style":"captioned","items":`+six+`}},
+		{"id":"c","type":"collection-list","enabled":true,"settings":{"style":"overlay","collections":[1]}},
+		{"id":"g","type":"product-grid","enabled":true,"settings":{"mobile_layout":"row"}},
+		{"id":"h","type":"hero","enabled":true,"settings":{"heading":"H","mobile_layout":"row"}},
+		{"id":"oldm","type":"multi-column","enabled":true,"settings":{"items":[{"heading":"1"}]}},
+		{"id":"oldc","type":"collection-list","enabled":true,"settings":{"collections":[1]}},
+		{"id":"oldg","type":"product-grid","enabled":true,"settings":{}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]any{
+		"m":    {"style": "captioned", "items": 6},
+		"c":    {"style": "overlay"},
+		"g":    {"mobile_layout": "row"},
+		"h":    {"style": "block"},
+		"oldm": {"style": "tiles", "items": 1},
+		"oldc": {"style": "below"},
+		"oldg": {"mobile_layout": "grid"},
+	}
+	for _, s := range got.Sections {
+		kept := map[string]any{}
+		for _, k := range []string{"style", "mobile_layout"} {
+			if v, ok := s.Settings[k]; ok {
+				kept[k] = v
+			}
+		}
+		if items, ok := s.Settings["items"].([]map[string]any); ok {
+			kept["items"] = len(items)
+		}
+		if !reflect.DeepEqual(kept, want[s.ID]) {
+			t.Errorf("%s (%s) look = %v, want %v", s.ID, s.Type, kept, want[s.ID])
+		}
+	}
+
+	for name, c := range map[string]struct{ raw, want string }{
+		"unknown columns style":    {`{"sections":[{"id":"a","type":"multi-column","settings":{"style":"cards","items":[{"heading":"1"}]}}]}`, "Style must be one of its choices"},
+		"unknown collection style": {`{"sections":[{"id":"a","type":"collection-list","settings":{"style":"inside","collections":[1]}}]}`, "Style must be one of its choices"},
+		"unknown phone layout":     {`{"sections":[{"id":"a","type":"product-grid","settings":{"mobile_layout":"carousel"}}]}`, "On a phone must be one of its choices"},
 	} {
 		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
