@@ -31,10 +31,11 @@ import (
 const (
 	maxUploadBytes  = 15 << 20
 	maxUploadPixels = 40_000_000
-	// maxUploadSide is wider than any camera's photo (a 200-megapixel phone
-	// sensor is 16320 pixels) and any print file a setup may ask for. The
-	// rows a picture is read and written through grow with its width alone.
-	maxUploadSide = 16384
+	maxUploadSide   = 16384
+	// maxPasses is the most scans Skia, which decodes JPEGs for Chrome and
+	// Android, reads (SkJpegDecoderMgr.cpp); libjpeg writes 6 to 18. The
+	// decoder passes over every block of the picture once a scan.
+	maxPasses     = 99
 	uploadQuality = 92
 	decodeBudget  = 256 << 20
 	decodeSlots   = 1
@@ -45,14 +46,18 @@ const (
 	answerWithin = 10 * time.Second
 	// pngWriterState is what png.Encode's compress/flate writer holds
 	// whatever the picture: 1.1 MB in Go 1.27.
-	pngWriterState = 1200 << 10
-	spoolPrefix    = "customizer-upload-"
+	pngWriterState            = 1200 << 10
+	spoolPrefix               = "customizer-upload-"
+	spoolAbandonedAfter       = time.Hour
+	minUploadBytesPerSecond   = 8 << 10
+	statusClientClosedRequest = 499
 )
 
 var (
 	// uploadWithin lets the largest file arrive at 0.7 Mbit/s.
 	uploadIdle   = 15 * time.Second
 	uploadWithin = 3 * time.Minute
+	warnEvery    = time.Minute
 	// decodeWait is eight uploads ahead at the second or two a large photo
 	// takes, and then some.
 	decodeWait = 30 * time.Second
@@ -95,10 +100,14 @@ var (
 		Message: "send a JPEG or a PNG; the editor converts other photos before uploading them"}
 	errTooManyPixels = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large",
 		Message: fmt.Sprintf("a photo can be at most %d megapixels and %d pixels a side", maxUploadPixels/1_000_000, maxUploadSide)}
+	errTooManyScans = &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "too_many_scans",
+		Message: "this photo is saved in more passes than a camera or photo editor writes; open it in a photo editor and save it again"}
 	errTooSlow = &gocommerce.APIError{Status: http.StatusBadRequest, Code: "upload_too_slow",
 		Message: "the file took too long to arrive; try again on a steadier connection"}
 	errBusy = &gocommerce.APIError{Status: http.StatusServiceUnavailable, Code: "busy",
 		Message: "too many photos are being uploaded right now; try again in a few seconds"}
+	errClientClosedRequest = &gocommerce.APIError{Status: statusClientClosedRequest, Code: "client_closed_request",
+		Message: "the request was closed before the upload was kept"}
 )
 
 func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -109,8 +118,9 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if !m.allow(w, r, m.uploads, "uploads") {
 		return
 	}
+	counted := time.Now()
 	rc := http.NewResponseController(w)
-	body := &arriving{ReadCloser: r.Body, rc: rc, by: time.Now().Add(uploadWithin)}
+	body := &arriving{ReadCloser: r.Body, rc: rc, start: time.Now()}
 	if err := body.extend(); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "time the upload"))
 		return
@@ -122,6 +132,9 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	keepBy := time.Now().Add(decodeWait + keepWithin)
 	_ = rc.SetWriteDeadline(keepBy.Add(answerWithin))
 	if err != nil {
+		if errors.Is(err, errTooSlow) && !body.trickled() {
+			m.uploads.refund(throttleKey(r), counted)
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -134,19 +147,27 @@ func (m *Module) handleUpload(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	up, err := m.keep(ctx, file)
 	if errors.Is(err, errBusy) {
-		busy(w)
+		m.uploads.refund(throttleKey(r), counted)
+		m.busy(w)
 		return
 	}
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			err = errClientClosedRequest
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}
 	gocommerce.Respond(w, http.StatusCreated, up)
 }
 
-// busy writes its answer itself: RespondError gives every 5xx an internal
-// error's message, and this one is for the shopper to read.
-func busy(w http.ResponseWriter) {
+func (m *Module) busy(w http.ResponseWriter) {
+	if m.turnedAway.Add(1) == 1 {
+		time.AfterFunc(warnEvery, func() {
+			m.app.Log().Warn("customizer: uploads turned away while the decoder was busy", "uploads", m.turnedAway.Swap(0),
+				"within", warnEvery)
+		})
+	}
 	w.Header().Set("Retry-After", "10")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -154,28 +175,34 @@ func busy(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": errBusy})
 }
 
-// arriving moves the read deadline on with each read that brings bytes, so a
-// slow connection gets its file in and one that has stopped is let go.
 type arriving struct {
 	io.ReadCloser
-	rc *http.ResponseController
-	by time.Time
+	rc    *http.ResponseController
+	start time.Time
+	n     int64
 }
 
 func (a *arriving) Read(p []byte) (int, error) {
 	n, err := a.ReadCloser.Read(p)
 	if n > 0 {
+		a.n += int64(n)
 		_ = a.extend()
 	}
 	return n, err
 }
 
+func (a *arriving) trickled() bool {
+	return time.Duration(a.n)*time.Second/minUploadBytesPerSecond < uploadIdle
+}
+
 func (a *arriving) extend() error {
-	next := time.Now().Add(uploadIdle)
-	if next.After(a.by) {
-		next = a.by
-	}
-	return a.rc.SetReadDeadline(next)
+	return a.rc.SetReadDeadline(readDeadline(a.start, time.Now(), a.n))
+}
+
+func readDeadline(start, now time.Time, n int64) time.Time {
+	idle := now.Sub(start) + uploadIdle
+	fallenBehind := uploadIdle + time.Duration(n)*time.Second/minUploadBytesPerSecond
+	return start.Add(min(idle, fallenBehind, uploadWithin))
 }
 
 func receive(w http.ResponseWriter, r *http.Request) (*os.File, error) {
@@ -225,16 +252,12 @@ func spool(part *multipart.Part) (*os.File, error) {
 	return f, nil
 }
 
-// sweepSpool removes the files of uploads an engine was reading when it
-// stopped, as one killed for its memory leaves them in the temporary
-// directory. A live upload holds its file for five minutes at most, so one
-// untouched for an hour is nobody's, whichever engine on the host made it.
 func sweepSpool() (removed int) {
 	dir := os.TempDir()
 	files, _ := os.ReadDir(dir)
 	for _, f := range files {
 		info, err := f.Info()
-		if err == nil && strings.HasPrefix(f.Name(), spoolPrefix) && time.Since(info.ModTime()) > time.Hour &&
+		if err == nil && strings.HasPrefix(f.Name(), spoolPrefix) && time.Since(info.ModTime()) > spoolAbandonedAfter &&
 			os.Remove(filepath.Join(dir, f.Name())) == nil {
 			removed++
 		}
@@ -352,11 +375,14 @@ func redraw(body []byte, out io.Writer) (mime string, bounds image.Rectangle, er
 		int64(cfg.Width)*int64(cfg.Height) > maxUploadPixels {
 		return "", bounds, errTooManyPixels
 	}
+	var f jpegHead
 	orientation := 1
 	if mime == "image/jpeg" {
-		_, orientation, _ = jpegHeader(body)
+		if f, orientation = jpegHeader(body); f.passes > f.passLimit() {
+			return "", bounds, errTooManyScans
+		}
 	}
-	if cost, advice := decodeCost(body, mime, cfg, orientation); cost > decodeBudget {
+	if cost, advice := decodeCost(body, mime, cfg, f, orientation); cost > decodeBudget {
 		return "", bounds, &gocommerce.APIError{Status: http.StatusUnprocessableEntity, Code: "image_too_large", Message: advice}
 	}
 
@@ -421,7 +447,7 @@ func validID(s string) bool {
 	return err == nil
 }
 
-func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (cost int64, advice string) {
+func decodeCost(body []byte, mime string, cfg image.Config, f jpegHead, orientation int) (cost int64, advice string) {
 	w, h := int64(cfg.Width), int64(cfg.Height)
 	if mime == "image/png" {
 		advice = "this picture is too large to read; make it smaller"
@@ -430,8 +456,7 @@ func decodeCost(body []byte, mime string, cfg image.Config, orientation int) (co
 		}
 		return int64(len(body)) + pngCost(body, w, h), advice
 	}
-	f, _, ok := jpegHeader(body)
-	if !ok || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
+	if f.passes == 0 || f.width != cfg.Width || f.height != cfg.Height || len(f.components) != components(cfg.ColorModel) {
 		f = dearestFrame(cfg)
 	}
 	cost = int64(len(body)) + jpegCost(f)
@@ -510,27 +535,67 @@ type jpegHead struct {
 	progressive   bool
 	width, height int
 	components    []sampling
+	passes        int
 }
 
-// jpegHeader walks a JPEG's markers up to its first scan the way image/jpeg's
-// decoder does (Go 1.27, reader.go decoder.decode): a byte before a marker
-// that is not 0xFF, a 0xFF fill byte, "\xff\x00" and a restart marker are
-// skipped without a length, and every other segment by its length.
-func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
+// A sequential JPEG has a scan for each component at most, as libjpeg's
+// encoder insists (jcmaster.c validate_script), and image/jpeg decodes each
+// of its scans whole.
+func (f jpegHead) passLimit() int {
+	if f.progressive {
+		return maxPasses
+	}
+	return len(f.components)
+}
+
+// scanPasses is a scan's work for image/jpeg in first AC scans. A DC scan
+// decodes a coefficient in every block, 1.6 first scans' time. Its refine
+// walks every coefficient a refinement covers, in every block, even inside an
+// end-of-band run: over all 63 that takes 4.3 first scans' time, and over n
+// about 1 + n/18.
+func scanPasses(progressive bool, sos []byte) int {
+	if !progressive || len(sos) == 0 || len(sos) < 4+2*int(sos[0]) {
+		return 1
+	}
+	n := int(sos[0])
+	from, to, refining := int(sos[1+2*n]), int(sos[2+2*n]), sos[3+2*n]>>4 != 0
+	switch {
+	case from == 0:
+		return 2
+	case !refining || to < from:
+		return 1
+	}
+	return 1 + (to-from+18)/18
+}
+
+// jpegHeader walks a JPEG's markers the way image/jpeg's decoder does (Go
+// 1.27, reader.go decoder.decode): a byte before a marker that is not 0xFF, a
+// 0xFF fill byte, "\xff\x00" and a restart marker are skipped without a
+// length, and every other segment by its length. The data of a scan is such
+// bytes, so the walk goes on to the end, counting the scans' passes. Where it
+// stops short of the end, every "\xff\xda" after counts as the costliest scan:
+// in a scan with restarts, the decoder's findRST (scan.go) skips bytes the
+// walk takes for a marker, and reads on.
+func jpegHeader(b []byte) (f jpegHead, orientation int) {
 	orientation = 1
 	exif := false
 	if len(b) < 2 || b[0] != jpegMarker || b[1] != jpegStart {
-		return f, orientation, false
+		return f, orientation
 	}
-	for i := 2; ; {
+	at := 2
+	stop := func() (jpegHead, int) {
+		f.passes += scanPasses(true, []byte{1, 0, 0, 1, 63, 0x10}) * bytes.Count(b[at:], []byte{jpegMarker, jpegScan})
+		return f, orientation
+	}
+	for i := 2; ; at = i {
 		if i+2 > len(b) {
-			return f, orientation, false
+			return stop()
 		}
 		prev, marker := b[i], b[i+1]
 		i += 2
 		for prev != jpegMarker {
 			if i >= len(b) {
-				return f, orientation, false
+				return stop()
 			}
 			prev, marker = marker, b[i]
 			i++
@@ -540,45 +605,49 @@ func jpegHeader(b []byte) (f jpegHead, orientation int, ok bool) {
 		}
 		for marker == jpegMarker {
 			if i >= len(b) {
-				return f, orientation, false
+				return stop()
 			}
 			marker = b[i]
 			i++
 		}
 		if marker == jpegEnd {
-			return f, orientation, false
+			return f, orientation
 		}
 		if jpegRestart0 <= marker && marker <= jpegRestart7 {
 			continue
 		}
 		if i+2 > len(b) {
-			return f, orientation, false
+			return stop()
 		}
 		n := int(binary.BigEndian.Uint16(b[i:])) - 2
 		i += 2
 		if n < 0 || i+n > len(b) {
-			return f, orientation, false
+			return stop()
 		}
 		seg := b[i : i+n]
 		i += n
 		switch {
 		case marker == jpegBaseline || marker == jpegExtended || marker == jpegProgressive:
 			if f.components != nil {
-				return f, orientation, false
+				return stop()
 			}
+			var ok bool
 			if f, ok = jpegFrame(marker, seg); !ok {
-				return f, orientation, false
+				return stop()
 			}
 		case marker == jpegScan:
-			return f, orientation, f.components != nil
+			if f.components == nil {
+				return stop()
+			}
+			f.passes += scanPasses(f.progressive, seg)
 		case marker == jpegApp1:
-			if !exif && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
+			if !exif && f.passes == 0 && len(seg) > 14 && string(seg[:6]) == "Exif\x00\x00" {
 				exif, orientation = true, tiffOrientation(seg[6:])
 			}
 		case marker == jpegHuffman || marker == jpegQuant || marker == jpegInterval ||
 			jpegApp0 <= marker && marker <= jpegApp15 || marker == jpegComment:
 		default:
-			return f, orientation, false
+			return stop()
 		}
 	}
 }
@@ -724,8 +793,7 @@ func orient(src image.Image, o int) image.Image {
 }
 
 func (m *Module) allow(w http.ResponseWriter, r *http.Request, t *throttle, what string) bool {
-	store, _ := gocommerce.StoreFrom(r.Context())
-	wait, ok := t.allow(store+" "+peerAddr(r), time.Now())
+	wait, ok := t.allow(throttleKey(r), time.Now())
 	if ok {
 		return true
 	}
@@ -776,6 +844,19 @@ func (t *throttle) allow(key string, now time.Time) (time.Duration, bool) {
 	}
 	w.count++
 	return 0, true
+}
+
+func (t *throttle) refund(key string, counted time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if w := t.seen[key]; w != nil && !w.start.After(counted) && w.count > 0 {
+		w.count--
+	}
+}
+
+func throttleKey(r *http.Request) string {
+	store, _ := gocommerce.StoreFrom(r.Context())
+	return store + " " + peerAddr(r)
 }
 
 // peerAddr is the request's address as the engine's outermost handler left

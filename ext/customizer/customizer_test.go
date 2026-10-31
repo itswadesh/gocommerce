@@ -15,15 +15,18 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,17 +35,36 @@ import (
 )
 
 type harness struct {
-	t   *testing.T
-	app *gocommerce.App
-	mod *Module
-	ctx context.Context
+	t    *testing.T
+	app  *gocommerce.App
+	mod  *Module
+	ctx  context.Context
+	logs *logLines
+}
+
+type logLines struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *logLines) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logLines) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func newHarness(t *testing.T, cfg Config) *harness {
 	t.Helper()
 	mod := New(cfg)
-	app := gctest.NewWithConfig(t, gocommerce.Config{MediaDir: t.TempDir()}, mod)
-	h := &harness{t: t, app: app, mod: mod, ctx: context.Background()}
+	logs := &logLines{}
+	app := gctest.NewWithConfig(t, gocommerce.Config{MediaDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(logs, nil))}, mod)
+	h := &harness{t: t, app: app, mod: mod, ctx: context.Background(), logs: logs}
 	h.switchOn(h.ctx)
 	return h
 }
@@ -610,6 +632,127 @@ func TestAStripIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
+func scanBomb(w, h, scans int, between, resync []byte) []byte {
+	const endOfBands14, longestEndOfBandRun = 0xE0, 1<<15 - 1
+	b := []byte{0xFF, jpegStart}
+	q := bytes.Repeat([]byte{1}, 65)
+	q[0] = 0
+	b = append(b, segment(jpegQuant, q)...)
+	b = append(b, segment(jpegHuffman, append([]byte{0x00, 1}, make([]byte, 16)...))...)
+	acTable := segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), endOfBands14))
+	b = append(b, acTable...)
+	b = append(b, segment(jpegProgressive, []byte{8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), 1, 1, 0x11, 0})...)
+	blocks := ((w + 7) / 8) * ((h + 7) / 8)
+	if resync == nil {
+		b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
+		b = append(b, make([]byte, (blocks+7)/8)...)
+	} else {
+		interval := blocks / 2
+		b = append(b, segment(jpegInterval, []byte{byte(interval >> 8), byte(interval)})...)
+		b = append(b, segment(jpegScan, []byte{1, 1, 0x00, 0, 0, 0})...)
+		b = append(b, make([]byte, (interval+7)/8)...)
+		b = append(append(b, resync...), 0xFF, jpegRestart0)
+		b = append(b, make([]byte, (blocks-interval+7)/8)...)
+		b = append(b, segment(jpegInterval, []byte{0, 0})...)
+	}
+	var bits []bool
+	for left := blocks; left > 0; left -= longestEndOfBandRun {
+		bits = append(bits, false)
+		for range 14 {
+			bits = append(bits, true)
+		}
+	}
+	for len(bits)%8 != 0 {
+		bits = append(bits, true)
+	}
+	ac := segment(jpegScan, []byte{1, 1, 0x00, 1, 63, 0})
+	for i := 0; i < len(bits); i += 8 {
+		var x byte
+		for j := range 8 {
+			if bits[i+j] {
+				x |= 1 << (7 - j)
+			}
+		}
+		ac = append(ac, x)
+		if x == 0xFF {
+			ac = append(ac, 0)
+		}
+	}
+	for range scans - 1 {
+		b = append(append(b, between...), ac...)
+	}
+	return append(b, 0xFF, jpegEnd)
+}
+
+func TestAJPEGOfMoreScansThanAnEncoderWritesIsRefused(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	refused := func(name string, body []byte, want int) {
+		t.Helper()
+		rec := h.uploadRaw("", "file", body)
+		if rec.Code != want || want == http.StatusUnprocessableEntity && !strings.Contains(errorCode(t, rec), "too_many_scans") {
+			t.Errorf("%s = %d %s, want %d", name, rec.Code, rec.Body, want)
+		}
+	}
+	grey := jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x11}, adobe: -1})
+	scan := grey[bytes.Index(grey, []byte{0xFF, jpegScan}) : len(grey)-2]
+	refused("colour, a scan for each component",
+		jpegOf(jpegSpec{w: 512, h: 512, sof: jpegBaseline, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}), http.StatusCreated)
+	refused("grey, its one component scanned twice", append(append(bytes.Clone(grey[:len(grey)-2]), scan...), 0xFF, jpegEnd),
+		http.StatusUnprocessableEntity)
+
+	for name, between := range map[string][]byte{
+		"nothing":            nil,
+		"fill bytes":         {0xFF, 0xFF},
+		"a restart marker":   {0xFF, jpegRestart0},
+		"a stuffed zero":     {0xFF, 0x00},
+		"stray bytes":        {0x00, 0x12},
+		"a comment":          segment(jpegComment, []byte("x")),
+		"the AC table again": segment(jpegHuffman, append(append([]byte{0x10, 1}, make([]byte, 15)...), 0xE0)),
+	} {
+		refused("progressive, a DC scan and 97 more with "+name+" between them", scanBomb(512, 512, 98, between, nil), http.StatusCreated)
+		refused("progressive, a DC scan and 98 more with "+name+" between them", scanBomb(512, 512, 99, between, nil),
+			http.StatusUnprocessableEntity)
+	}
+	// image/jpeg's findRST skips "\xff\xff\x00" in a scan where a restart is
+	// due, where the walk takes it for a marker.
+	refused("progressive, 20 scans behind fill bytes and a zero at a restart, each reckoned the costliest", scanBomb(512, 512, 20, nil, []byte{0xFF, 0xFF, 0x00}),
+		http.StatusCreated)
+	refused("progressive, 100 scans behind fill bytes and a zero at a restart", scanBomb(512, 512, 100, nil, []byte{0xFF, 0xFF, 0x00}),
+		http.StatusUnprocessableEntity)
+	refining := func(b []byte, from, to byte) []byte {
+		return bytes.ReplaceAll(b, segment(jpegScan, []byte{1, 1, 0x00, 1, 63, 0}), segment(jpegScan, []byte{1, 1, 0x00, from, to, 0x10}))
+	}
+	refused("progressive, a DC scan and 19 refining all 63 coefficients", refining(scanBomb(512, 512, 20, nil, nil), 1, 63), http.StatusCreated)
+	refused("progressive, a DC scan and 20 refining all 63 coefficients", refining(scanBomb(512, 512, 21, nil, nil), 1, 63),
+		http.StatusUnprocessableEntity)
+	refused("progressive, a DC scan and 48 refining 5 coefficients", refining(scanBomb(512, 512, 49, nil, nil), 1, 5), http.StatusCreated)
+	refused("progressive, a DC scan and 49 refining 5 coefficients", refining(scanBomb(512, 512, 50, nil, nil), 1, 5),
+		http.StatusUnprocessableEntity)
+	dcScans := func(n int) []byte {
+		one := scanBomb(512, 512, 1, nil, nil)
+		b := bytes.Clone(one[:len(one)-2])
+		for range n - 1 {
+			b = append(b, one[bytes.Index(one, []byte{0xFF, jpegScan}):len(one)-2]...)
+		}
+		return append(b, 0xFF, jpegEnd)
+	}
+	refused("progressive, 49 DC scans", dcScans(49), http.StatusCreated)
+	refused("progressive, 50 DC scans", dcScans(50), http.StatusUnprocessableEntity)
+	refused("progressive, 25 scans refining all 63 coefficients behind fill bytes and a zero at a restart",
+		refining(scanBomb(512, 512, 26, nil, []byte{0xFF, 0xFF, 0x00}), 1, 63), http.StatusUnprocessableEntity)
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- h.uploadRaw("", "file", scanBomb(16384, 2441, 10_000, nil, nil)) }()
+	select {
+	case rec := <-done:
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("10,000 scans of 16384 × 2441 = %d %s, want 422", rec.Code, rec.Body)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("10,000 scans of 16384 × 2441 are still being decoded after 5 s; want them refused unread")
+	}
+}
+
 type jpegSpec struct {
 	w, h      int
 	sof       byte
@@ -694,11 +837,12 @@ func withinItsReckoning(t *testing.T, b []byte) {
 		return
 	}
 	mime := http.DetectContentType(b)
+	var f jpegHead
 	orientation := 1
 	if mime == "image/jpeg" {
-		_, orientation, _ = jpegHeader(b)
+		f, orientation = jpegHeader(b)
 	}
-	cost, _ := decodeCost(b, mime, cfg, orientation)
+	cost, _ := decodeCost(b, mime, cfg, f, orientation)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	_, _, err = redraw(b, io.Discard)
@@ -709,20 +853,96 @@ func withinItsReckoning(t *testing.T, b []byte) {
 }
 
 func FuzzAJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
-	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x22, 0x12}, adobe: -1, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, split: true}))
-		f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: sof, hv: []byte{0x11}, adobe: -1}))
-		f.Add(jpegOf(jpegSpec{w: 96, h: 16, sof: sof, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, ids: []byte("RGB")}))
+	type shape struct {
+		w, h                    uint16
+		progressive, split, rgb bool
+		sampling                []byte
+		adobe                   int8
+		orientation             uint8
+		beforeSOF               []byte
 	}
-	f.Add(jpegOf(jpegSpec{w: 128, h: 96, sof: jpegBaseline, hv: []byte{0x11, 0x11, 0x11}, adobe: -1, beforeSOF: []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF}}))
+	for _, progressive := range []bool{false, true} {
+		for _, s := range []shape{
+			{w: 128, h: 96, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 128, h: 96, split: true, sampling: []byte{0x22, 0x11, 0x11}, adobe: -1},
+			{w: 128, h: 96, split: true, sampling: []byte{0x11, 0x22, 0x12}, adobe: -1},
+			{w: 128, h: 96, sampling: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0},
+			{w: 128, h: 96, split: true, sampling: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2},
+			{w: 128, h: 96, sampling: []byte{0x11}, adobe: -1},
+			{w: 96, h: 16, rgb: true, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 24, h: 16, sampling: []byte{0x22, 0x11, 0x11}, adobe: -1, orientation: 6},
+			{w: 1024, h: 768, rgb: true, sampling: []byte{0x11, 0x11, 0x11}, adobe: -1},
+			{w: 1024, h: 768, split: true, sampling: []byte{0x22, 0x11, 0x11, 0x22}, adobe: 2, orientation: 8},
+		} {
+			f.Add(s.w, s.h, progressive, s.split, s.rgb, s.sampling, s.adobe, s.orientation, s.beforeSOF)
+		}
+	}
+	f.Add(uint16(128), uint16(96), false, false, false, []byte{0x11, 0x11, 0x11}, int8(-1), uint8(1), []byte{0xFF, 0xD0, 0x00, 0xFF, 0xFF})
+	f.Add(uint16(16), uint16(16), true, false, false, []byte{0x11, 0x11, 0x11}, int8(-1), uint8(1), []byte{0})
+	f.Fuzz(func(t *testing.T, w, h uint16, progressive, split, rgb bool, sampling []byte, adobe int8, orientation uint8, beforeSOF []byte) {
+		if w == 0 || h == 0 || int(w)*int(h) > 1<<20 {
+			return
+		}
+		s := jpegSpec{w: int(w), h: int(h), sof: jpegBaseline, split: split, adobe: int(adobe) % 3, beforeSOF: beforeSOF}
+		if progressive {
+			s.sof = jpegProgressive
+		}
+		if adobe < 0 {
+			s.adobe = -1
+		}
+		factor := func(x byte) byte {
+			if x == 1 || x == 2 || x == 4 {
+				return x
+			}
+			return []byte{1, 2, 4}[x%3]
+		}
+		for c := range []int{1, 1, 3, 3, 4}[min(len(sampling), 4)] {
+			hv := byte(0x11)
+			if c < len(sampling) {
+				hv = factor(sampling[c]>>4)<<4 | factor(sampling[c]&15)
+			}
+			s.hv = append(s.hv, hv)
+		}
+		if rgb && len(s.hv) == 3 {
+			s.ids = []byte("RGB")
+		}
+		b := jpegOf(s)
+		if orientation >= 2 && orientation <= 8 {
+			b = withExif(b, uint16(orientation), "")
+		}
+		withinItsReckoning(t, b)
+	})
+}
+
+func FuzzAMutatedJPEGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
+	for _, sof := range []byte{jpegBaseline, jpegProgressive} {
+		f.Add(jpegOf(jpegSpec{w: 64, h: 48, sof: sof, hv: []byte{0x22, 0x11, 0x11}, adobe: -1, split: true}))
+		f.Add(jpegOf(jpegSpec{w: 64, h: 48, sof: sof, hv: []byte{0x11, 0x11, 0x11, 0x11}, adobe: 0}))
+	}
 	f.Add(withExif(jpegRedTop(24, 16), 6, ""))
+	f.Add(scanBomb(64, 64, 6, []byte{0xFF, 0xFF}, []byte{0xFF, 0xFF, 0x00}))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "restart", 0x11, 0x11, 0x11, 0x11))
 	f.Add(jpegBomb(16, 16, jpegProgressive, "stray byte", 0x11, 0x11, 0x11))
-	f.Fuzz(func(t *testing.T, b []byte) { withinItsReckoning(t, b) })
+	f.Fuzz(withinItsReckoning)
+}
+
+func FuzzAJPEGTheWalkTakesDecodesQuickly(f *testing.F) {
+	for _, s := range [][2][]byte{
+		{nil, nil}, {{0xFF, 0xFF}, nil}, {{0xFF, 0x00}, nil}, {{0x00}, {0xFF, 0x00}}, {nil, {0xFF, 0xFF, 0x00}},
+	} {
+		f.Add(s[0], s[1])
+	}
+	f.Fuzz(func(t *testing.T, between, resync []byte) {
+		b := scanBomb(512, 512, 50_000, between, resync)
+		if head, _ := jpegHeader(b); head.passes > head.passLimit() {
+			return
+		}
+		start := time.Now()
+		_, _ = jpeg.Decode(bytes.NewReader(b))
+		if took := time.Since(start); took > time.Second {
+			t.Fatalf("the walk let through %d bytes of 50,000 scans that image/jpeg decoded for %v", len(b), took)
+		}
+	})
 }
 
 func FuzzAPNGAllocatesNoMoreThanItIsReckoned(f *testing.F) {
@@ -789,6 +1009,35 @@ func TestAStalledUploadIsCutOffAndHoldsNoOneUp(t *testing.T) {
 	}
 }
 
+func TestAnUploadIsLetGoOnlyOnceItFallsBehindEightKBASecond(t *testing.T) {
+	start := time.Unix(0, 0)
+	for _, s := range []struct {
+		name         string
+		size, burst  int64
+		every, stall time.Duration
+		taken        bool
+	}{
+		{"a 10 MB print at 2 Mbit/s", 10 << 20, 32 << 10, 128 * time.Millisecond, 0, true},
+		{"1 MB at 9 KB/s in 32 KB bursts", 1 << 20, 32 << 10, 3556 * time.Millisecond, 0, true},
+		{"1 MB at 10 KB/s in 64 KB bursts", 1 << 20, 64 << 10, 6400 * time.Millisecond, 0, true},
+		{"1 MB at 40 KB/s after 13 s without a byte", 1 << 20, 4 << 10, 100 * time.Millisecond, 13 * time.Second, true},
+		{"1 MB at 6 KB/s", 1 << 20, 4 << 10, 680 * time.Millisecond, 0, false},
+		{"a byte every 14 s", 1 << 20, 1, 14 * time.Second, 0, false},
+	} {
+		n, deadline, at := int64(0), readDeadline(start, start, 0), start.Add(s.stall)
+		for n < s.size {
+			if at = at.Add(s.every); at.After(deadline) {
+				break
+			}
+			n += s.burst
+			deadline = readDeadline(start, at, n)
+		}
+		if taken := n >= s.size; taken != s.taken {
+			t.Errorf("%s: taken %v, want %v (%d bytes in by %v)", s.name, taken, s.taken, n, deadline.Sub(start))
+		}
+	}
+}
+
 func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	uploadIdle, uploadWithin = 500*time.Millisecond, 3*time.Second
@@ -827,8 +1076,15 @@ func TestASlowUploadIsReadWhileItKeepsComing(t *testing.T) {
 			code, answer, time.Since(start).Round(100*time.Millisecond))
 	}
 	start = time.Now()
-	if code, answer := send(64); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") {
-		t.Errorf("1.3 KB/s for ever = %d %s after %v; want 400 at 3 s, too long to arrive",
+	if code, answer := send(64); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") ||
+		time.Since(start) > 1500*time.Millisecond {
+		t.Errorf("1.3 KB/s, never 0.5 s without a byte = %d %s after %v; want 400 within a second, 0.5 s behind 8 KB/s",
+			code, answer, time.Since(start).Round(100*time.Millisecond))
+	}
+	body, contentType = form("file", append(jpegRedTop(64, 64), make([]byte, 2<<20)...))
+	start = time.Now()
+	if code, answer := send(16 << 10); code != http.StatusBadRequest || !strings.Contains(answer, "too long to arrive") {
+		t.Errorf("2 MB at 320 KB/s = %d %s after %v; want 400 at 3 s, too long to arrive",
 			code, answer, time.Since(start).Round(100*time.Millisecond))
 	}
 }
@@ -906,6 +1162,167 @@ func TestUploadsWaitingForATurnAreBounded(t *testing.T) {
 	}
 }
 
+func TestAnAttemptIsGivenBackOnlyToTheHourThatCountedIt(t *testing.T) {
+	limit := newThrottle(1, time.Hour)
+	counted := time.Unix(0, 0)
+	limit.allow("shop 192.0.2.1", counted)
+	nextHour := counted.Add(time.Hour)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour); !ok {
+		t.Fatal("the first upload of the next hour was refused")
+	}
+	limit.refund("shop 192.0.2.1", counted)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour.Add(time.Minute)); ok {
+		t.Error("an upload counted in one hour and given back in the next made room for a second upload in the next")
+	}
+	limit.refund("shop 192.0.2.1", nextHour)
+	if _, ok := limit.allow("shop 192.0.2.1", nextHour.Add(2*time.Minute)); !ok {
+		t.Error("an upload given back in the hour that counted it left no room for another")
+	}
+}
+
+func TestOnlyAnUploadThatIsDecodedCountsAgainstTheLimit(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: 2})
+	decodeWait, uploadIdle = 300*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { decodeWait, uploadIdle = 30*time.Second, 15*time.Second })
+	srv := h.server(0, 0)
+	body, contentType := form("file", jpegRedTop(40, 30))
+	post := func() int {
+		resp, err := srv.Client().Post(srv.URL+"/x/customizer/uploads", contentType, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	stalledAfter := func(n int) int {
+		long, contentType := form("file", append(jpegRedTop(40, 30), make([]byte, 64<<10)...))
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+			contentType, len(long))
+		_, _ = c.Write(long[:n])
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	slow := stalledAfter(48 << 10)
+	h.mod.decodes <- struct{}{}
+	busy := post()
+	<-h.mod.decodes
+	trickle := stalledAfter(100)
+	if slow != http.StatusBadRequest || busy != http.StatusServiceUnavailable || trickle != http.StatusBadRequest {
+		t.Fatalf("an upload that stalled after 48 KB = %d, one with no turn = %d, one that stalled after 100 bytes = %d; want 400, 503 and 400",
+			slow, busy, trickle)
+	}
+	if got := post(); got != http.StatusCreated {
+		t.Errorf("an upload after one too slow with 48 KB in, one busy and one too slow with 100 bytes in = %d, want 201", got)
+	}
+	if got := post(); got != http.StatusTooManyRequests {
+		t.Errorf("a third upload in the hour, two counted: the one with 100 bytes in and the one decoded = %d, want 429", got)
+	}
+}
+
+func TestUploadsTurnedAwayAreAWarningOnceAMinute(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	decodeWait, warnEvery = 10*time.Millisecond, time.Second
+	t.Cleanup(func() { decodeWait, warnEvery = 30*time.Second, time.Minute })
+	h.mod.decodes <- struct{}{}
+	defer func() { <-h.mod.decodes }()
+	turnAway := func(n int) {
+		t.Helper()
+		for range n {
+			if rec := h.uploadRaw("", "file", jpegRedTop(40, 30)); rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("an upload with no turn = %d, want 503", rec.Code)
+			}
+		}
+	}
+	warned := regexp.MustCompile(`level=WARN msg="customizer: uploads turned away while the decoder was busy" uploads=(\d+)`)
+	warnings := func(n int) (got [][]string) {
+		for deadline := time.Now().Add(3 * time.Second); len(got) < n && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			got = warned.FindAllStringSubmatch(h.logs.String(), -1)
+		}
+		return got
+	}
+	turnAway(3)
+	if got := warned.FindAllStringSubmatch(h.logs.String(), -1); len(got) != 0 {
+		t.Fatalf("three uploads turned away logged %q at once; want one warning when the minute is out", got)
+	}
+	if got := warnings(1); len(got) != 1 || got[0][1] != "3" {
+		t.Fatalf("three uploads turned away within a minute logged %q; want one warning, for all three", got)
+	}
+	turnAway(1)
+	if got := warnings(2); len(got) != 2 || got[1][1] != "1" {
+		t.Errorf("an upload turned away after the warning logged %q; want a second warning, for that one", got)
+	}
+}
+
+func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	spool := t.TempDir()
+	t.Setenv("TMP", spool)
+	t.Setenv("TMPDIR", spool)
+	srv := h.server(0, 0)
+	body, contentType := form("file", jpegRedTop(40, 30))
+	h.mod.decodes <- struct{}{}
+	defer func() { <-h.mod.decodes }()
+	c, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		contentType, len(body))
+	_, _ = c.Write(body)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if files, _ := os.ReadDir(spool); len(files) == 1 {
+			break
+		}
+	}
+	_ = c.Close()
+
+	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	var got []string
+	for deadline := time.Now().Add(5 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		got = answered.FindStringSubmatch(h.logs.String())
+	}
+	if got == nil || got[1] != "499" || strings.Contains(h.logs.String(), "level=ERROR") {
+		t.Errorf("a shopper who hung up while their upload waited: logged %q, errors logged %v; want 499 and none",
+			got, strings.Contains(h.logs.String(), "level=ERROR"))
+	}
+}
+
+func TestAnUploadThatFailsAfterItsShopperLeftKeepsItsCause(t *testing.T) {
+	h := newHarness(t, Config{UploadsPerHour: -1})
+	srv := h.server(0, 0)
+	truncated := scanBomb(16384, 2441, 98, nil, nil)
+	body, contentType := form("file", truncated[:len(truncated)-2])
+	c, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintf(c, "POST /x/customizer/uploads HTTP/1.1\r\nHost: shop\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n",
+		contentType, len(body))
+	_, _ = c.Write(body)
+	time.Sleep(300 * time.Millisecond)
+	_ = c.Close()
+
+	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	var got []string
+	for deadline := time.Now().Add(10 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		got = answered.FindStringSubmatch(h.logs.String())
+	}
+	if got == nil || got[1] != "415" {
+		t.Errorf("a JPEG without its end, its shopper gone while it was decoded: logged %q; want 415, what was wrong with it", got)
+	}
+}
+
 func TestAnUploadThatWaitsIsStillAnswered(t *testing.T) {
 	h := newHarness(t, Config{UploadsPerHour: -1})
 	srv := h.server(0, time.Second)
@@ -964,6 +1381,9 @@ func TestADecodeThatPanicsGivesUpItsTurn(t *testing.T) {
 }
 
 func TestStartRemovesTheFilesAStoppedEngineLeft(t *testing.T) {
+	if live := uploadWithin + decodeWait + keepWithin + answerWithin; 4*live > spoolAbandonedAfter {
+		t.Fatalf("a live upload keeps its file up to %v, too near the %v after which the sweep takes it", live, spoolAbandonedAfter)
+	}
 	h := newHarness(t, Config{})
 	spool := t.TempDir()
 	t.Setenv("TMP", spool)
@@ -1385,7 +1805,7 @@ func TestReportsCannotReadShoppersPhotos(t *testing.T) {
 
 func TestOrientationReadsAndTurns(t *testing.T) {
 	for o := 1; o <= 8; o++ {
-		if _, got, _ := jpegHeader(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
+		if _, got := jpegHeader(withExif(jpegRedTop(4, 2), uint16(o), "")); got != o {
 			t.Errorf("orientation %d read as %d", o, got)
 		}
 		src := image.NewRGBA(image.Rect(0, 0, 3, 2))
@@ -1396,10 +1816,10 @@ func TestOrientationReadsAndTurns(t *testing.T) {
 			t.Errorf("orientation %d: the top-left pixel is not at %v", o, want)
 		}
 	}
-	if _, plain, _ := jpegHeader(jpegRedTop(4, 4)); plain != 1 {
+	if _, plain := jpegHeader(jpegRedTop(4, 4)); plain != 1 {
 		t.Error("a JPEG without EXIF should read as stored")
 	}
-	if _, nope, _ := jpegHeader([]byte("nope")); nope != 1 {
+	if _, nope := jpegHeader([]byte("nope")); nope != 1 {
 		t.Error("something that is not a JPEG should read as stored")
 	}
 }

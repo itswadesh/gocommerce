@@ -23,6 +23,7 @@ package customizer
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -62,13 +63,14 @@ type Config struct {
 
 // Module is the routes, the tables and the sweep.
 type Module struct {
-	cfg     Config
-	app     *gocommerce.App
-	db      *sql.DB
-	uploads *throttle
-	designs *throttle
-	decodes chan struct{}
-	waiting chan struct{}
+	cfg        Config
+	app        *gocommerce.App
+	db         *sql.DB
+	uploads    *throttle
+	designs    *throttle
+	decodes    chan struct{}
+	waiting    chan struct{}
+	turnedAway atomic.Int64
 }
 
 // New constructs the module.
