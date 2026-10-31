@@ -676,7 +676,16 @@ func (a *App) handleGetStoreProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSetStoreProfile(w http.ResponseWriter, r *http.Request) {
-	var in StoreProfile
+	// The body is laid over the profile as it stands, so a field it does not
+	// name keeps its value, as the route has always documented. Decoded into
+	// an empty profile, a client that sent one field blanked the name, the
+	// address and the rest; the panel sends them all and never noticed.
+	current, err := a.profile.Get(r.Context())
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	in := *current
 	if err := DecodeJSON(w, r, &in); err != nil {
 		RespondError(w, r, err)
 		return
