@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -154,6 +155,8 @@ func (a *App) handleDeleteLineItem(w http.ResponseWriter, r *http.Request) {
 func (a *App) mountCheckoutRoutes() {
 	a.HandleFunc("GET /api/checkout", a.handlePaymentMethods)
 	a.HandleFunc("POST /api/checkout/{code}", a.handleCheckout)
+	// Public: what checkout would charge now, placing nothing (D185).
+	a.HandleFunc("GET /api/checkout/quote", a.handleCheckoutQuote)
 	// Gateway callbacks ride a core-owned route so a payment module gets a
 	// documented webhook URL without mounting anything itself — and so the
 	// raw body reaches it untouched.
@@ -190,6 +193,29 @@ func (a *App) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	Respond(w, http.StatusCreated, result)
+}
+
+func (a *App) handleCheckoutQuote(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	in := CheckoutInput{
+		CartID:  q.Get("cart"),
+		Email:   q.Get("email"),
+		Address: Address{Country: q.Get("country"), State: q.Get("state")},
+	}
+	if v := q.Get("shipping_rate_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			RespondError(w, r, Validationf("shipping_rate_id must be a number"))
+			return
+		}
+		in.ShippingRateID = &id
+	}
+	quote, err := a.orders.Quote(r.Context(), q.Get("method"), in)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, quote)
 }
 
 func (a *App) handlePaymentWebhook(w http.ResponseWriter, r *http.Request) {

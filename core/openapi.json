@@ -11614,6 +11614,147 @@
         }
       }
     },
+    "/api/checkout/quote": {
+      "get": {
+        "tags": [
+          "checkout"
+        ],
+        "summary": "What checkout would charge for this cart now",
+        "description": "Checkout's own arithmetic on the cart, in a transaction that is rolled back (D185): the lines at their live prices, the chosen delivery, the discount (a typed code, or with none the automatic code that saves the most, D179), tax on what is paid, and the payment method's charge. Asking reserves no stock and places nothing. Without method it is a preview: no payment charge, and a prepaid-only code still counts. A line whose price moved, that is inactive or out of stock answers 409 with the same details as checkout, after the cart's prices are refreshed.",
+        "parameters": [
+          {
+            "name": "cart",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The cart token."
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO country code of the delivery address."
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO state or province code, where the store taxes or prices by it."
+          },
+          {
+            "name": "shipping_rate_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The delivery option chosen, from GET /api/checkout/rates. Omitted takes the first, as checkout does."
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The payment method's code, as POST /api/checkout/{code} takes it."
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The shopper's email, which decides a code limited to once per email."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The figures an order placed now would carry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "subtotal",
+                    "shipping",
+                    "discount",
+                    "tax",
+                    "tax_inclusive",
+                    "payment_fee",
+                    "total"
+                  ],
+                  "properties": {
+                    "subtotal": {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    "shipping": {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    "shipping_method": {
+                      "type": "string"
+                    },
+                    "discount": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "auto_applied": {
+                          "type": "boolean",
+                          "description": "The shopper typed no code; checkout chose this one."
+                        },
+                        "amount": {
+                          "$ref": "#/components/schemas/Money"
+                        },
+                        "free_shipping": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "tax": {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    "tax_inclusive": {
+                      "type": "boolean",
+                      "description": "The prices contain the tax, so it is reported and not added."
+                    },
+                    "payment_fee": {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    "total": {
+                      "$ref": "#/components/schemas/Money"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such cart, or no such payment method."
+          },
+          "409": {
+            "description": "A line moved, or the cart is already checked out."
+          },
+          "422": {
+            "description": "A required parameter is missing, or the store does not deliver there."
+          }
+        }
+      }
+    },
     "/api/checkout/rates": {
       "get": {
         "tags": [
