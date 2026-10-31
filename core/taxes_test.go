@@ -575,3 +575,22 @@ func TestScopedDiscountTaxesOnlyTheLinesItCameOff(t *testing.T) {
 		t.Errorf("order tax = %d, want the lines' %d", order.Tax.AmountMinor, shoeTax+hatTax)
 	}
 }
+
+// A save that names one field leaves the rest as they are: a client sending
+// only prices_include_tax used to blank the store's name and country.
+func TestSavingOneStoreFieldKeepsTheOthers(t *testing.T) {
+	app := newTestApp(t)
+	if rec := doBody(t, app, http.MethodPatch, "/api/admin/store", `{"name":"Keep me","country":"IN","phone":"9999999999"}`, withAdmin); rec.Code != http.StatusOK {
+		t.Fatalf("set the profile = %d %s", rec.Code, rec.Body)
+	}
+	if rec := doBody(t, app, http.MethodPatch, "/api/admin/store", `{"prices_include_tax":true}`, withAdmin); rec.Code != http.StatusOK {
+		t.Fatalf("save one field = %d %s", rec.Code, rec.Body)
+	}
+	p, err := app.Profile().Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "Keep me" || p.Country != "IN" || p.Phone != "9999999999" || !*p.PricesIncludeTax {
+		t.Fatalf("after saving one field the profile is %q %q %q inclusive=%v", p.Name, p.Country, p.Phone, *p.PricesIncludeTax)
+	}
+}
