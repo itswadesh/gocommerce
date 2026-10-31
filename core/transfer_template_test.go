@@ -19,8 +19,16 @@ func TestTheProductTemplateImportsAsWritten(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/csv") {
 		t.Fatalf("GET the template = %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
-	if first, _, _ := strings.Cut(rec.Body.String(), "\n"); !strings.HasPrefix(first, strings.Join(productCSVHeader[:4], ",")) {
-		t.Fatalf("the template's header is not the export's: %q", first)
+	// Instructions first, as notes the import skips, then the export's header.
+	var header string
+	for _, l := range strings.Split(rec.Body.String(), "\n") {
+		if !strings.HasPrefix(l, "#") {
+			header = l
+			break
+		}
+	}
+	if !strings.HasPrefix(rec.Body.String(), "# ") || !strings.HasPrefix(header, strings.Join(shopifyProductHeader[:4], ",")) {
+		t.Fatalf("the template does not start with notes and then Shopify's header: %q", header)
 	}
 
 	res, err := app.Data().ImportProducts(ctx, bytes.NewReader(rec.Body.Bytes()), ImportOptions{})
@@ -35,6 +43,25 @@ func TestTheProductTemplateImportsAsWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	if p.Status != ProductDraft || len(p.Variants) != 2 {
-		t.Errorf("the example landed as %s with %d variants, want a draft with two sizes", p.Status, len(p.Variants))
+		t.Fatalf("the example landed as %s with %d variants, want a draft with two sizes", p.Status, len(p.Variants))
+	}
+	// 999.00 in the file is 99900 in minor units, as Shopify writes it.
+	if got := p.Variants[0].Price.AmountMinor; got != 99900 {
+		t.Errorf("the example's price is %d minor units, want 99900", got)
+	}
+}
+
+// An error in a file with notes in it names the line it is on in the file,
+// not its row number among the records.
+func TestAnImportErrorNamesTheFilesOwnLine(t *testing.T) {
+	app := newTestApp(t)
+	file := "# a note\n# another\n" + strings.Join(productCSVHeader, ",") + "\n" +
+		",Untitled" + strings.Repeat(",", len(productCSVHeader)-2) + "\n"
+	res, err := app.Data().ImportProducts(context.Background(), strings.NewReader(file), ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) != 1 || res.Errors[0].Line != 4 {
+		t.Fatalf("errors = %+v, want one on line 4", res.Errors)
 	}
 }

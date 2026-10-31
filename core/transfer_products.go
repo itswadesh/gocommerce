@@ -312,6 +312,11 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 	start := time.Now()
 	r := csv.NewReader(in)
 	r.FieldsPerRecord = -1
+	// A line starting with # is a note, not a row: the template's
+	// instructions (ProductTemplate) ride in the file that is filled in. No
+	// slug or Shopify handle starts with one, and a # at the start of a line
+	// inside a quoted description is part of the field, not a new record.
+	r.Comment = '#'
 
 	header, err := r.Read()
 	if err != nil {
@@ -383,8 +388,17 @@ func (t *Transfer) ImportProducts(ctx context.Context, in io.Reader, opts Import
 		}
 		line++
 		if err != nil {
+			var parse *csv.ParseError
+			if errors.As(err, &parse) {
+				line = parse.StartLine
+			}
 			result.Errors = append(result.Errors, RowError{Line: line, Message: err.Error()})
 			continue
+		}
+		// The file's own line, so an error still points at the right line
+		// when notes or a multi-line description come before it.
+		if at, _ := r.FieldPos(0); at > 0 {
+			line = at
 		}
 		row := csvRow{line: line, cols: cols, values: unescapeRecord(record)}
 		if translate != nil {
@@ -1073,43 +1087,67 @@ func splitList(s, sep string) []string {
 	return out
 }
 
-// ProductTemplate writes a file to fill in for an import: the export's own
-// header, with this store's stock columns, and one example product in two
-// sizes. It is the export's header and not a list of its own, so the
-// template cannot drift from what the import reads. The example is a draft,
-// so a template imported unedited never puts a made-up product on sale.
+// productTemplateNotes are the template's instructions, one # line each,
+// above the header. The import skips them, so they can be kept in the file.
+// The columns are Shopify's (D182), so a merchant who has used Shopify, or
+// was taught it, fills it in without being taught again. No double quotes:
+// a spreadsheet saving the file back would quote them.
+var productTemplateNotes = []string{
+	"HOW TO FILL THIS FILE. It is Shopify's product CSV, so a file exported from Shopify imports as it is. Lines starting with # are notes: the import skips them, so keep or delete them.",
+	"One row per variant (each size or colour). Rows of one product sit together and share its Handle. Delete the two example rows (cotton-kurta) before importing your own.",
+	"Handle: the product's web address, lowercase-with-hyphens, e.g. cotton-kurta. The same Handle on two rows is the same product.",
+	"Title, Body (HTML), Vendor, Product Category, Type, Tags, Status, SEO Title, SEO Description: fill these on the product's first row only.",
+	"Status: draft (hidden from shoppers) or active (on sale). Tags: separated by commas. Product Category: a category this store already has, as its path, e.g. Apparel & Accessories > Clothing.",
+	"Option1 Name / Option1 Value: e.g. Size / M; Option2 and Option3 for a second and third choice, such as Color. Give the Name on the first row, the Value on every row.",
+	"Variant SKU: a code of your own, different for every variant. Variant Price: the selling price, e.g. 999.00. Variant Compare At Price: a higher price shown struck out. Cost per item: what you paid, never shown to shoppers.",
+	"Variant Inventory Qty: units in stock. Variant Inventory Policy: deny stops orders at 0, continue lets shoppers order anyway. Variant Inventory Tracker: shopify to count stock, empty not to.",
+	"Variant Grams: weight in grams; Variant Weight Unit: g, kg, oz or lb. Variant Requires Shipping and Variant Taxable: TRUE or FALSE.",
+	"Image Src: a picture's web address (URL); one per row, Image Position 1, 2, 3 in order, with Image Alt Text describing it. Extra pictures can go on extra rows that have only the Handle and the image columns. Variant Image: a variant's own picture.",
+	"Variant Barcode, Variant Fulfillment Service, Variant Tax Code, Gift Card and Published can be left as they are or empty. The HSN code for GST invoices comes from the product's category, set under Categories.",
+}
+
+// ProductTemplate writes a file to fill in for an import: its instructions
+// as # notes, then Shopify's product header and one example product in two
+// sizes (D182). It is the Shopify exporter's own header, so the template
+// cannot drift from what the import reads, and its prices are written as
+// that exporter writes them, in the store's currency. The example is a
+// draft, so a template imported unedited never puts a made-up product on
+// sale.
 func (t *Transfer) ProductTemplate(ctx context.Context, out io.Writer) error {
-	stockCols, err := t.productStockColumns(ctx)
-	if err != nil {
-		return err
+	exp := CurrencyExponent(t.app.Currency(ctx))
+	for _, note := range productTemplateNotes {
+		if _, err := io.WriteString(out, "# "+note+"\n"); err != nil {
+			return err
+		}
 	}
-	header := productHeaderFor(stockCols)
-	example := []map[string]string{{
-		"product_slug": "cotton-kurta", "product_title": "Cotton kurta",
-		"product_description": "Soft cotton, for everyday wear.", "product_status": "draft",
-		"product_type": "Kurta", "tags": "cotton,summer",
-		"sku": "KURTA-M", "variant_options": "Size=M", "price_minor": "99900",
-		"compare_at_price_minor": "129900", "taxable": "true", "requires_shipping": "true",
-		"track_inventory": "true", "active": "true", "weight_grams": "250", "weight_unit": "g",
-		"origin_country": "IN", "hs_code": "6211",
-	}, {
-		"product_slug": "cotton-kurta", "sku": "KURTA-L", "variant_options": "Size=L",
-		"price_minor": "99900", "compare_at_price_minor": "129900", "taxable": "true",
-		"requires_shipping": "true", "track_inventory": "true", "active": "true",
-		"weight_grams": "270", "weight_unit": "g", "origin_country": "IN", "hs_code": "6211",
-	}}
+	header := shopifyProductHeader
+	price, compare, cost := formatMoney(99900, exp), formatMoney(129900, exp), formatMoney(45000, exp)
+	variant := map[string]string{
+		"Variant Inventory Tracker": "shopify", "Variant Inventory Qty": "10", "Variant Inventory Policy": "deny",
+		"Variant Fulfillment Service": "manual", "Variant Price": price, "Variant Compare At Price": compare,
+		"Variant Requires Shipping": "TRUE", "Variant Taxable": "TRUE", "Variant Weight Unit": "g",
+		"Cost per item": cost, "Gift Card": "FALSE",
+	}
+	first := map[string]string{
+		"Handle": "cotton-kurta", "Title": "Cotton kurta", "Body (HTML)": "<p>Soft cotton, for everyday wear.</p>",
+		"Type": "Kurta", "Tags": "cotton, summer", "Published": "FALSE", "Status": "draft",
+		"Option1 Name": "Size", "Option1 Value": "M", "Variant SKU": "KURTA-M", "Variant Grams": "250",
+	}
+	second := map[string]string{
+		"Handle": "cotton-kurta", "Option1 Value": "L", "Variant SKU": "KURTA-L", "Variant Grams": "270",
+	}
 	w := csv.NewWriter(out)
 	if err := w.Write(header); err != nil {
 		return err
 	}
-	for _, values := range example {
+	for _, values := range []map[string]string{first, second} {
 		row := make([]string, len(header))
 		for i, name := range header {
-			if name == "stock_on_hand" || strings.HasPrefix(name, stockColumnPrefix) {
-				row[i] = "10"
-				continue
+			if v, ok := values[name]; ok {
+				row[i] = v
+			} else {
+				row[i] = variant[name]
 			}
-			row[i] = values[name]
 		}
 		if err := w.Write(row); err != nil {
 			return err
