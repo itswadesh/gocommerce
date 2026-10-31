@@ -45,6 +45,18 @@
     // Kept off `$state` deliberately: it is a live DOM Range read back when
     // the link is applied, and nothing renders from it.
     let savedRange = null;
+    /*
+     * The HTML itself, for what the buttons cannot make: a page's own layout,
+     * an embed, a class the storefront styles. The value is HTML either way;
+     * this only changes which view edits it. Back in the formatted view the
+     * edited HTML is loaded at once, even with focus still in the field,
+     * which the sync below would otherwise wait for.
+     */
+    let source = $state(false);
+    function toggleSource() {
+        source = !source;
+        if (!source && body) body.innerHTML = value ?? "";
+    }
 
     // `group` only draws the dividers; `toggle` decides whether the button is
     // a format that can be on (aria-pressed) or an action that just happens.
@@ -373,7 +385,7 @@
             <button
                 type="button"
                 class="btn sm transparent secondary"
-                {disabled}
+                disabled={disabled || source}
                 title={tool.hint}
                 aria-label={tool.label}
                 aria-pressed={tool.toggle ? active.includes(tool.name) : undefined}
@@ -385,6 +397,19 @@
                 <i class={tool.icon} aria-hidden="true"></i>
             </button>
         {/each}
+        <span class="rich-text-divider"></span>
+        <button
+            type="button"
+            class="btn sm transparent secondary"
+            {disabled}
+            title={source ? "Back to the formatted view" : "Edit the HTML"}
+            aria-label="Edit as HTML"
+            aria-pressed={source}
+            onclick={toggleSource}
+            onmousedown={(event) => event.preventDefault()}
+        >
+            <i class="ri-code-s-slash-line" aria-hidden="true"></i>
+        </button>
     </div>
 
     <!--
@@ -415,9 +440,19 @@
         </div>
     {/if}
 
+    {#if source}
+        <textarea
+            class="rich-text-source"
+            aria-label="HTML"
+            spellcheck="false"
+            {disabled}
+            bind:value
+        ></textarea>
+    {/if}
     <div
         bind:this={body}
         {id}
+        hidden={source}
         class="rich-text-body"
         contenteditable={!disabled}
         role="textbox"
