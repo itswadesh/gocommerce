@@ -631,6 +631,10 @@ type publicStore struct {
 	Address      *publicAddress `json:"address"`
 	MapLocation  string         `json:"map_location"`
 	OpeningHours []OpeningHours `json:"opening_hours"`
+	// PricesIncludeTax is the store's answer (D177), so a storefront says
+	// "inclusive of all taxes" only where it is true. Every price the
+	// storefront shows already tells a shopper which, so it is no secret.
+	PricesIncludeTax bool `json:"prices_include_tax"`
 }
 
 // publicAddress is the shape a vendor's address has on the wire.
@@ -652,7 +656,8 @@ func (a *App) handlePublicStore(w http.ResponseWriter, r *http.Request) {
 	out := publicStore{Name: p.Name, Email: p.Email, Phone: p.Phone, SupportURL: p.SupportURL,
 		Language: p.Language, Languages: p.Languages, ImagesPath: ImagesPath(a.storeOf(r.Context())),
 		LogoURL: p.LogoURL, LogoDarkURL: p.LogoDarkURL, IconURL: p.IconURL,
-		Country: p.Country, MapLocation: *p.MapLocation, OpeningHours: p.OpeningHours}
+		Country: p.Country, MapLocation: *p.MapLocation, OpeningHours: p.OpeningHours,
+		PricesIncludeTax: *p.PricesIncludeTax}
 	// A country on its own is no address to show.
 	if *p.ShowAddress && p.AddressLine1+p.AddressLine2+p.City+p.State+p.PostalCode != "" {
 		out.Address = &publicAddress{Line1: p.AddressLine1, Line2: p.AddressLine2, City: p.City,

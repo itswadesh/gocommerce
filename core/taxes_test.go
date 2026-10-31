@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -151,6 +152,10 @@ func TestAStoreSaysItsPricesIncludeTax(t *testing.T) {
 	setInclusive(true)
 	if !app.SettingsFor(ctx).PricesIncludeTax {
 		t.Error("the settings do not report the store's inclusive prices")
+	}
+	// A storefront reads it from the public store answer.
+	if rec := do(t, app, http.MethodGet, "/api/store"); !strings.Contains(rec.Body.String(), `"prices_include_tax":true`) {
+		t.Errorf("GET /api/store does not say prices include tax: %s", rec.Body)
 	}
 	inside, err := checkoutTo(t, app, product.DefaultVariant().ID, 1, "IN", "MP")
 	if err != nil {
