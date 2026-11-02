@@ -514,7 +514,7 @@ environment:
 			modules = append(modules, newsletter.New(newsletter.Config{}))
 		}
 		if *withRecovery {
-			modules = append(modules, cartrecovery.New(cartrecovery.Config{StorefrontURL: env("STOREFRONT_URL")}))
+			modules = append(modules, cartrecovery.New(cartrecovery.Config{StorefrontURL: env("STOREFRONT_URL"), EnginePath: env("STOREFRONT_ENGINE_PATH")}))
 		}
 		// The delivery backends. With nothing in the environment they are
 		// installed idle and wait for the Setup Email / Setup SMS screens.

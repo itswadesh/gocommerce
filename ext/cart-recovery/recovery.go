@@ -48,6 +48,11 @@ type Config struct {
 	// `reset_url`. A storefront whose basket lives at some other path does the
 	// same thing on purpose — it builds its own link from the token.
 	StorefrontURL string
+	// EnginePath is where the storefront forwards requests to this engine,
+	// "/backend" on svelte-commerce. Set, a message's link is the storefront's
+	// own address plus this path to the counting redirect, so a shopper sees
+	// the shop's domain rather than the panel's; empty, it is the panel's.
+	EnginePath string
 }
 
 // Module is the recovery flow.
@@ -218,6 +223,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 		}
 		m.cfg.StorefrontURL = clean
 	}
+	if p := m.cfg.EnginePath; p != "" && (!strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//")) {
+		return errors.New(`cart-recovery: EnginePath must be a path on the storefront, like "/backend"`)
+	}
+	m.cfg.EnginePath = strings.TrimRight(m.cfg.EnginePath, "/")
 
 	m.app = app
 	m.log = app.Log()

@@ -782,14 +782,20 @@ func (m *Module) link(ctx context.Context, s Settings, linkToken, cartToken stri
 	if storefront == "" {
 		return ""
 	}
-	if panel := m.panelURL(ctx); panel != "" {
-		// The panel's address names no store, and on an install of many the
-		// click has nothing else to go by, so the link names its own (D83).
+	// Through the storefront when it forwards to this engine, so the link a
+	// shopper is asked to trust is on the shop's own domain.
+	base := m.panelURL(ctx)
+	if m.cfg.EnginePath != "" {
+		base = storefront + m.cfg.EnginePath
+	}
+	if base != "" {
+		// The address may name no store, and on an install of many the click
+		// has nothing else to go by, so the link names its own (D83).
 		store, ok := gocommerce.StoreFrom(ctx)
 		if !ok {
 			store = m.app.DefaultStore()
 		}
-		return panel + "/x/cart-recovery/r/" + linkToken + "?store=" + url.QueryEscape(store)
+		return base + "/x/cart-recovery/r/" + linkToken + "?store=" + url.QueryEscape(store)
 	}
 	return storefront + "/cart/" + cartToken
 }
