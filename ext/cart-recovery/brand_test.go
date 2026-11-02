@@ -58,3 +58,30 @@ func TestARemindersLinkNamesItsStore(t *testing.T) {
 		t.Fatalf("click = %d %s, want a redirect to the basket", rec.Code, rec.Body)
 	}
 }
+
+// When the storefront forwards to the engine, a reminder's counted link is on
+// the shop's own domain, not the panel's: a shopper asked to tap a link sees
+// the shop they bought from.
+func TestARemindersLinkGoesThroughTheStorefront(t *testing.T) {
+	h := newHarness(t, Config{StorefrontURL: "https://shop.example.com", EnginePath: "/backend/"}, gocommerce.Config{PanelURL: "https://admin.example.com"})
+	_, cartID, _ := h.basket("R-FRONT", "front@example.com", 1)
+	h.idle(cartID, 20)
+	h.pass()
+	h.due(cartID)
+	if res := h.pass(); res.Sent != 1 {
+		t.Fatalf("sent = %d, want 1 (%+v)", res.Sent, res)
+	}
+	sent := h.rec.All()
+	link := sent[len(sent)-1].Data["recovery_url"]
+	if !strings.HasPrefix(link, "https://shop.example.com/backend/x/cart-recovery/r/") {
+		t.Fatalf("recovery_url = %q, want it on the storefront through /backend", link)
+	}
+	// What the storefront forwards, /backend cut off, is the counting redirect.
+	u, _ := url.Parse(link)
+	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(u.RequestURI(), "/backend"), nil)
+	rec := httptest.NewRecorder()
+	h.app.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || !strings.HasPrefix(rec.Header().Get("Location"), "https://shop.example.com/cart/") {
+		t.Fatalf("click = %d %s, want a redirect to the basket", rec.Code, rec.Body)
+	}
+}

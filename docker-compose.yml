@@ -116,6 +116,10 @@ services:
       # Where the panel is reached, e.g. https://shop.example.com: the base of
       # a password-reset link. Unset, a reset email carries only a code.
       GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
+      # Where the storefront below forwards to the engine (svelte-commerce's
+      # /backend). Cart reminders link through it, so a shopper sees the
+      # shop's domain, not the panel's. Empty links to the panel.
+      STOREFRONT_ENGINE_PATH: ${STOREFRONT_ENGINE_PATH:-/backend}
       # 1 lets anybody make an account on the sign-in screen and open a store.
       # It stays shut until the install has email of its own (RESEND_API_KEY
       # or SENDGRID_API_KEY below), so whoever signs up can reset a password.
