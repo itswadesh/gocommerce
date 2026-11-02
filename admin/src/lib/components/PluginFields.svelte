@@ -25,6 +25,10 @@
        replaces the secret; leaving it alone keeps it. */
     const SECRET_MASK = "••••••••";
 
+    /* The secrets shown as typed, by key. Only what is typed here can be shown:
+       a stored secret comes back as the mask, never as itself. */
+    let revealed = $state({});
+
     /* A `collection` field stores a collection's handle (D134); the store's
        collections are fetched once, and only when a field asks for them. A
        handle that is no longer a collection stays listed, so opening the form
@@ -68,14 +72,34 @@
             {:else if f.kind === "collection"}
                 <Select id="{idPrefix}-{f.key}" bind:value={form[f.key]} options={collectionOptions(form[f.key])} />
             {:else if f.kind === "secret"}
-                <input
-                    id="{idPrefix}-{f.key}"
-                    type="password"
-                    autocomplete="off"
-                    placeholder={form[f.key] === SECRET_MASK ? "Kept as it is; type to replace" : ""}
-                    aria-describedby={unopened?.includes(f.key) ? `${idPrefix}-${f.key}-unopened` : undefined}
-                    bind:value={form[f.key]}
-                />
+                <div class="fields">
+                    <div class="field">
+                        <input
+                            id="{idPrefix}-{f.key}"
+                            type={revealed[f.key] && form[f.key] !== SECRET_MASK ? "text" : "password"}
+                            autocomplete="off"
+                            placeholder={form[f.key] === SECRET_MASK ? "Kept as it is; type to replace" : ""}
+                            aria-describedby={unopened?.includes(f.key) ? `${idPrefix}-${f.key}-unopened` : undefined}
+                            bind:value={form[f.key]}
+                        />
+                    </div>
+                    <!-- The stored value is never sent, so with the mask in the
+                         box there is nothing to show. -->
+                    {#if form[f.key] && form[f.key] !== SECRET_MASK}
+                        <div class="field addon">
+                            <button
+                                type="button"
+                                class="btn sm transparent secondary circle"
+                                aria-label={revealed[f.key] ? `Hide ${f.label}` : `Show ${f.label}`}
+                                aria-pressed={!!revealed[f.key]}
+                                aria-controls="{idPrefix}-{f.key}"
+                                onclick={() => (revealed[f.key] = !revealed[f.key])}
+                            >
+                                <i class={revealed[f.key] ? "ri-eye-off-line" : "ri-eye-line"} aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    {/if}
+                </div>
             {:else if f.kind === "number"}
                 <input id="{idPrefix}-{f.key}" type="number" step="any" bind:value={form[f.key]} />
             {:else}
