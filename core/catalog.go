@@ -54,6 +54,9 @@ type Product struct {
 	// MediaCount is how many pictures the product has, for a listing that
 	// shows the lead one and wants to say there are more.
 	MediaCount int `json:"media_count,omitempty"`
+	// HoverImageURL is the second picture, which a listing card shows while a
+	// pointer rests on it. Filled in like ImageURL; empty with one picture.
+	HoverImageURL string `json:"hover_image_url,omitempty"`
 	// Designable is a product sold only made to a shopper's design (D174): a
 	// storefront opens the design editor for it and offers no quick add. Filled
 	// in on every read from the module that makes designs, never stored.
@@ -1557,6 +1560,7 @@ func (c *Catalog) loadProductChildren(ctx context.Context, products []*Product) 
 		p.Category = nil
 		p.ImageURL = ""
 		p.MediaCount = 0
+		p.HoverImageURL = ""
 		p.Designable = false
 	}
 	designable, err := c.app.designedProducts(ctx, nil, ids)
@@ -1567,27 +1571,33 @@ func (c *Catalog) loadProductChildren(ctx context.Context, products []*Product) 
 		byID[id].Designable = true
 	}
 
-	// The lead picture, for the whole page in one query. DISTINCT ON takes the
-	// first by position, which is the same image the media list shows first and
-	// the same one a storefront would lead with.
+	// The lead picture and the one after it, for the whole page in one query.
+	// Ordered by position, so the lead is the same image the media list shows
+	// first and the same one a storefront would lead with.
 	leadRows, err := c.app.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (pm.product_id) pm.product_id, m.url
-		FROM product_media pm
-		JOIN media m ON m.id = pm.media_id
-		WHERE pm.product_id = ANY($1::bigint[]) AND m.kind = 'image'
-		ORDER BY pm.product_id, pm.position, pm.media_id`, int64Array(ids))
+		SELECT product_id, url, n FROM (
+			SELECT pm.product_id, m.url,
+			       row_number() OVER (PARTITION BY pm.product_id ORDER BY pm.position, pm.media_id) AS n
+			FROM product_media pm
+			JOIN media m ON m.id = pm.media_id
+			WHERE pm.product_id = ANY($1::bigint[]) AND m.kind = 'image'
+		) ranked WHERE n <= 2`, int64Array(ids))
 	if err != nil {
 		return err
 	}
 	defer leadRows.Close()
 	for leadRows.Next() {
-		var productID int64
+		var productID, n int64
 		var url string
-		if err := leadRows.Scan(&productID, &url); err != nil {
+		if err := leadRows.Scan(&productID, &url, &n); err != nil {
 			return err
 		}
 		if p := byID[productID]; p != nil {
-			p.ImageURL = url
+			if n == 1 {
+				p.ImageURL = url
+			} else {
+				p.HoverImageURL = url
+			}
 		}
 	}
 	if err := leadRows.Err(); err != nil {
