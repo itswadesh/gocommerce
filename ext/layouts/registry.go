@@ -306,7 +306,7 @@ var Sections = []SectionType{
 	},
 	{
 		Type: "multi-column", Label: "Columns", Icon: "ri-layout-column-line",
-		Description: "Up to six columns side by side, each a picture, heading, text and link.",
+		Description: "Up to six columns side by side, each a picture or a video, heading, text and link.",
 		Fields: []Field{
 			{Key: "style", Label: "Style", Kind: KindSelect, Default: "tiles",
 				Help:    "Tiles put each picture on a quiet block with its heading and an arrow, and columns with text stay columns. Captioned shows square pictures with the heading under each, up to six across: a row of categories.",
@@ -316,6 +316,8 @@ var Sections = []SectionType{
 			subtitleField,
 			{Key: "items", Label: "Columns", Kind: KindList, Required: true, MaxItems: 6, Fields: []Field{
 				{Key: "image", Label: "Picture", Kind: KindImage},
+				{Key: "video", Label: "Or a video", Kind: KindVideo,
+					Help: "An MP4 from Files, played in place of the picture when pressed: a customer's video for a row of testimonials. The picture, if any, shows until then."},
 				{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 				{Key: "text", Label: "Text", Kind: KindTextarea, MaxLen: 600},
 				{Key: "link_text", Label: "Link text", Kind: KindText, MaxLen: 60},
