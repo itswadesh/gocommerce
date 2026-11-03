@@ -20387,6 +20387,10 @@
             "type": "boolean",
             "description": "Applied by checkout when the shopper enters no code, if it is the automatic code that saves the basket most (D179). A typed code always wins; needs a code."
           },
+          "includes_free_shipping": {
+            "type": "boolean",
+            "description": "A percentage or fixed discount that also sends the order free, as one offer (D187). Never set on a free_shipping discount."
+          },
           "hidden": {
             "type": "boolean",
             "description": "Never listed in a basket's offers, even while the store shows every active code (D180)."
@@ -20547,6 +20551,10 @@
           "auto_apply": {
             "type": "boolean",
             "description": "Applied by checkout when the shopper enters no code, if it is the automatic code that saves the basket most (D179). A typed code always wins; needs a code."
+          },
+          "includes_free_shipping": {
+            "type": "boolean",
+            "description": "A percentage or fixed discount that also sends the order free, as one offer (D187). Never set on a free_shipping discount."
           },
           "hidden": {
             "type": "boolean",

@@ -171,3 +171,60 @@ func TestFreeShippingStillZeroesAChosenRate(t *testing.T) {
 		t.Errorf("shipping_method = %q, want Standard", res.Order.ShippingMethod)
 	}
 }
+
+// A discount can take its amount off and send the order free as well (D187),
+// and the automatic pick counts both: 5% and free delivery beats 6% alone
+// when delivery costs more than the extra percent.
+func TestADiscountCanAlsoSendTheOrderFree(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	z := zone(t, app, "US", []string{"US"}, nil)
+	std := rate(t, app, z.ID, "Standard", 4900, 0, nil)
+	for _, in := range []DiscountInput{
+		{Code: "FIVEFREE", Title: "5% and free delivery", Kind: DiscountPercentage, ValueBP: 500, IncludesFreeShipping: true, AutoApply: true},
+		{Code: "SIX", Title: "6% off", Kind: DiscountPercentage, ValueBP: 600, AutoApply: true},
+	} {
+		if _, err := app.discounts.Create(ctx, in); err != nil {
+			t.Fatalf("create %s: %v", in.Code, err)
+		}
+	}
+
+	p := simpleProduct(t, app, "FIVEFREE-1", 10000, 5)
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, p.Variants[0].ID, 1)
+	in := checkoutInput(cart.Token)
+	in.Address.Country = "US"
+	in.ShippingRateID = &std.ID
+	res, err := app.orders.Checkout(ctx, CodeCOD, in, "")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	o := res.Order
+	if len(o.Discounts) != 1 || o.Discounts[0].Code != "FIVEFREE" {
+		t.Fatalf("discounts = %+v, want FIVEFREE", o.Discounts)
+	}
+	if o.Discount.AmountMinor != 500 || o.Shipping.AmountMinor != 0 {
+		t.Errorf("discount, shipping = %d, %d; want 500 off and free delivery", o.Discount.AmountMinor, o.Shipping.AmountMinor)
+	}
+
+	got, err := app.carts.GetByToken(ctx, newCartWith(t, app, p.Variants[0].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	offers, err := app.discounts.CartOffers(ctx, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, of := range offers {
+		if of.Code == "FIVEFREE" && (!of.FreeShipping || of.Amount == nil || of.Amount.AmountMinor != 500) {
+			t.Errorf("offer = %+v, want 500 off and free delivery", of)
+		}
+	}
+}
+
+func newCartWith(t *testing.T, app *App, variantID int64) string {
+	t.Helper()
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, variantID, 1)
+	return cart.Token
+}

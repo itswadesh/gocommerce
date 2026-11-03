@@ -164,6 +164,10 @@ type Discount struct {
 	// Hidden keeps the code out of the basket's offers even while the store
 	// shows every active code (D180): a code meant for some people only.
 	Hidden bool `json:"hidden"`
+	// IncludesFreeShipping sends the order free as well as taking the amount
+	// off (D187), for a promotion that is both. A free_shipping discount is
+	// free shipping already and never sets it.
+	IncludesFreeShipping bool `json:"includes_free_shipping"`
 
 	Active    bool      `json:"active"`
 	Metadata  Metadata  `json:"metadata"`
@@ -254,9 +258,11 @@ type DiscountInput struct {
 	PrepaidOnly      bool       `json:"prepaid_only"`
 	AutoApply        bool       `json:"auto_apply"`
 	Hidden           bool       `json:"hidden"`
-	Listed           *bool      `json:"listed"`
-	Active           *bool      `json:"active"`
-	Metadata         Metadata   `json:"metadata"`
+	// IncludesFreeShipping: see Discount.
+	IncludesFreeShipping bool     `json:"includes_free_shipping"`
+	Listed               *bool    `json:"listed"`
+	Active               *bool    `json:"active"`
+	Metadata             Metadata `json:"metadata"`
 	// sample marks a discount of the sample shop (D96), and only the engine
 	// sets it.
 	sample bool
@@ -288,9 +294,11 @@ type DiscountPatch struct {
 	PrepaidOnly  *bool         `json:"prepaid_only"`
 	AutoApply    *bool         `json:"auto_apply"`
 	Hidden       *bool         `json:"hidden"`
-	Listed       *bool         `json:"listed"`
-	Active       *bool         `json:"active"`
-	Metadata     *Metadata     `json:"metadata"`
+	// IncludesFreeShipping: see Discount.
+	IncludesFreeShipping *bool     `json:"includes_free_shipping"`
+	Listed               *bool     `json:"listed"`
+	Active               *bool     `json:"active"`
+	Metadata             *Metadata `json:"metadata"`
 }
 
 // DiscountQuery filters a listing.
@@ -307,14 +315,14 @@ type DiscountQuery struct {
 const discountColumns = `id, coalesce(code, ''), title, kind,
 	coalesce(value_bp, 0), coalesce(value_minor, 0), scope, min_subtotal_minor,
 	starts_at, ends_at, usage_limit, used_count, once_per_email, listed, active,
-	metadata, created_at, updated_at, prepaid_only, auto_apply, hidden`
+	metadata, created_at, updated_at, prepaid_only, auto_apply, hidden, includes_free_shipping`
 
 func scanDiscount(row interface{ Scan(...any) error }) (*Discount, error) {
 	var d Discount
 	var meta []byte
 	if err := row.Scan(&d.ID, &d.Code, &d.Title, &d.Kind, &d.ValueBP, &d.ValueMinor,
 		&d.Scope, &d.MinSubtotalMinor, &d.StartsAt, &d.EndsAt, &d.UsageLimit,
-		&d.UsedCount, &d.OncePerEmail, &d.Listed, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt, &d.PrepaidOnly, &d.AutoApply, &d.Hidden); err != nil {
+		&d.UsedCount, &d.OncePerEmail, &d.Listed, &d.Active, &meta, &d.CreatedAt, &d.UpdatedAt, &d.PrepaidOnly, &d.AutoApply, &d.Hidden, &d.IncludesFreeShipping); err != nil {
 		return nil, err
 	}
 	if err := scanMetadata(meta, &d.Metadata); err != nil {
@@ -611,13 +619,15 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 		d, derr = scanDiscount(tx.QueryRowContext(ctx, `
 			INSERT INTO discounts (code, title, kind, value_bp, value_minor, scope,
 			                       min_subtotal_minor, starts_at, ends_at, usage_limit,
-			                       once_per_email, active, metadata, sample, listed, prepaid_only, auto_apply, hidden)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			                       once_per_email, active, metadata, sample, listed, prepaid_only, auto_apply, hidden,
+			                       includes_free_shipping)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 			RETURNING `+discountColumns,
 			nullString(strings.TrimSpace(in.Code)), in.Title, in.Kind,
 			nullInt(in.ValueBP), nullInt64(in.ValueMinor), in.Scope,
 			in.MinSubtotalMinor, in.StartsAt, in.EndsAt, in.UsageLimit,
-			in.OncePerEmail, active, meta, in.sample, in.Listed != nil && *in.Listed, in.PrepaidOnly, in.AutoApply, in.Hidden))
+			in.OncePerEmail, active, meta, in.sample, in.Listed != nil && *in.Listed, in.PrepaidOnly, in.AutoApply, in.Hidden,
+			in.IncludesFreeShipping))
 		if derr != nil {
 			return translateDiscountErr(derr)
 		}
@@ -918,6 +928,9 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 	if patch.Hidden != nil {
 		add("hidden", *patch.Hidden)
 	}
+	if patch.IncludesFreeShipping != nil {
+		add("includes_free_shipping", *patch.IncludesFreeShipping)
+	}
 	// Judged on the rule as it will be, since either half can be the change.
 	autoAfter, codeAfter := current.AutoApply, current.Code
 	if patch.AutoApply != nil {
@@ -960,12 +973,13 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 		"code": current.Code, "title": current.Title, "kind": current.Kind,
 		"value_bp": current.ValueBP, "value_minor": current.ValueMinor,
 		"scope": current.Scope, "active": current.Active,
-		"once_per_email": current.OncePerEmail,
-		"listed":         current.Listed,
-		"prepaid_only":   current.PrepaidOnly,
-		"auto_apply":     current.AutoApply,
-		"hidden":         current.Hidden,
-		"target_ids":     current.TargetIDs,
+		"once_per_email":         current.OncePerEmail,
+		"listed":                 current.Listed,
+		"prepaid_only":           current.PrepaidOnly,
+		"auto_apply":             current.AutoApply,
+		"hidden":                 current.Hidden,
+		"includes_free_shipping": current.IncludesFreeShipping,
+		"target_ids":             current.TargetIDs,
 	} {
 		if _, changed := after[col]; changed {
 			before[col] = was
@@ -1442,6 +1456,9 @@ func applyDiscount(d *Discount, base int64) *AppliedDiscount {
 	case DiscountFreeShipping:
 		out.FreeShipping = true
 	}
+	if d.IncludesFreeShipping {
+		out.FreeShipping = true
+	}
 	if out.AmountMinor > base {
 		out.AmountMinor = base
 	}
@@ -1833,7 +1850,7 @@ func (s *Discounts) bestAutoCode(ctx context.Context, tx *sql.Tx, req discountRe
 		a := applyDiscount(d, base)
 		value := a.AmountMinor
 		if a.FreeShipping {
-			value = shipping
+			value += shipping
 		}
 		if value > bestValue {
 			best, bestValue = d.Code, value

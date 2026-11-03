@@ -709,7 +709,8 @@ func (s *Discounts) CartOffers(ctx context.Context, cart *Cart) ([]CartOffer, er
 		}
 		o.Applies = true
 		o.FreeShipping = applied.FreeShipping
-		if !applied.FreeShipping {
+		// A discount that also sends the order free (D187) still has its amount.
+		if !applied.FreeShipping || applied.AmountMinor > 0 {
 			m := money(applied.AmountMinor, cart.Currency)
 			o.Amount = &m
 		}

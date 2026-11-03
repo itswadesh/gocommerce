@@ -115,8 +115,16 @@ func coreMigrations() []Migration {
 		{ID: "0097_store_prices_include_tax", SQL: migration0097StorePricesIncludeTax},
 		{ID: "0098_discount_auto_apply", SQL: migration0098DiscountAutoApply},
 		{ID: "0099_show_all_codes", SQL: migration0099ShowAllCodes},
+		{ID: "0100_discount_free_shipping", SQL: migration0100DiscountFreeShipping},
 	}
 }
+
+// M100 — a percentage or fixed discount that also sends the order free
+// (D187): "5% off and free delivery when you pay online" is one promotion, and
+// an order has one discount (D28).
+const migration0100DiscountFreeShipping = `
+ALTER TABLE discounts ADD COLUMN includes_free_shipping boolean NOT NULL DEFAULT false;
+`
 
 // M99 — a store that lists every active code to its shoppers, and a code
 // that is never listed (D180). Both start false, which is what every store
