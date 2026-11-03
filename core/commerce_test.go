@@ -1852,3 +1852,47 @@ func TestOperatorPlacedOrderRefusesWhatCheckoutRefuses(t *testing.T) {
 		t.Errorf("stock = %d/%d after five refusals, want 2/0", onHand, reserved)
 	}
 }
+
+// TestAListingCarriesTheSecondPicture: a listing card shows the lead picture
+// and swaps to the next one under the pointer, so both come with the row.
+func TestAListingCarriesTheSecondPicture(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	product := simpleProduct(t, app, "HOVER-1", 2000, 3)
+	var ids []int64
+	for _, u := range []string{"front", "back", "side"} {
+		item, err := app.media.AddURL(ctx, "https://example.test/"+u+".jpg", "image", u)
+		if err != nil {
+			t.Fatalf("add media: %v", err)
+		}
+		ids = append(ids, item.ID)
+	}
+	// Out of upload order, so the test sees position decide, not the id.
+	if err := app.media.SetProductMedia(ctx, product.ID, []int64{ids[1], ids[0], ids[2]}); err != nil {
+		t.Fatalf("set media: %v", err)
+	}
+	single := simpleProduct(t, app, "HOVER-2", 2000, 3)
+	item, err := app.media.AddURL(ctx, "https://example.test/only.jpg", "image", "only")
+	if err != nil {
+		t.Fatalf("add media: %v", err)
+	}
+	if err := app.media.SetProductMedia(ctx, single.ID, []int64{item.ID}); err != nil {
+		t.Fatalf("set media: %v", err)
+	}
+
+	got, err := app.catalog.GetProduct(ctx, product.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ImageURL != "https://example.test/back.jpg" || got.HoverImageURL != "https://example.test/front.jpg" {
+		t.Errorf("lead, hover = %q, %q; want back, front", got.ImageURL, got.HoverImageURL)
+	}
+	got, err = app.catalog.GetProduct(ctx, single.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ImageURL != "https://example.test/only.jpg" || got.HoverImageURL != "" {
+		t.Errorf("one picture: lead, hover = %q, %q", got.ImageURL, got.HoverImageURL)
+	}
+}
