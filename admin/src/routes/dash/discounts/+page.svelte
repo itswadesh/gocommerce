@@ -290,6 +290,7 @@
             usage_limit: "",
             once_per_email: false,
             prepaid_only: false,
+            includes_free_shipping: false,
             auto_apply: false,
             hidden: false,
             listed: false,
@@ -327,6 +328,7 @@
             usage_limit: d.usage_limit ? String(d.usage_limit) : "",
             once_per_email: d.once_per_email,
             prepaid_only: !!d.prepaid_only,
+            includes_free_shipping: !!d.includes_free_shipping,
             auto_apply: !!d.auto_apply,
             hidden: !!d.hidden,
             listed: !!d.listed,
@@ -498,6 +500,8 @@
             kind: form.kind,
             once_per_email: form.once_per_email,
             prepaid_only: form.prepaid_only,
+            // Free shipping is already free shipping (D187).
+            includes_free_shipping: form.includes_free_shipping && form.kind !== "free_shipping",
             // Without a code neither can hold (D179, D180), so a code cleared
             // in the form clears them rather than being refused.
             auto_apply: form.auto_apply && !!form.code.trim(),
@@ -595,8 +599,9 @@
      * been described as the one thing it definitely was not.
      */
     function value(d) {
-        if (d.kind === "percentage") return `${d.value_bp / 100}%`;
-        if (d.kind === "fixed") return `${currency} ${fromMinor(d.value_minor, currency)}`;
+        const free = d.includes_free_shipping ? " + free shipping" : "";
+        if (d.kind === "percentage") return `${d.value_bp / 100}%${free}`;
+        if (d.kind === "fixed") return `${currency} ${fromMinor(d.value_minor, currency)}${free}`;
         if (d.kind === "free_shipping") return "Free shipping";
         return d.kind || "—";
     }
@@ -1052,6 +1057,15 @@
                 Free shipping carries no value of its own: the delivery charge comes off in
                 full, and it comes off the shipping rather than off any line.
             </div>
+        {:else}
+            <div class="field m-t-sm">
+                <input id="d-freeship" type="checkbox" bind:checked={form.includes_free_shipping} />
+                <label for="d-freeship">Free shipping as well</label>
+            </div>
+            <div class="field-help">
+                The order also goes free, as one offer: an order takes one discount, so "5% off and
+                free delivery" has to be a single code.
+            </div>
         {/if}
 
         <div class="field m-t-sm">
@@ -1320,7 +1334,11 @@
             <!-- Branched on the shape rather than on one number: a free-shipping
                  rule applies with an amount of zero, and "takes off 0.00" is the
                  wrong sentence for a rule that is working. -->
-            {#if result.applies && result.applied?.free_shipping}
+            {#if result.applies && result.applied?.free_shipping && result.applied?.amount_minor > 0}
+                <div class="alert success m-t-sm">
+                    <p>Takes off {currency} {fromMinor(result.applied.amount_minor, currency)}, and shipping is free.</p>
+                </div>
+            {:else if result.applies && result.applied?.free_shipping}
                 <div class="alert success m-t-sm"><p>Shipping is free.</p></div>
             {:else if result.applies}
                 <div class="alert success m-t-sm">
