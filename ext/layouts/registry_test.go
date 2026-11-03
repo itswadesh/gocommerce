@@ -274,6 +274,7 @@ func TestTheNewSectionTypes(t *testing.T) {
 		"faq without answer":    {`{"sections":[{"id":"a","type":"faq","settings":{"items":[{"question":"Q"}]}}]}`, "Answer is required"},
 		"seven columns":         {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1"},{"heading":"2"},{"heading":"3"},{"heading":"4"},{"heading":"5"},{"heading":"6"},{"heading":"7"}]}}]}`, "at most 6"},
 		"column script link":    {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1","link":"javascript:x"}]}}]}`, "web address"},
+		"column script video":   {`{"sections":[{"id":"a","type":"multi-column","settings":{"items":[{"heading":"1","video":"javascript:x"}]}}]}`, "web address"},
 	} {
 		if _, err := Validate("home", doc(t, c.raw)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want it to say %q", name, err, c.want)
