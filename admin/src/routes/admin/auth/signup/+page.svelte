@@ -21,13 +21,15 @@
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
 
     const LOGIN = `${base}/admin/auth/login`;
 
     // What the install said: "loading", "open", "closed", "uninstalled", or
     // "unreachable" when it could not be asked.
     let state = $state("loading");
-    let email = $state("");
+    // A number typed on a landing page arrives in the fragment (phone-link.js).
+    let email = $state(readablePhone(takePhoneFromFragment()));
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
