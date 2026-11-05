@@ -176,6 +176,9 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  PLATFORM_TELEGRAM_BOT_TOKEN, PLATFORM_TELEGRAM_CHAT_ID
+                    with -telegram, the install owner's bot and chat, told
+                    whenever anybody opens a store
   GOCOMMERCE_ALLOW_PRIVATE_URLS
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
@@ -561,7 +564,12 @@ environment:
 			modules = append(modules, whatsapp.New(whatsapp.Config{BaseURL: os.Getenv("WHATSAPP_GRAPH_URL")}))
 		}
 		if *withTelegram {
-			modules = append(modules, telegramalerts.New(telegramalerts.Config{}))
+			// The two here are the install owner's own bot and chat, for news
+			// of a new store; a store's order alerts still use only its own.
+			modules = append(modules, telegramalerts.New(telegramalerts.Config{
+				PlatformBotToken: os.Getenv("PLATFORM_TELEGRAM_BOT_TOKEN"),
+				PlatformChatID:   os.Getenv("PLATFORM_TELEGRAM_CHAT_ID"),
+			}))
 		}
 		// Gateways and carriers install idle: nothing in Config, everything on
 		// the Payment methods and Shipping providers screens. A store that

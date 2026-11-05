@@ -81,6 +81,7 @@ produces it, and is never repurposed.
 | `product.updated` | A product's own fields were edited | Includes a change of `status`: archiving is an update, not a delete, because the row and its page still exist. Carries `previous_slug` when the handle was renamed. Editing a variant, a price, an option or media does not emit it |
 | `product.deleted` | A product was deleted | `status` is `deleted`, and `slug` is the address that just stopped existing |
 | `collection.updated` | A collection was edited, or the list of what it holds was replaced | Aggregate type `collection`. Creating or deleting a collection announces nothing, and neither does changing a product's collections from the product's side |
+| `store.created` | A store was opened on the install | Aggregate type `store`, aggregate id 0; payload is `store_id`, `name`, `slug` and `owner_email`. The platform's news rather than the store's: it runs in the new store, which has no webhook yet, so it is not in the list of events a webhook can subscribe to. A module subscribes in code, as `telegram-alerts` does |
 
 There is deliberately no `order.confirmed`. Confirmation always coincides with
 either `order.created` (cash on delivery) or `order.paid` (everything else), so
