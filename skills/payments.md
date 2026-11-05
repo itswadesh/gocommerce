@@ -335,9 +335,17 @@ the optional `PaymentStatusReader` port (D112), and answers with what it said:
 `GET /api/admin/settings` marks a method that can be asked with
 `checks_payments`, and the order screen offers "Check with <gateway>" beside
 an unpaid payment only for those. Stripe reads the PaymentIntent, Razorpay the
-payments on its order, Cashfree the payments on each of its orders.
+payments on its order, Cashfree the payments on each of its orders, PayPal its
+order or capture.
 `ext/payments-cashfree` also lets the storefront's return page have Cashfree
 asked at once: `POST /x/payments-cashfree/orders/{cf_order_id}/verify`.
+
+`ext/payments-paypal` needs a step the others do not: a shopper's approval moves
+no money until the store captures the order. The return page does that with
+`POST /x/payments-paypal/orders/{paypal_order_id}/capture`, and the
+`CHECKOUT.ORDER.APPROVED` webhook does it for a shopper who never came back. Its
+`Configured` also answers false for a currency PayPal lacks, which includes
+rupees, so such a store never offers the method.
 
 ## How to settle by hand
 

@@ -54,6 +54,7 @@ import (
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
 	lemonsqueezy "github.com/itswadesh/gocommerce/ext/payments-lemonsqueezy"
 	paddle "github.com/itswadesh/gocommerce/ext/payments-paddle"
+	paypal "github.com/itswadesh/gocommerce/ext/payments-paypal"
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
@@ -122,6 +123,7 @@ func everyModule() []gocommerce.Module {
 		hyperswitch.New(hyperswitch.Config{}),
 		lemonsqueezy.New(lemonsqueezy.Config{}),
 		paddle.New(paddle.Config{}),
+		paypal.New(paypal.Config{}),
 		razorpay.New(razorpay.Config{}),
 		revenuecat.New(revenuecat.Config{}),
 		stripe.New(stripe.Config{}),
