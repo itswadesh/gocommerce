@@ -21,11 +21,13 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
 
     // notice is a line said above the form, such as why the form is back.
     let { onauthenticated, notice = "" } = $props();
 
-    let identity = $state("");
+    // A number typed on a landing page arrives in the fragment (phone-link.js).
+    let identity = $state(readablePhone(takePhoneFromFragment()));
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
