@@ -50,6 +50,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"faq":              "/dash/faq",
 		"showcases":        "/dash/showcases",
 		"metal-pricing":    "/dash/metal-pricing",
+		"retailassistant":  "/dash/retail-assistant",
 		"contact-form":     "/dash/contact",
 		"newsletter":       "/dash/newsletter",
 		"product-reviews":  "/dash/reviews",

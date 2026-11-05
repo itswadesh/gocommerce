@@ -65,6 +65,9 @@ const PROBES = {
     // say the module is missing rather than that the role lacks a right.
     contact: { path: "/api/admin/x/contact/messages?limit=1", right: ["contact.read", "customers.read"] },
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
+    // store.operate beside the module's own right, for cart-recovery's reason:
+    // in a binary without the module nobody holds retailassistant.read.
+    retailassistant: { path: "/api/admin/x/retailassistant/status", right: ["retailassistant.read", "store.operate"] },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
     banners: { path: "/api/admin/x/banners", right: "banners.read" },
     layouts: { path: "/api/admin/x/layouts/sections", right: "layouts.read" },

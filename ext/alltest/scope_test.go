@@ -61,6 +61,7 @@ import (
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
 	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
+	"github.com/itswadesh/gocommerce/ext/retailassistant"
 	reviews "github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	showcases "github.com/itswadesh/gocommerce/ext/showcases"
@@ -90,6 +91,7 @@ func everyModule() []gocommerce.Module {
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
 		metalpricing.New(metalpricing.Config{}),
+		retailassistant.New(retailassistant.Config{}),
 		gokwik.New(gokwik.Config{}),
 		banners.New(banners.Config{}),
 		layouts.New(layouts.Config{}),

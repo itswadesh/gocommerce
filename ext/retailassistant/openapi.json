@@ -1,0 +1,995 @@
+{
+  "paths": {
+    "/x/retailassistant/whatsapp/webhook": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Meta's webhook verification",
+        "description": "Answers hub.challenge when hub.verify_token is the install's. The address carries ?store= only to pass the engine's store binding; the sender picks the store.",
+        "parameters": [
+          {
+            "name": "hub.mode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hub.verify_token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hub.challenge",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The challenge, as plain text."
+          },
+          "403": {
+            "description": "The token does not match."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Receive WhatsApp messages on the shared number",
+        "description": "Signed by Meta in X-Hub-Signature-256. A message goes to the store its sender's number is verified for, once per message id. An unknown sender's file is not kept.",
+        "responses": {
+          "200": {
+            "description": "Received."
+          },
+          "403": {
+            "description": "The signature does not match."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/status": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Whether this store has the assistant on, and whether the install's WhatsApp number is set up",
+        "description": "Needs retailassistant.read.",
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/phone-links": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List the phones linked to this store",
+        "description": "Needs retailassistant.links.",
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Name a phone and issue its code",
+        "description": "The number links only once it sends LINK and the code from itself. The code is shown once. Needs retailassistant.links.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "With its country code, such as +919876543210."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The link and its code."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/phone-links/{id}": {
+      "patch": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Choose whether this phone gets confirmation messages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "notify": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Stop this phone sending to the store",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List documents",
+        "description": "Newest first, without their bytes. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "received",
+                "parsing",
+                "needs_review",
+                "failed",
+                "posted",
+                "rejected"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Read a document's draft and what was first read from it",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/file": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Download the original file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/correct": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Save a reviewer's corrections",
+        "description": "Refused if the document changed since version. Keeps what the reader found, and audits the change.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  },
+                  "draft": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/approve": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Post a reviewed document to the ledger",
+        "description": "A purchase invoice becomes a payable, a credit note a credit, and a payment proof an unverified payment. Refused when anything is missing; figures that do not add up need accept_mismatch, which is audited.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  },
+                  "accept_mismatch": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/reject": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Reject a document",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/retry": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Fetch a failed document again",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/suppliers": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List suppliers with what is owed",
+        "description": "Outstanding is bills posted, less credit notes, less verified payments allocated. An advance and unverified payments are shown beside it.",
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/payables": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List posted bills with what remains on each",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/payments": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List supplier payments",
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Record a supplier payment",
+        "description": "Provisional unless verified is true, which records who said so.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Names this attempt, so a retry records one thing."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "supplier_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "amount_minor": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "paid_on": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "verified": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The payment's id."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/payments/{id}/verify": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Mark a payment verified",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/payments/{id}/allocate": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Spend a verified payment on a bill",
+        "description": "Refused for an unverified payment, or for more than is left on either side.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Names this attempt, so a retry records one thing."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "invoice_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "amount_minor": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The allocation's id."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/payments/{id}/reverse": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Reverse a payment with a compensating entry",
+        "description": "Its allocations are reversed with it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/credits": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "List credit notes",
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Record a credit note",
+        "description": "With invoice_id it is spent on that bill.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Names this attempt, so a retry records one thing."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "supplier_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "amount_minor": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "return",
+                      "damaged",
+                      "other"
+                    ]
+                  },
+                  "credit_no": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "invoice_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The credit note's id."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/credits/{id}/allocate": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Spend a credit note on a bill",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Names this attempt, so a retry records one thing."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "invoice_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "amount_minor": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The allocation's id."
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/credits/{id}/reverse": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Reverse a credit note with a compensating entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/allocations/{id}/reverse": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Reverse an allocation with a compensating entry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/invoices/{id}/reverse": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Take a posted bill back out",
+        "description": "Refused while money or goods are against it.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/invoices/{id}/receive": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Book in goods that physically arrived",
+        "description": "Moves stock through the stock service, once per line. Needs retailassistant.write and inventory.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "line_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "location_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    }
+  }
+}

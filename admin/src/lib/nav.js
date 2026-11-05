@@ -84,6 +84,10 @@ export const NAV = [
             // What each gateway took and what it is owed. Under Orders
             // because that is the money it counts, and an owner reconciling
             // a statement is already looking at orders.
+            // What the shop owes, beside what it is owed: bills from suppliers,
+            // forwarded on WhatsApp, and each supplier's account.
+            { href: "/dash/retail-assistant", label: "Supplier bills", right: "retailassistant.read", module: "retailassistant", keywords: "whatsapp purchase invoice bill documents review" },
+            { href: "/dash/retail-assistant/suppliers", label: "Suppliers", right: "retailassistant.read", module: "retailassistant", keywords: "payables outstanding vendor ledger credit note advance" },
             { href: "/dash/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
             // A business customer's side of selling, where Shopify keeps its
             // own: a quote is an order being priced, an approval is an order
