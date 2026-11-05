@@ -29,6 +29,7 @@ import (
 	shipstation "github.com/itswadesh/gocommerce/ext/fulfill-shipstation"
 	usps "github.com/itswadesh/gocommerce/ext/fulfill-usps"
 	veeqo "github.com/itswadesh/gocommerce/ext/fulfill-veeqo"
+	"github.com/itswadesh/gocommerce/ext/gokwik"
 	googlereviews "github.com/itswadesh/gocommerce/ext/google-reviews"
 	identity "github.com/itswadesh/gocommerce/ext/identity"
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
@@ -89,6 +90,7 @@ func everyModule() []gocommerce.Module {
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
 		metalpricing.New(metalpricing.Config{}),
+		gokwik.New(gokwik.Config{}),
 		banners.New(banners.Config{}),
 		layouts.New(layouts.Config{}),
 		productFeeds,

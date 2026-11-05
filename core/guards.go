@@ -106,6 +106,69 @@ func (a *App) runGuards(ctx context.Context, attempt *CheckoutAttempt) error {
 	return nil
 }
 
+// A checkout precheck lets a module ask another service whether a checkout
+// should go ahead (D190). A guard cannot: it runs inside the transaction and
+// must not wait on a network. A precheck runs just before that transaction
+// opens, for a shopper's checkout only, never for an operator's Orders.Create
+// or a retry that replays an order already made. Nothing has been priced or
+// reserved yet, so a module that needs the figures asks Orders.Quote.
+//
+// A precheck adds its wait to the checkout, so it holds itself to a short
+// timeout, and it returns nil when its service cannot answer unless the service
+// is worth refusing sales over.
+
+// CheckoutIntent is a checkout about to start, as a precheck sees it.
+type CheckoutIntent struct {
+	// Method is the payment method's code.
+	Method string
+	// Input is the checkout as the caller sent it.
+	Input CheckoutInput
+	// UserAgent is the request's, empty when the checkout came from Go code.
+	UserAgent string
+}
+
+// CheckoutPrecheck returns an error to refuse a checkout, on the same terms as
+// a CheckoutGuard: an *APIError is a refusal the caller reads, and anything
+// else is the module failing, answered as a 500.
+type CheckoutPrecheck func(ctx context.Context, c *CheckoutIntent) error
+
+// RegisterCheckoutPrecheck adds a precheck. Each runs on every shopper's
+// checkout, in registration order, and the first refusal wins.
+func (a *App) RegisterCheckoutPrecheck(p CheckoutPrecheck) {
+	if p == nil {
+		a.regErrf("module %q: a nil checkout precheck", a.ownerName())
+		return
+	}
+	a.prechecks = append(a.prechecks, precheckEntry{owner: a.ownerName(), fn: p})
+}
+
+type precheckEntry struct {
+	owner string
+	fn    CheckoutPrecheck
+}
+
+func (a *App) runPrechecks(ctx context.Context, method string, in CheckoutInput) error {
+	if len(a.prechecks) == 0 {
+		return nil
+	}
+	ua, _ := ctx.Value(checkoutUserAgentKey{}).(string)
+	intent := &CheckoutIntent{Method: method, Input: in, UserAgent: ua}
+	for _, p := range a.prechecks {
+		err := p.fn(ctx, intent)
+		if err == nil {
+			continue
+		}
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			return err
+		}
+		return Internalf(err, "checkout precheck from module %q failed", p.owner)
+	}
+	return nil
+}
+
+type checkoutUserAgentKey struct{}
+
 type byOperatorKey struct{}
 
 // withByOperator marks a checkout as placed through Orders.Create.

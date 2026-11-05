@@ -47,6 +47,7 @@ services:
       - -translations
       - -showcases
       - -metal-pricing
+      - -gokwik
       - -banners
       - -layouts
       - -wishlist
