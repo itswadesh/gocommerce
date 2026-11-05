@@ -13,6 +13,7 @@
     import { createStore, enterStore, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { safeNext } from "$lib/paths.js";
+    import { takeStoreName } from "$lib/store-name.js";
     import { toast } from "$lib/toast.svelte.js";
     import { CURRENCIES } from "$lib/currencies.js";
     import { COUNTRIES } from "$lib/countries.js";
@@ -43,7 +44,7 @@
         }
     });
 
-    let name = $state("");
+    let name = $state(takeStoreName());
     let slug = $state("");
     let slugTouched = $state(false);
 
