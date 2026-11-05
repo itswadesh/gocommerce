@@ -293,6 +293,24 @@ func TestTheSharedNumberRoutesBySenderAndNeverToAStranger(t *testing.T) {
 	}
 }
 
+// On a number shared with another service, that service's customers write to it
+// about their orders, and must hear nothing from here. A link still works.
+func TestAQuietNumberSaysNothingToStrangers(t *testing.T) {
+	h := setup(t)
+	h.mod.cfg.QuietToStrangers = true
+	h.deliver(h.file("x1", stranger, "m-x", "x.csv", csvInvoice("X-1", 100)))
+	if got := h.meta.to(stranger); len(got) != 0 {
+		t.Fatalf("a stranger was told %q", got)
+	}
+	if h.count("", "retailassistant_documents") != 0 {
+		t.Fatal("a stranger's file was kept")
+	}
+	h.link("", senderA)
+	if got := h.meta.to(senderA); len(got) != 1 || !strings.Contains(got[0], "now linked") {
+		t.Fatalf("the phone being linked was told %q", got)
+	}
+}
+
 // A code proves the number: another phone sending it gets nowhere, and a store
 // naming a number attaches nothing until that number answers.
 func TestALinkCodeOnlyWorksFromTheNumberItWasIssuedFor(t *testing.T) {

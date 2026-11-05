@@ -47,6 +47,7 @@ through.
 | `RETAIL_ASSISTANT_ACCESS_TOKEN` | Fetches files and sends replies |
 | `RETAIL_ASSISTANT_PHONE_NUMBER_ID` | The shared number's id at Meta |
 | `RETAIL_ASSISTANT_DISPLAY_NUMBER` | The number as people dial it, shown when a store links a phone |
+| `RETAIL_ASSISTANT_QUIET_TO_STRANGERS` | `1` when the number is shared with another service: nobody unlinked gets a reply |
 
 With any of the first four unset, webhooks are refused or nothing can be sent,
 and the panel says the number is not set up.
@@ -63,6 +64,15 @@ The `?store=` is required on an install with several stores, because the engine
 binds every `/x/` request to a store before a module sees it. It does not decide
 where messages go: the sender's number does. Any active store's slug will do, so
 choose one that will not be deleted.
+
+### Sharing a number with another service
+
+A WhatsApp number sends its webhooks to one address. If another service already
+holds it, leave the callback there and have that service pass on each callback
+unchanged: the exact body and the `X-Hub-Signature-256` header, to the URL above.
+Use the same app's secret, so the signature still checks out. Set
+`RETAIL_ASSISTANT_QUIET_TO_STRANGERS=1` too, or that service's customers will be
+told their number is not linked to a store.
 
 ### 4. Each store
 

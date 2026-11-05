@@ -630,12 +630,13 @@ environment:
 		// the environment, unlike each store's own account for order messages.
 		if *withRetail {
 			modules = append(modules, retailassistant.New(retailassistant.Config{
-				AppSecret:     os.Getenv("RETAIL_ASSISTANT_APP_SECRET"),
-				VerifyToken:   os.Getenv("RETAIL_ASSISTANT_VERIFY_TOKEN"),
-				AccessToken:   os.Getenv("RETAIL_ASSISTANT_ACCESS_TOKEN"),
-				PhoneNumberID: os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
-				DisplayNumber: os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
-				BaseURL:       os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
+				AppSecret:        os.Getenv("RETAIL_ASSISTANT_APP_SECRET"),
+				VerifyToken:      os.Getenv("RETAIL_ASSISTANT_VERIFY_TOKEN"),
+				AccessToken:      os.Getenv("RETAIL_ASSISTANT_ACCESS_TOKEN"),
+				PhoneNumberID:    os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
+				DisplayNumber:    os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
+				QuietToStrangers: envTrue("RETAIL_ASSISTANT_QUIET_TO_STRANGERS"),
+				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))
 		}
 		if *withMetal {

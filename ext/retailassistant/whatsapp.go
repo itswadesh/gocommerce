@@ -209,6 +209,9 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 	case len(linked) == 0:
 		// Nothing is kept: a file from a stranger has no store to belong to, and
 		// what is in it says nothing about whose it is.
+		if m.cfg.QuietToStrangers {
+			return nil
+		}
 		m.say(ctx, sender, "This number is not linked to a store yet, so nothing you sent was kept. Ask your store's owner to add this number under Retail assistant, then send the code they give you.")
 		return nil
 	}
