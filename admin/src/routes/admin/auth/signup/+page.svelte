@@ -56,7 +56,7 @@
         problemField = "";
         taken = "";
         try {
-            await auth.signup(email.trim(), password);
+            await auth.signup(email, password);
             // Whoever was signed in on this browser before, the store list the
             // shell holds is theirs: have it settle again, as at sign-in.
             forgetStores();
@@ -69,7 +69,7 @@
             } else {
                 problem = sentence(err.message) || "Could not make the account.";
                 // The engine's validation names the field it refused.
-                if (err.status === 400) problemField = /password/i.test(problem) ? "password" : /email|address/i.test(problem) ? "email" : "";
+                if (err.status === 400) problemField = /password/i.test(problem) ? "password" : /email|address|phone/i.test(problem) ? "email" : "";
             }
         } finally {
             submitting = false;
@@ -124,30 +124,33 @@
         <header class="auth-head">
             <p class="auth-step">Step 1 of 2</p>
             <h1 class="auth-title">Create your store</h1>
-            <p class="auth-lede">Start with the email and password you'll sign in with. You'll name your store next.</p>
+            <p class="auth-lede">Start with the email or phone and the password you'll sign in with. You'll name your store next.</p>
         </header>
 
         <form class="auth-form" onsubmit={submit}>
+            <div>
             <div class="field" class:error={emailRefused}>
-                <label for="signup_email">Email</label>
+                <label for="signup_email">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="signup_email"
-                    type="email"
+                    type="text"
                     inputmode="email"
                     required
                     autofocus
-                    autocomplete="email"
+                    autocomplete="username"
                     autocapitalize="off"
                     spellcheck="false"
                     aria-invalid={emailRefused}
-                    aria-describedby={emailRefused ? "signup_refusal" : undefined}
+                    aria-describedby={emailRefused ? "signup_refusal signup_email_help" : "signup_email_help"}
                     bind:value={email}
                     oninput={() => {
                         taken = "";
                         if (problemField === "email") problem = problemField = "";
                     }}
                 />
+            </div>
+            <div class="field-help" id="signup_email_help">Outside India, start a phone number with its country code.</div>
             </div>
 
             <div>

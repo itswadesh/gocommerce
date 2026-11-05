@@ -30,8 +30,8 @@ func (m *Module) onStoreCreated(ctx context.Context, e gocommerce.Event) error {
 	if brand.BaseDomain != "" {
 		lines = append(lines, "https://"+ev.Slug+"."+brand.BaseDomain)
 	}
-	if ev.OwnerEmail != "" {
-		lines = append(lines, "Owner: "+ev.OwnerEmail)
+	if owner := ev.OwnerEmail + ev.OwnerPhone; owner != "" {
+		lines = append(lines, "Owner: "+owner)
 	}
 	err := m.sendTo(ctx, bot{token: m.cfg.PlatformBotToken, chat: m.cfg.PlatformChatID}, strings.Join(lines, "\n"))
 	var te *telegramError

@@ -1022,7 +1022,7 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 			return nil
 		}
 		for _, su := range list {
-			fmt.Printf("%d\t%s\t%s\n", su.ID, su.Email, su.CreatedAt.Format("2006-01-02 15:04"))
+			fmt.Printf("%d\t%s\t%s\n", su.ID, su.Contact(), su.CreatedAt.Format("2006-01-02 15:04"))
 		}
 		return nil
 	}
@@ -1053,7 +1053,7 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		return err
 	}
 	for _, su := range list {
-		if strings.EqualFold(su.Email, strings.TrimSpace(email)) {
+		if strings.EqualFold(su.Email, strings.TrimSpace(email)) || (su.Phone != "" && su.Phone == strings.TrimSpace(email)) {
 			if _, err := sus.Update(ctx, su.ID, "", password); err != nil {
 				return err
 			}

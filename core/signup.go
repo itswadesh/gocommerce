@@ -106,7 +106,10 @@ func tooManyStoreOpens(retryAfter time.Duration) *APIError {
 }
 
 // SignUp makes a person with no store and signs them in.
-func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP string) (*Superuser, *Session, error) {
+//
+// identity is an email or a phone (D191). Neither is proved here, as an address
+// never was: the first person to type one holds it.
+func (s *Superusers) SignUp(ctx context.Context, identity, password, clientIP string) (*Superuser, *Session, error) {
 	if !s.app.signupOpen(ctx) {
 		return nil, nil, signupClosed()
 	}
@@ -114,13 +117,24 @@ func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP strin
 	// one, or a password that is too short, tells nobody anything about who has
 	// an account, and charging for it would let a stream of empty bodies shut
 	// the door on everybody behind one proxy.
-	if err := validateCredentials(email, password); err != nil {
-		return nil, nil, err
+	var email, phone string
+	if looksLikePhone(identity) {
+		var err error
+		if phone, err = NormalizePhone(identity); err != nil {
+			return nil, nil, err
+		}
+		if err := validatePassword(password); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		if err := validateCredentials(identity, password); err != nil {
+			return nil, nil, err
+		}
+		email = normalizeEmail(identity)
 	}
 	if wait, ok := s.signups.take(limitKey(clientIP), time.Now()); !ok {
 		return nil, nil, tooManySignups(wait)
 	}
-	email = normalizeEmail(email)
 	hash, err := hashPassword(password)
 	if err != nil {
 		return nil, nil, Internalf(err, "hash password")
@@ -130,12 +144,13 @@ func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP strin
 	// person is staff of none until they open their own. They are recorded as
 	// arriving through the brand they signed up on (D114).
 	row := s.db.QueryRowContext(ctx, `
-		INSERT INTO superusers (email, password_hash, brand_host) VALUES ($1, $2, $3)
-		ON CONFLICT (email) DO NOTHING
-		RETURNING `+superuserColumns, email, hash, s.app.arrivalBrandHost(ctx))
+		INSERT INTO superusers (email, phone, password_hash, brand_host)
+		VALUES (NULLIF($1, ''), NULLIF($2, ''), $3, $4)
+		ON CONFLICT DO NOTHING
+		RETURNING `+superuserColumns, email, phone, hash, s.app.arrivalBrandHost(ctx))
 	su, err := scanSuperuser(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, emailTaken(email)
+		return nil, nil, emailTaken(email + phone)
 	}
 	if err != nil {
 		return nil, nil, Internalf(err, "create superuser")
@@ -154,6 +169,9 @@ func (s *Superusers) SignUp(ctx context.Context, email, password, clientIP strin
 
 func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	var in struct {
+		// An email or a phone. "email" is the name it had before it could be
+		// a phone, still taken so a caller written then keeps working.
+		Identity string `json:"identity"`
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
@@ -161,12 +179,16 @@ func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	su, sess, err := a.superusers.SignUp(r.Context(), in.Email, in.Password, clientIP(r))
+	identity := in.Identity
+	if identity == "" {
+		identity = in.Email
+	}
+	su, sess, err := a.superusers.SignUp(r.Context(), identity, in.Password, clientIP(r))
 	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	a.log.Info("superuser created", "email", su.Email, "via", "signup")
+	a.log.Info("superuser created", "email", su.Contact(), "via", "signup")
 	Respond(w, http.StatusCreated, authResponse{
 		Token:     sess.Token,
 		ExpiresAt: sess.ExpiresAt.UTC(),

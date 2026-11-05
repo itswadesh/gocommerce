@@ -2291,7 +2291,25 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CredentialsInput"
+                "type": "object",
+                "required": [
+                  "password"
+                ],
+                "properties": {
+                  "identity": {
+                    "type": "string",
+                    "description": "An email, or a phone with its country code, such as +919876543210."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "The name `identity` had before it could be a phone; still accepted."
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 8
+                  }
+                }
               }
             }
           }
@@ -2348,12 +2366,10 @@
                 "properties": {
                   "identity": {
                     "type": "string",
-                    "description": "The operator's email. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym.",
-                    "format": "email"
+                    "description": "The operator's email or phone, the phone with its country code. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym."
                   },
                   "email": {
-                    "type": "string",
-                    "format": "email"
+                    "type": "string"
                   },
                   "password": {
                     "type": "string",
@@ -2407,12 +2423,10 @@
                 "properties": {
                   "identity": {
                     "type": "string",
-                    "description": "The operator's email. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym.",
-                    "format": "email"
+                    "description": "The operator's email or phone, the phone with its country code. Named `identity` for PocketBase compatibility; `email` is accepted as a synonym."
                   },
                   "email": {
-                    "type": "string",
-                    "format": "email"
+                    "type": "string"
                   }
                 }
               }
@@ -6068,14 +6082,33 @@
     },
     "/api/admin/import/products/template": {
       "get": {
-        "tags": ["admin:data"],
+        "tags": [
+          "admin:data"
+        ],
         "summary": "A product import file to fill in",
-        "security": [{"adminToken": []}],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
         "description": "Shopify's product CSV, which POST /api/admin/import/products reads as it is (D182): instructions as # lines, which the import skips, then Shopify's product header and one example product in two sizes, a draft so importing it unedited puts nothing on sale. Prices are decimals in the store's currency (999.00), as Shopify writes them. Needs data.import.",
         "responses": {
-          "200": {"description": "The template.", "content": {"text/csv": {"schema": {"type": "string"}}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "The template.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
@@ -8063,26 +8096,98 @@
     },
     "/api/admin/discount-settings": {
       "get": {
-        "tags": ["admin:discounts"],
+        "tags": [
+          "admin:discounts"
+        ],
         "summary": "How the store's codes reach its shoppers",
-        "security": [{"adminToken": []}],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
         "description": "`show_all_codes`: whether a basket's offers list every active code (D180), not only the ones marked to be shown, except a code marked hidden and one a shopper may not be able to use (once per address, prepaid only). Automatic codes are always listed. Needs discounts.read.",
         "responses": {
-          "200": {"description": "The settings.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "show_all_codes": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       },
       "put": {
-        "tags": ["admin:discounts"],
+        "tags": [
+          "admin:discounts"
+        ],
         "summary": "Change how the store's codes reach its shoppers",
-        "security": [{"adminToken": []}],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
         "description": "Sets `show_all_codes` (D180). Needs discounts.write.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}},
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "show_all_codes": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {"description": "The settings as saved.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"show_all_codes": {"type": "boolean"}}}}}}}},
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "403": {"$ref": "#/components/responses/Forbidden"}
+          "200": {
+            "description": "The settings as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "show_all_codes": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
@@ -17225,18 +17330,39 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "hsn": { "type": "string" },
-                        "matches": { "type": "array", "items": {
-                    "type": "object",
-                    "properties": {
-                      "prefix": { "type": "string" },
-                      "rate_bp": { "type": "integer", "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST." },
-                      "description": { "type": "string" },
-                      "conditional": { "type": "boolean", "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion." },
-                      "source": { "type": "string", "description": "Notification, schedule and serial number." },
-                      "narrower": { "type": "boolean", "description": "An entry under the code asked about, offered because nothing covers the code itself." }
-                    }
-                  } }
+                        "hsn": {
+                          "type": "string"
+                        },
+                        "matches": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "prefix": {
+                                "type": "string"
+                              },
+                              "rate_bp": {
+                                "type": "integer",
+                                "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST."
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "conditional": {
+                                "type": "boolean",
+                                "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion."
+                              },
+                              "source": {
+                                "type": "string",
+                                "description": "Notification, schedule and serial number."
+                              },
+                              "narrower": {
+                                "type": "boolean",
+                                "description": "An entry under the code asked about, offered because nothing covers the code itself."
+                              }
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -17281,21 +17407,55 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "kind": { "type": "string", "enum": ["category", "product"] },
-                          "id": { "type": "integer" },
-                          "name": { "type": "string" },
-                          "codes": { "type": "array", "items": { "type": "string" } },
-                          "matches": { "type": "array", "items": {
-                    "type": "object",
-                    "properties": {
-                      "prefix": { "type": "string" },
-                      "rate_bp": { "type": "integer", "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST." },
-                      "description": { "type": "string" },
-                      "conditional": { "type": "boolean", "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion." },
-                      "source": { "type": "string", "description": "Notification, schedule and serial number." },
-                      "narrower": { "type": "boolean", "description": "An entry under the code asked about, offered because nothing covers the code itself." }
-                    }
-                  } }
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "category",
+                              "product"
+                            ]
+                          },
+                          "id": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "codes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "matches": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "prefix": {
+                                  "type": "string"
+                                },
+                                "rate_bp": {
+                                  "type": "integer",
+                                  "description": "The whole GST rate in basis points (1800 = 18%), the IGST rate and the sum of CGST and SGST/UTGST."
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "conditional": {
+                                  "type": "boolean",
+                                  "description": "The description, not the code, decides whether the entry applies: a sale value, a use, an exclusion."
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "description": "Notification, schedule and serial number."
+                                },
+                                "narrower": {
+                                  "type": "boolean",
+                                  "description": "An entry under the code asked about, offered because nothing covers the code itself."
+                                }
+                              }
+                            }
+                          }
                         }
                       }
                     },
@@ -17907,7 +18067,7 @@
           },
           "email": {
             "type": "string",
-            "format": "email"
+            "description": "Empty for somebody who signed up with a phone."
           },
           "role": {
             "type": "string",
@@ -17961,6 +18121,10 @@
             "format": "int64",
             "nullable": true,
             "description": "The seller this account belongs to. Present only on accounts with the `vendor` role, and required on all of them — the two are set together or neither is."
+          },
+          "phone": {
+            "type": "string",
+            "description": "In E.164, for somebody who signed up with a phone."
           }
         }
       },

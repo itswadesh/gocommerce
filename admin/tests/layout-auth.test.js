@@ -105,7 +105,7 @@ test("entering the code is always offered, and the address never rides in the UR
     const reset = read("../src/routes/admin/auth/reset-password/[[token]]/+page.svelte");
     assert.match(reset, /let email = \$state\(page\.state\?\.email \?\? ""\)/);
     assert.doesNotMatch(reset, /searchParams|location\.hash|url\.hash/);
-    assert.match(reset, /\{ email: email\.trim\(\), code, password \}/);
+    assert.match(reset, /\{ email: toIdentity\(email\), code, password \}/);
     assert.match(reset, /linked\s*\?\s*\{ token, password \}/);
     const code = reset.slice(reset.indexOf('id="reset_code"'), reset.indexOf("/>", reset.indexOf('id="reset_code"')));
     assert.match(code, /inputmode="numeric"/);
@@ -170,6 +170,6 @@ test("signing in keeps the page, with a spinner, until the shell knows where to 
 // worked in may since have been suspended.
 test("signing up sends no store", () => {
     const api = read("../src/lib/api.js");
-    assert.match(api, /"\/api\/admin\/signup", \{ email, password \}, \{ admin: false, store: false \}/);
+    assert.match(api, /"\/api\/admin\/signup", \{ identity: toIdentity\(identity\), password \}, \{ admin: false, store: false \}/);
     assert.match(api, /\.\.\.\(store \? storeHeaders\(\) : \{\}\)/);
 });
