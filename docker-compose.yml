@@ -46,6 +46,7 @@ services:
       - -faq
       - -translations
       - -showcases
+      - -metal-pricing
       - -banners
       - -layouts
       - -wishlist

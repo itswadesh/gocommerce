@@ -548,6 +548,24 @@ suggested category and an HSN code (an Indian store only) are kept in
 `ai_drafted` as suggestions and never applied. Create twice and nothing is
 made twice: a proposal's product is found by its `ai_drafted.item` mark.
 
+## Prices from the metal rate
+
+`ext/metal-pricing` (`-metal-pricing`, D188) prices jewellery from the day's rate.
+A rate is the price of one gram, and a variant's recipe says how much of that
+metal it holds and what goes on top.
+
+```http
+PUT  /api/admin/x/metal-pricing/rates/{code}      {"name": "Gold 22K", "rate_minor": 600000}
+POST /api/admin/x/metal-pricing/recipes           {"sku": "RING-1", "rate_code": "gold-22k", "weight_mg": 10000, "wastage_bp": 800, "making_kind": "percent", "making_value": 1200, "stones_minor": 250000}
+POST /api/admin/x/metal-pricing/recipes/import    (a CSV in grams, percent and whole currency)
+POST /api/admin/x/metal-pricing/reprice           (every design, at the current rates)
+```
+
+Setting a rate reprices every variant on it through `UpdateVariant`, so it is an
+ordinary price everywhere else, and a price typed by hand lasts only until the next
+rate. A compare-at price at or below the new price comes off. Price lists do not
+follow the rate.
+
 ## Improving a product with AI
 
 `ext/catalog-ai` (`-catalog-ai`, D152) proposes a better listing for a product

@@ -152,6 +152,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
 | `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
 | `customizer` | A shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; the order carries the print file and the photos. Off until switched on; see [`docs/customizer.md`](docs/customizer.md) |
+| `metal-pricing` | Jewellery priced from the day's metal rate, weight, wastage, making charge and stones; enter a rate and every design made from it is repriced |
 | `showcases` | The store's own YouTube or Facebook videos beside the products they show, with the product being shown now and honest live labels; nothing is uploaded, served at `/x/showcases` |
 | `banners` | Pictures on the storefront's pages: slides across the top and grids of tiles under a heading, each with a phone crop and a link, served at `/x/banners` |
 | `layouts` | The storefront's home page, product page and collection page arranged from sections — hero, product grids, image and text, reviews — in any order, around each page's fixed core, drafted, previewed and published now or at a set time without a deployment, plus the header's announcement and menu and the footer's columns, words and social links, served at `/x/layouts/{home,product,collection,header,footer}` |

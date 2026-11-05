@@ -563,6 +563,20 @@ export const showcases = {
 };
 
 /**
+ * metalPricing is ext/metal-pricing (D188): rates, and how each design is priced from them.
+ */
+export const metalPricing = {
+    rates: () => api.get("/api/admin/x/metal-pricing/rates"),
+    setRate: (code, body) => request("PUT", `/api/admin/x/metal-pricing/rates/${encodeURIComponent(code)}`, { body }),
+    removeRate: (code) => api.delete(`/api/admin/x/metal-pricing/rates/${encodeURIComponent(code)}`),
+    recipes: (params) => api.get("/api/admin/x/metal-pricing/recipes" + query(params)),
+    setRecipe: (body) => api.post("/api/admin/x/metal-pricing/recipes", body),
+    removeRecipe: (variantId) => api.delete(`/api/admin/x/metal-pricing/recipes/${variantId}`),
+    reprice: () => api.post("/api/admin/x/metal-pricing/reprice"),
+    importRecipes: (text) => api.post("/api/admin/x/metal-pricing/recipes/import", text, { headers: { "Content-Type": "text/csv" } }),
+};
+
+/**
  * banners is ext/banners (D99): the pictures on the storefront's pages, slides
  * across the top and grids of tiles under a heading.
  */

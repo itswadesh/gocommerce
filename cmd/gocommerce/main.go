@@ -49,6 +49,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
 	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
+	metalpricing "github.com/itswadesh/gocommerce/ext/metal-pricing"
 	"github.com/itswadesh/gocommerce/ext/navigation"
 	"github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -268,6 +269,7 @@ environment:
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
+		withMetal    = fs.Bool("metal-pricing", false, "install the metal pricing module: jewellery priced from the day's metal rate, weight, wastage, making charge and stones")
 		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
 		withTransl   = fs.Bool("translations", false, "install the translations module: products, categories and collections in each of a store's languages, written on the Translations screen")
@@ -602,6 +604,9 @@ environment:
 		}
 		if *withShow {
 			modules = append(modules, showcases.New(showcases.Config{}))
+		}
+		if *withMetal {
+			modules = append(modules, metalpricing.New(metalpricing.Config{}))
 		}
 		if *withBanners {
 			modules = append(modules, banners.New(banners.Config{}))

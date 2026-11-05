@@ -104,6 +104,7 @@ export const NAV = [
         children: [
             { href: "/dash/collections", label: "Collections", right: "collections.read", keywords: "curated lists" },
             { href: "/dash/categories", label: "Categories", right: "categories.read", keywords: "taxonomy tree attributes" },
+            { href: "/dash/metal-pricing", label: "Metal rates", right: "metal-pricing.read", module: "metal-pricing", keywords: "gold silver platinum rate jewellery making charge wastage karat purity weight" },
             // The catalogue in the store's other languages: the products'
             // own words, so it sits with them rather than under Settings.
             { href: "/dash/translations", label: "Translations", right: "catalog.read", module: "translations", keywords: "languages translate hindi multilingual i18n locale" },
