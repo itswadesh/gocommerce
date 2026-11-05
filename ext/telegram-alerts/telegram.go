@@ -65,6 +65,12 @@ type Config struct {
 	// plugin starts switched on (D59); with neither it installs idle.
 	BotToken string
 	ChatID   string
+	// PlatformBotToken and PlatformChatID are the install owner's bot and chat,
+	// told whenever anybody opens a store. They are nothing to do with BotToken
+	// and ChatID, which would send every store's orders to one chat. Without
+	// both, no such message is sent.
+	PlatformBotToken string
+	PlatformChatID   string
 	// BaseURL replaces https://api.telegram.org. Tests set it; nothing else
 	// should.
 	BaseURL string
@@ -176,6 +182,14 @@ func (m *Module) Register(app *gocommerce.App) error {
 
 	for _, def := range catalogue {
 		app.Subscribe(def.Event, m.onEvent)
+	}
+	m.cfg.PlatformBotToken = strings.TrimSpace(m.cfg.PlatformBotToken)
+	m.cfg.PlatformChatID = strings.TrimSpace(m.cfg.PlatformChatID)
+	switch {
+	case m.cfg.PlatformBotToken != "" && m.cfg.PlatformChatID != "":
+		app.Subscribe(gocommerce.EventStoreCreated, m.onStoreCreated)
+	case m.cfg.PlatformBotToken != "" || m.cfg.PlatformChatID != "":
+		m.log.Warn("telegram alerts: new stores are not announced: the platform's bot token and chat id are only useful together")
 	}
 
 	const base = "/api/admin/x/telegram-alerts"

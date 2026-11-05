@@ -80,7 +80,22 @@ const (
 	// A collection changing is a page changing, even when no product did: the
 	// listing it renders is different.
 	EventCollectionUpdated = "collection.updated"
+
+	// A store was opened on this install. It is the platform's news, not the
+	// store's: it runs in the new store, which has no webhook yet to hear it,
+	// so it stays out of eventCatalog and no screen offers it to subscribe to.
+	EventStoreCreated = "store.created"
 )
+
+// StoreCreatedEvent is store.created's payload.
+type StoreCreatedEvent struct {
+	StoreID string `json:"store_id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	// OwnerEmail is empty for a store opened with no owner, from the command
+	// line.
+	OwnerEmail string `json:"owner_email,omitempty"`
+}
 
 // EventInfo is one event of the taxonomy as a merchant reads it: what to
 // subscribe to and when it happens.
@@ -144,6 +159,10 @@ const AggregateProduct = "product"
 
 // AggregateCollection is a curated list.
 const AggregateCollection = "collection"
+
+// AggregateStore is the store itself. A store's id is text, so its events
+// carry aggregate id 0 and name the store in their payload.
+const AggregateStore = "store"
 
 // Event is one thing that happened. It is created inside the transaction that
 // caused it and delivered afterwards, so an event exists if and only if the

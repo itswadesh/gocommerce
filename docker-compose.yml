@@ -125,6 +125,10 @@ services:
       # It stays shut until the install has email of its own (RESEND_API_KEY
       # or SENDGRID_API_KEY below), so whoever signs up can reset a password.
       GOCOMMERCE_SIGNUP: ${GOCOMMERCE_SIGNUP:-}
+      # The install owner's own bot and chat, told whenever anybody opens a
+      # store. Not a store's: each store sets its own for its orders.
+      PLATFORM_TELEGRAM_BOT_TOKEN: ${PLATFORM_TELEGRAM_BOT_TOKEN:-}
+      PLATFORM_TELEGRAM_CHAT_ID: ${PLATFORM_TELEGRAM_CHAT_ID:-}
       # GOCOMMERCE_ALLOW_PRIVATE_URLS is deliberately not passed through. It
       # lets the addresses a store sets — webhook endpoints, provider base
       # URLs — reach this server's own network, which is wrong wherever people

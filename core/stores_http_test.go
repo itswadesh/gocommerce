@@ -158,6 +158,30 @@ func TestCreatingAStoreMakesTheCallerItsOwner(t *testing.T) {
 	}
 }
 
+// Opening a store announces it, once, naming the person who opened it.
+func TestOpeningAStoreAnnouncesItAndItsOwner(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "founder@example.com", RoleStaff)
+	rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Corner Shop","slug":"corner"}`, bearer(tok))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		Store Store `json:"store"`
+	}
+	decodeData(t, rec, &out)
+	var n int
+	var name, slug, owner string
+	if err := app.DB().QueryRowContext(WithStore(context.Background(), out.Store.ID), `
+		SELECT count(*), min(payload->>'name'), min(payload->>'slug'), min(payload->>'owner_email')
+		FROM outbox_events WHERE event_name = $1`, EventStoreCreated).Scan(&n, &name, &slug, &owner); err != nil {
+		t.Fatalf("read the event: %v", err)
+	}
+	if n != 1 || name != "Corner Shop" || slug != "corner" || owner != "founder@example.com" {
+		t.Fatalf("events = %d, name %q, slug %q, owner %q", n, name, slug, owner)
+	}
+}
+
 func TestATakenSlugIsAConflict(t *testing.T) {
 	app := newTestApp(t)
 	tok := signInAs(t, app, "dup@example.com", RoleOwner)

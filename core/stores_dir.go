@@ -560,13 +560,19 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 		if err := seedCore(bound, tx, id); err != nil {
 			return err
 		}
-		if ownerID == 0 {
-			return nil
+		ev := StoreCreatedEvent{StoreID: id, Name: name, Slug: slug}
+		if ownerID != 0 {
+			if _, err := tx.ExecContext(bound, `
+				INSERT INTO store_members (store_id, superuser_id, role) VALUES ($1, $2, $3)`,
+				id, ownerID, RoleOwner); err != nil {
+				return Internalf(err, "make the creator the store's owner")
+			}
+			if err := tx.QueryRowContext(bound, `SELECT email FROM superusers WHERE id = $1`, ownerID).Scan(&ev.OwnerEmail); err != nil {
+				return Internalf(err, "read the new store's owner")
+			}
 		}
-		if _, err := tx.ExecContext(bound, `
-			INSERT INTO store_members (store_id, superuser_id, role) VALUES ($1, $2, $3)`,
-			id, ownerID, RoleOwner); err != nil {
-			return Internalf(err, "make the creator the store's owner")
+		if err := s.app.outbox.write(bound, tx, EventStoreCreated, AggregateStore, 0, ev); err != nil {
+			return Internalf(err, "announce the new store")
 		}
 		return nil
 	})
@@ -578,5 +584,6 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 		_, _ = s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM stores WHERE id = $1`, id)
 		return nil, err
 	}
+	s.app.outbox.nudge()
 	return s.Get(ctx, id)
 }

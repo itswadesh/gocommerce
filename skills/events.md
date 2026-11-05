@@ -62,7 +62,8 @@ dropped a module's key emits `order.edited` like any other edit.
 All of them live in `events.go`, and [`docs/events.md`](../docs/events.md#the-taxonomy)
 lists every one. The `order.*` names are on `AggregateOrder`; `cart.abandoned`
 is on `AggregateCart` (see [carts](carts.md)), `product.*` on
-`AggregateProduct`, and `collection.updated` on `AggregateCollection`. The order
+`AggregateProduct`, `collection.updated` on `AggregateCollection`, and
+`store.created` on `AggregateStore`, emitted by `Stores.CreateFor`. The order
 transitions:
 
 | Constant | Name | Emitted by |
