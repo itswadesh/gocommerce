@@ -564,6 +564,38 @@ export const showcases = {
 };
 
 /**
+* retailAssistant is ext/retailassistant (D192): documents from WhatsApp, the
+ * phones allowed to send them, and each supplier's account. The money routes
+ * take a key so a retried press records one thing.
+ */
+const RETAIL = "/api/admin/x/retailassistant";
+const keyed = (key) => (key ? { headers: { "Idempotency-Key": key } } : {});
+export const retailAssistant = {
+    status: () => api.get(`${RETAIL}/status`),
+    links: () => api.get(`${RETAIL}/phone-links`),
+    addLink: (body) => api.post(`${RETAIL}/phone-links`, body),
+    updateLink: (id, body) => api.patch(`${RETAIL}/phone-links/${id}`, body),
+    removeLink: (id) => api.delete(`${RETAIL}/phone-links/${id}`),
+    documents: (params) => api.get(`${RETAIL}/documents` + query(params)),
+    document: (id) => api.get(`${RETAIL}/documents/${id}`),
+    correct: (id, body) => api.post(`${RETAIL}/documents/${id}/correct`, body),
+    approve: (id, body) => api.post(`${RETAIL}/documents/${id}/approve`, body),
+    reject: (id, body) => api.post(`${RETAIL}/documents/${id}/reject`, body),
+    retry: (id) => api.post(`${RETAIL}/documents/${id}/retry`),
+    suppliers: () => api.get(`${RETAIL}/suppliers`),
+    payables: (params) => api.get(`${RETAIL}/payables` + query(params)),
+    payments: (params) => api.get(`${RETAIL}/payments` + query(params)),
+    credits: (params) => api.get(`${RETAIL}/credits` + query(params)),
+    addPayment: (body, key) => api.post(`${RETAIL}/payments`, body, keyed(key)),
+    verifyPayment: (id) => api.post(`${RETAIL}/payments/${id}/verify`),
+    allocatePayment: (id, body, key) => api.post(`${RETAIL}/payments/${id}/allocate`, body, keyed(key)),
+    reversePayment: (id) => api.post(`${RETAIL}/payments/${id}/reverse`),
+    addCredit: (body, key) => api.post(`${RETAIL}/credits`, body, keyed(key)),
+    allocateCredit: (id, body, key) => api.post(`${RETAIL}/credits/${id}/allocate`, body, keyed(key)),
+    reverseCredit: (id) => api.post(`${RETAIL}/credits/${id}/reverse`),
+};
+
+/**
  * metalPricing is ext/metal-pricing (D188): rates, and how each design is priced from them.
  */
 export const metalPricing = {

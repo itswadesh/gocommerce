@@ -71,6 +71,7 @@ import (
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
 	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
+	"github.com/itswadesh/gocommerce/ext/retailassistant"
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/showcases"
@@ -177,6 +178,11 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
+  RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,
+  RETAIL_ASSISTANT_DISPLAY_NUMBER
+                    with -retail-assistant, the install's one WhatsApp number
+                    (docs/retail-assistant.md)
   PLATFORM_TELEGRAM_BOT_TOKEN, PLATFORM_TELEGRAM_CHAT_ID
                     with -telegram, the install owner's bot and chat, told
                     whenever anybody opens a store
@@ -274,6 +280,7 @@ environment:
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
 		withGoKwik   = fs.Bool("gokwik", false, "install the GoKwik module: a store's cash-on-delivery orders in India scored for the risk of coming back undelivered, and the risky ones asked to pay online; each store gives it its own keys under Settings › Plugins")
+		withRetail   = fs.Bool("retail-assistant", false, "install the retail assistant: supplier bills forwarded on one shared WhatsApp number, reviewed, and kept as an account of what each supplier is owed; each store switches it on, and RETAIL_ASSISTANT_* set the number")
 		withMetal    = fs.Bool("metal-pricing", false, "install the metal pricing module: jewellery priced from the day's metal rate, weight, wastage, making charge and stones")
 		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
@@ -617,6 +624,18 @@ environment:
 		}
 		if *withGoKwik {
 			modules = append(modules, gokwik.New(gokwik.Config{}))
+		}
+		// The number is the install's, shared by every store, so it comes from
+		// the environment, unlike each store's own account for order messages.
+		if *withRetail {
+			modules = append(modules, retailassistant.New(retailassistant.Config{
+				AppSecret:     os.Getenv("RETAIL_ASSISTANT_APP_SECRET"),
+				VerifyToken:   os.Getenv("RETAIL_ASSISTANT_VERIFY_TOKEN"),
+				AccessToken:   os.Getenv("RETAIL_ASSISTANT_ACCESS_TOKEN"),
+				PhoneNumberID: os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
+				DisplayNumber: os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
+				BaseURL:       os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
+			}))
 		}
 		if *withMetal {
 			modules = append(modules, metalpricing.New(metalpricing.Config{}))
