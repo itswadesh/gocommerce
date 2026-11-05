@@ -1,0 +1,88 @@
+{
+  "paths": {
+    "/api/admin/x/metal-pricing/rates": {
+      "get": {
+        "tags": ["catalog"],
+        "summary": "List the store's metal rates",
+        "description": "Each rate with its price per gram and how many designs are priced from it. Needs metal-pricing.read.",
+        "responses": { "200": { "description": "The rates." }, "401": { "$ref": "#/components/responses/Unauthorized" } }
+      }
+    },
+    "/api/admin/x/metal-pricing/rates/{code}": {
+      "put": {
+        "tags": ["catalog"],
+        "summary": "Set a metal rate and reprice its designs",
+        "description": "Creates or changes a rate, keeps a history line, and reprices every design made from it through the catalogue. Answers with how many were repriced and any that failed. Needs metal-pricing.write and catalog.write.",
+        "parameters": [{ "name": "code", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Such as gold-22k." }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["name", "rate_minor"], "properties": {
+            "name": { "type": "string" },
+            "rate_minor": { "type": "integer", "format": "int64", "description": "The price of one gram in minor units." }
+          } } } }
+        },
+        "responses": { "200": { "description": "What the repricing did." }, "400": { "$ref": "#/components/responses/ValidationError" } }
+      },
+      "delete": {
+        "tags": ["catalog"],
+        "summary": "Delete a metal rate no design uses",
+        "parameters": [{ "name": "code", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "204": { "description": "Deleted." }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" } }
+      }
+    },
+    "/api/admin/x/metal-pricing/reprice": {
+      "post": {
+        "tags": ["catalog"],
+        "summary": "Reprice every design at the current rates",
+        "description": "Brings back any variant whose price was changed by hand, or left behind by a failure.",
+        "responses": { "200": { "description": "What the repricing did." } }
+      }
+    },
+    "/api/admin/x/metal-pricing/recipes": {
+      "get": {
+        "tags": ["catalog"],
+        "summary": "List how designs are priced",
+        "description": "Each recipe with its breakdown at today's rate and the variant's price now, 50 to a page.",
+        "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "The recipes." } }
+      },
+      "post": {
+        "tags": ["catalog"],
+        "summary": "Set how one design is priced",
+        "description": "Saves the recipe, prices the variant by it at once and answers with the breakdown in minor units. wastage_bp, and making_value when making_kind is percent, are in basis points. The total is rounded to a whole unit of the currency.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["rate_code", "weight_mg", "making_kind"], "properties": {
+            "sku": { "type": "string" },
+            "variant_id": { "type": "integer", "format": "int64" },
+            "rate_code": { "type": "string" },
+            "weight_mg": { "type": "integer", "format": "int64" },
+            "wastage_bp": { "type": "integer" },
+            "making_kind": { "type": "string", "enum": ["flat", "per_gram", "percent"] },
+            "making_value": { "type": "integer", "format": "int64" },
+            "stones_minor": { "type": "integer", "format": "int64" }
+          } } } }
+        },
+        "responses": { "200": { "description": "The breakdown." }, "400": { "$ref": "#/components/responses/ValidationError" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/api/admin/x/metal-pricing/recipes/import": {
+      "post": {
+        "tags": ["catalog"],
+        "summary": "Set how designs are priced from a spreadsheet",
+        "description": "A CSV with sku, rate_code and weight_g, and optionally wastage_percent, making_kind, making_value and stones_value, in grams, percent and whole currency. A bad row is reported by its row number and the rest still go in.",
+        "requestBody": { "required": true, "content": { "text/csv": { "schema": { "type": "string" } } } },
+        "responses": { "200": { "description": "How many were saved, and the rows left out." }, "400": { "$ref": "#/components/responses/ValidationError" } }
+      }
+    },
+    "/api/admin/x/metal-pricing/recipes/{variant_id}": {
+      "delete": {
+        "tags": ["catalog"],
+        "summary": "Stop pricing a design from the metal rate",
+        "description": "The variant keeps the price it has now.",
+        "parameters": [{ "name": "variant_id", "in": "path", "required": true, "schema": { "type": "integer", "format": "int64" } }],
+        "responses": { "204": { "description": "Removed." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    }
+  }
+}

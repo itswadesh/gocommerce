@@ -39,6 +39,7 @@ import (
 	layouts "github.com/itswadesh/gocommerce/ext/layouts"
 	mcp "github.com/itswadesh/gocommerce/ext/mcp"
 	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
+	metalpricing "github.com/itswadesh/gocommerce/ext/metal-pricing"
 	navigation "github.com/itswadesh/gocommerce/ext/navigation"
 	newsletter "github.com/itswadesh/gocommerce/ext/newsletter"
 	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
@@ -86,6 +87,7 @@ func everyModule() []gocommerce.Module {
 		contact.New(contact.Config{}),
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
+		metalpricing.New(metalpricing.Config{}),
 		banners.New(banners.Config{}),
 		layouts.New(layouts.Config{}),
 		productFeeds,
