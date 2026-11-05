@@ -56,6 +56,10 @@ type Config struct {
 	// DisplayNumber is the number as a person dials it, shown when a store links
 	// a phone. Empty, the screen says "the store's WhatsApp number".
 	DisplayNumber string
+	// QuietToStrangers answers nobody a store has not linked. It is for a number
+	// shared with another service, whose customers write to it about something
+	// else and must not be told about store linking.
+	QuietToStrangers bool
 	// BaseURL replaces Meta's Graph API, and Client the HTTP client. Tests set
 	// them; the address is the server owner's, so an ordinary client is right.
 	BaseURL string
