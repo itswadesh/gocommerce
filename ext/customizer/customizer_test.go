@@ -1315,7 +1315,10 @@ func TestAnUploadThatFailsAfterItsShopperLeftKeepsItsCause(t *testing.T) {
 
 	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
 	var got []string
-	for deadline := time.Now().Add(10 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	// Long, because this is the worst image the upload limits let through: it
+	// decodes in about 8 seconds here, and CI's race detector makes that far
+	// longer. The loop stops as soon as the answer is logged.
+	for deadline := time.Now().Add(3 * time.Minute); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		got = answered.FindStringSubmatch(h.logs.String())
 	}
 	if got == nil || got[1] != "415" {
