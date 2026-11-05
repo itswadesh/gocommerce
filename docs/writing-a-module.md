@@ -74,6 +74,7 @@ app.Notify(ctx, notification)           // send one, on the store's backends
 app.RegisterTranslator(t)               // supply catalog translations
 app.Subscribe(pattern, handler)         // react to events
 app.RegisterCheckoutGuard(guard)        // refuse a checkout before the order exists
+app.RegisterCheckoutPrecheck(p)         // the same, when deciding needs a network call
 app.Handle(pattern, h)                  // public route, under /x/<name>/
 app.HandleAdmin(pattern, h)             // admin route, authentication included
 app.OnStart(fn)  app.OnStop(fn)         // long-running work

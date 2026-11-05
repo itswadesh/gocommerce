@@ -129,7 +129,7 @@ if ($All) {
     $serveArgs += @(
         '-identity', '-webhooks', '-menus', '-reviews', '-contact', '-newsletter',
         '-resend', '-sendgrid', '-twilio', '-msg91', '-whatsapp', '-telegram', '-invoices', '-cms', '-faq', '-translations', '-showcases', '-banners', '-layouts', '-wishlist', '-customizer',
-        '-gateways', '-carriers', '-feeds', '-meta-capi', '-sitemaps', '-b2b', '-metal-pricing', '-recovery', '-ai-gateway', '-photo-products', '-catalog-ai', '-ads'
+        '-gateways', '-carriers', '-feeds', '-meta-capi', '-sitemaps', '-b2b', '-metal-pricing', '-gokwik', '-recovery', '-ai-gateway', '-photo-products', '-catalog-ai', '-ads'
     )
 } else {
     if ($Identity) { $serveArgs += '-identity' }

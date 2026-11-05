@@ -109,6 +109,10 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 		}
 	}
 
+	if err := s.app.runPrechecks(ctx, code, in); err != nil {
+		return nil, err
+	}
+
 	order, err := s.createOrderFromCart(ctx, code, in, scope, idempotencyKey, hash, nil)
 	if err != nil {
 		return nil, err

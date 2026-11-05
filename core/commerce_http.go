@@ -1,6 +1,7 @@
 package gocommerce
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strconv"
@@ -187,7 +188,8 @@ func (a *App) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	result, err := a.orders.Checkout(r.Context(), r.PathValue("code"), in, key)
+	ctx := context.WithValue(r.Context(), checkoutUserAgentKey{}, r.UserAgent())
+	result, err := a.orders.Checkout(ctx, r.PathValue("code"), in, key)
 	if err != nil {
 		RespondError(w, r, err)
 		return

@@ -42,6 +42,7 @@ import (
 	shipstation "github.com/itswadesh/gocommerce/ext/fulfill-shipstation"
 	usps "github.com/itswadesh/gocommerce/ext/fulfill-usps"
 	veeqo "github.com/itswadesh/gocommerce/ext/fulfill-veeqo"
+	"github.com/itswadesh/gocommerce/ext/gokwik"
 	googlereviews "github.com/itswadesh/gocommerce/ext/google-reviews"
 	"github.com/itswadesh/gocommerce/ext/identity"
 	amazon "github.com/itswadesh/gocommerce/ext/import-amazon"
@@ -272,6 +273,7 @@ environment:
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
+		withGoKwik   = fs.Bool("gokwik", false, "install the GoKwik module: a store's cash-on-delivery orders in India scored for the risk of coming back undelivered, and the risky ones asked to pay online; each store gives it its own keys under Settings › Plugins")
 		withMetal    = fs.Bool("metal-pricing", false, "install the metal pricing module: jewellery priced from the day's metal rate, weight, wastage, making charge and stones")
 		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
@@ -612,6 +614,9 @@ environment:
 		}
 		if *withShow {
 			modules = append(modules, showcases.New(showcases.Config{}))
+		}
+		if *withGoKwik {
+			modules = append(modules, gokwik.New(gokwik.Config{}))
 		}
 		if *withMetal {
 			modules = append(modules, metalpricing.New(metalpricing.Config{}))

@@ -499,6 +499,8 @@ type App struct {
 
 	// Checkout guards, in registration order (D67).
 	guards []guardEntry
+	// Checkout prechecks, in registration order (D190).
+	prechecks []precheckEntry
 
 	designer      LineDesigner
 	designerOwner string

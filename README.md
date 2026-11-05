@@ -152,6 +152,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
 | `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
 | `customizer` | A shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; the order carries the print file and the photos. Off until switched on; see [`docs/customizer.md`](docs/customizer.md) |
+| `gokwik` | Asks GoKwik how likely each cash-on-delivery order in India is to come back undelivered, and refuses cash on delivery for the risky ones; cash on delivery stays open if GoKwik is slow or down |
 | `metal-pricing` | Jewellery priced from the day's metal rate, weight, wastage, making charge and stones; enter a rate and every design made from it is repriced |
 | `showcases` | The store's own YouTube or Facebook videos beside the products they show, with the product being shown now and honest live labels; nothing is uploaded, served at `/x/showcases` |
 | `banners` | Pictures on the storefront's pages: slides across the top and grids of tiles under a heading, each with a phone crop and a link, served at `/x/banners` |

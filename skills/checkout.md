@@ -256,7 +256,10 @@ reserved >= $3`, and `UNIQUE (scope, key)`. No fake reproduces any of it.
   checkout guard instead (D67, `app.RegisterCheckoutGuard`): it runs inside
   phase A with the final total, and its error rolls the whole checkout back
   without drawing an order number. It must not do network I/O, and its `Tx` is
-  for reading and locking only.
+  for reading and locking only. A decision that needs another service is a
+  precheck (D190, `app.RegisterCheckoutPrecheck`): it runs before the
+  transaction, for a shopper's checkout only, and asks `Orders.Quote` for the
+  figures. `ext/gokwik` is the one there is.
 - **Pricing a quote with a price list or a discount code.** A list reaches
   everyone in its group until switched off, and a code reaches whoever types
   it. Place the order through `Orders.Create` with `NewOrderLine.UnitPriceMinor`
