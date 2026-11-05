@@ -22,7 +22,8 @@ import (
 )
 
 // A superuser is an operator who signs in to the admin panel with an email
-// and a password, the way PocketBase's superusers do.
+// and a password, the way PocketBase's superusers do, or with a code texted to
+// a phone (phone_login.go).
 //
 // This sits *beside* Config.AdminTokens rather than replacing them. A token is
 // the right credential for a script — it has no session, no expiry and no
@@ -62,9 +63,9 @@ var pbkdf2Iterations = 600_000
 // absence of a json tag here is load-bearing.
 type Superuser struct {
 	ID int64 `json:"id"`
-	// Email is empty for somebody who signed up with a phone (D191).
+	// Email is empty for a person who signed up with a phone (D191).
 	Email string `json:"email"`
-	// Phone is in E.164, and only set for somebody who signed up with one.
+	// Phone is in E.164. A code proved it only if phoneProved says so (D191).
 	Phone string `json:"phone,omitempty"`
 	// Role decides what they may do — see rights.go. Every operator that
 	// existed before roles did is an owner, which is what they were.
@@ -88,6 +89,8 @@ type Superuser struct {
 	KeyKind string `json:"key_kind,omitempty"`
 
 	passwordHash string
+	disabled     bool
+	phoneProved  bool
 	// keyRate is an agent key's requests a minute, read by bearerAuth.
 	keyRate int
 }
@@ -124,6 +127,16 @@ func newSuperusers(app *App) *Superusers {
 		throttle: newLoginThrottle(), resets: newLoginThrottle(),
 		signups: newWindowLimit(signupsPerWindow, signupWindow),
 	}
+}
+
+// who is what a log, an audit row or a message calls this person.
+func (s *Superuser) who() string { return whoIs(s.Email, s.Phone) }
+
+func whoIs(email, phone string) string {
+	if email != "" {
+		return email
+	}
+	return MaskPhone(phone)
 }
 
 // Has reports whether this operator carries a right.
@@ -196,11 +209,11 @@ func verifyPassword(encoded, password string) bool {
 // dummy pinned to the new, dearer count would make "no such account"
 // measurably slower than "wrong password" and reopen the very oracle this
 // closes. Falling back to the global is safe — it only happens when there are
-// no superusers at all, and then there is nothing to enumerate.
+// no superusers with a password at all, and then there is nothing to enumerate.
+// A phone account's empty hash is passed over: it fails at once, and picking it
+// would make "no such account" the fast answer.
 func (s *Superusers) dummyVerify(ctx context.Context, password string) {
-	var encoded string
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT password_hash FROM superusers LIMIT 1`).Scan(&encoded); err == nil {
+	if encoded := s.dummyHash(ctx); encoded != "" {
 		verifyPassword(encoded, password)
 		return
 	}
@@ -217,22 +230,6 @@ func (s *Superuser) Contact() string {
 		return s.Email
 	}
 	return s.Phone
-}
-
-// NormalizePhone keeps a leading + and the digits. A country code is required:
-// without one the same digits are somebody else's number in another country.
-func NormalizePhone(phone string) (string, error) {
-	phone = strings.TrimSpace(phone)
-	var d []byte
-	for i := 0; i < len(phone); i++ {
-		if phone[i] >= '0' && phone[i] <= '9' {
-			d = append(d, phone[i])
-		}
-	}
-	if !strings.HasPrefix(phone, "+") || len(d) < 8 || len(d) > 15 {
-		return "", Validationf("enter the phone number with its country code, such as +91 98765 43210")
-	}
-	return "+" + string(d), nil
 }
 
 // looksLikePhone says what a person typed in a box taking an email or a phone.
@@ -290,8 +287,8 @@ const (
 		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true)), '')`
 	memberVendorColumn = `(SELECT m.vendor_id FROM store_members m
 		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true))`
-	superuserColumns = `superusers.id, COALESCE(superusers.email, ''), COALESCE(superusers.phone, ''), superusers.password_hash, ` +
-		memberRoleColumn + `, ` + memberVendorColumn + `, superusers.created_at, superusers.updated_at`
+	superuserColumns = `superusers.id, coalesce(superusers.email, ''), coalesce(superusers.phone, ''), superusers.password_hash, ` +
+		memberRoleColumn + `, ` + memberVendorColumn + `, superusers.created_at, superusers.updated_at, superusers.disabled_at IS NOT NULL, superusers.phone_proved_at IS NOT NULL`
 	// memberHere is true for a person who is staff of the bound store.
 	memberHere = `EXISTS (SELECT 1 FROM store_members m
 		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true))`
@@ -324,7 +321,7 @@ func otherStores(ctx context.Context, q interface {
 // operator with no rights is refused everything, so forgetting fails closed.
 func scanSuperuser(row interface{ Scan(...any) error }) (*Superuser, error) {
 	var s Superuser
-	if err := row.Scan(&s.ID, &s.Email, &s.Phone, &s.passwordHash, &s.Role, &s.VendorID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.Email, &s.Phone, &s.passwordHash, &s.Role, &s.VendorID, &s.CreatedAt, &s.UpdatedAt, &s.disabled, &s.phoneProved); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -630,7 +627,7 @@ func (s *Superusers) Update(ctx context.Context, id int64, email, password strin
 		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserUpdate, Entity: AuditEntitySuperuser,
-			ID: su.ID, Label: su.Email, Summary: "Edited the account " + su.Email,
+			ID: su.ID, Label: su.who(), Summary: "Edited the account " + su.who(),
 			After: after,
 		})
 	})
@@ -687,13 +684,14 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		//
 		// The rows are already locked by the SELECT above, so counting here is
 		// serialised against a concurrent delete of the other owner.
-		var role, email string
+		var role, email, phone string
 		// The email comes off the same already-locked row the role does, and it
 		// is read now because after the DELETE nothing can say who this was.
 		if err := tx.QueryRowContext(ctx,
-			`SELECT `+memberRoleColumn+`, email FROM superusers WHERE id = $1`, id).Scan(&role, &email); err != nil {
+			`SELECT `+memberRoleColumn+`, coalesce(email, ''), coalesce(phone, '') FROM superusers WHERE id = $1`, id).Scan(&role, &email, &phone); err != nil {
 			return Internalf(err, "read superuser")
 		}
+		who := whoIs(email, phone)
 		if role == RoleOwner {
 			var owners int
 			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM store_members
@@ -720,7 +718,7 @@ func (s *Superusers) Delete(ctx context.Context, id int64) error {
 		// it is a fact about the past and has to survive them leaving.
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserDelete, Entity: AuditEntitySuperuser,
-			ID: id, Label: email, Summary: "Removed the account " + email,
+			ID: id, Label: who, Summary: "Removed the account " + who,
 			Before: map[string]any{"email": email, "role": role},
 		})
 	})
@@ -829,7 +827,7 @@ func (s *Superusers) UpdateSelf(ctx context.Context, id int64, currentPassword, 
 		}
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserSelfUpdate, Entity: AuditEntitySuperuser,
-			ID: su.ID, Label: su.Email, Summary: "Changed their own account details",
+			ID: su.ID, Label: su.who(), Summary: "Changed their own account details",
 			Before: before, After: after,
 		})
 	})
@@ -887,14 +885,15 @@ func (s *Superusers) RevokeAll(ctx context.Context, id int64) (int, error) {
 			`DELETE FROM superuser_password_resets WHERE superuser_id = $1`, id); err != nil {
 			return Internalf(err, "revoke password reset links")
 		}
-		var email string
+		var email, phone string
 		if err := tx.QueryRowContext(ctx,
-			`SELECT email FROM superusers WHERE id = $1`, id).Scan(&email); err != nil {
+			`SELECT coalesce(email, ''), coalesce(phone, '') FROM superusers WHERE id = $1`, id).Scan(&email, &phone); err != nil {
 			return Internalf(err, "read superuser")
 		}
+		who := whoIs(email, phone)
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserRevokeSessions, Entity: AuditEntitySuperuser,
-			ID: id, Label: email, Summary: "Signed " + email + " out everywhere",
+			ID: id, Label: who, Summary: "Signed " + who + " out everywhere",
 			After: map[string]any{"sessions_ended": n},
 		})
 	})
@@ -1079,16 +1078,32 @@ func (s *Superusers) authenticateDemo(ctx context.Context) (*Superuser, *Session
 	return su, sess, nil
 }
 
+// errPersonDisabled is the ordinary refusal, so that a right password for a
+// disabled person reads as a wrong one.
+var errPersonDisabled = &APIError{
+	Status:  http.StatusBadRequest,
+	Code:    "invalid_credentials",
+	Message: "invalid login credentials",
+}
+
+// issue is the one place a session is made, so it is where a disabled person is
+// refused, whichever way they proved who they are.
 func (s *Superusers) issue(ctx context.Context, superuserID int64) (*Session, error) {
 	token, err := newSessionToken()
 	if err != nil {
 		return nil, Internalf(err, "issue session")
 	}
 	expires := time.Now().Add(sessionTTL)
-	if _, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO superuser_sessions (token_hash, superuser_id, expires_at)
-		VALUES ($1, $2, $3)`, hashToken(token), superuserID, expires); err != nil {
+		SELECT $1, id, $3 FROM superusers WHERE id = $2 AND disabled_at IS NULL`, hashToken(token), superuserID, expires)
+	if err != nil {
 		return nil, Internalf(err, "store session")
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return nil, Internalf(err, "store session")
+	} else if n == 0 {
+		return nil, errPersonDisabled
 	}
 	// Opportunistic sweep. A dedicated janitor for a table this small would be
 	// more machinery than the problem deserves.
@@ -1109,7 +1124,7 @@ func (s *Superusers) Resolve(ctx context.Context, token string) (*Superuser, boo
 		SELECT `+superuserColumns+`
 		FROM superuser_sessions ss
 		JOIN superusers ON superusers.id = ss.superuser_id
-		WHERE ss.token_hash = $1 AND ss.expires_at > now()`, hashToken(token))
+		WHERE ss.token_hash = $1 AND ss.expires_at > now() AND superusers.disabled_at IS NULL`, hashToken(token))
 	su, err := s.scan(ctx, row)
 	if err != nil {
 		return nil, false
@@ -1385,8 +1400,8 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 		// transaction already read the current row for the last-owner guard.
 		return writeAudit(ctx, tx, auditRecord{
 			Action: AuditSuperuserSetRole, Entity: AuditEntitySuperuser,
-			ID: su.ID, Label: su.Email,
-			Summary: "Made " + su.Email + " " + role + " (was " + current + ")",
+			ID: su.ID, Label: su.who(),
+			Summary: "Made " + su.who() + " " + role + " (was " + current + ")",
 			Before:  map[string]any{"role": current},
 			After:   map[string]any{"role": role},
 		})
@@ -1396,4 +1411,12 @@ func (s *Superusers) SetRole(ctx context.Context, id int64, role string) (*Super
 	}
 	su.Rights = rights[su.Role]
 	return su, nil
+}
+
+// dummyHash is a stored hash for dummyVerify to burn its time on, or "" with
+// none to be had.
+func (s *Superusers) dummyHash(ctx context.Context) string {
+	var encoded string
+	_ = s.db.QueryRowContext(ctx, `SELECT password_hash FROM superusers WHERE password_hash <> '' LIMIT 1`).Scan(&encoded)
+	return encoded
 }

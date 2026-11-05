@@ -13,6 +13,10 @@
      * panel. Each is offered only when the install can do it: a reset email
      * only where an email can leave the building, and sign-up only where the
      * install takes strangers (Config.Signup).
+     *
+     * A phone is a mode of this card rather than an address, because it asks
+     * for nothing a back button could lose. It is offered only where a code
+     * can be texted (auth-state's phone_login).
      */
     import { base } from "$app/paths";
     import { auth } from "$lib/api.js";
@@ -21,13 +25,15 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
     import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
 
     // notice is a line said above the form, such as why the form is back.
     let { onauthenticated, notice = "" } = $props();
 
     // A number typed on a landing page arrives in the fragment (phone-link.js).
-    let identity = $state(readablePhone(takePhoneFromFragment()));
+    const linkedPhone = takePhoneFromFragment();
+    let identity = $state(readablePhone(linkedPhone));
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
@@ -45,6 +51,9 @@
      */
     let canReset = $state(false);
     let canSignUp = $state(false);
+    let canPhone = $state(false);
+    let phoneOpen = $state(false);
+    let usePhone = $state(false);
 
     $effect(() => {
         auth.state()
@@ -53,6 +62,12 @@
                 installed = !!s.installed;
                 canReset = !!s.password_reset;
                 canSignUp = !!s.signup;
+                canPhone = !!s.phone_login;
+                phoneOpen = !!s.phone_signup;
+                // The box keeps the number either way; the installer's takes an
+                // email only.
+                if (linkedPhone && !installed) identity = "";
+                if (linkedPhone && installed && canPhone) usePhone = true;
             })
             // If the probe itself fails the store is unreachable, and a login
             // form is the more useful of the two guesses.
@@ -126,6 +141,18 @@
 
     {#if installed === null}
         <div class="block txt-center"><span class="loader lg" aria-label="Loading"></span></div>
+    {:else if installed && canPhone && usePhone}
+        <div in:rise>
+            <PhoneCodeForm {onauthenticated} open={phoneOpen} number={canPhone ? linkedPhone : ""} />
+        </div>
+        <p class="auth-alt">
+            <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = false)}>Use a password instead</button>
+        </p>
+        {#if canSignUp}
+            <p class="auth-alt">
+                New here? <a class="auth-link" href="{base}/admin/auth/signup">Create a store</a>
+            </p>
+        {/if}
     {:else}
         <form class="auth-form auth-with-password-form" onsubmit={submit}>
             <div class="field" class:error={!!error}>
@@ -203,6 +230,12 @@
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
+
+        {#if installed && canPhone}
+            <p class="auth-alt">
+                <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = true)}>Text me a code instead</button>
+            </p>
+        {/if}
 
         {#if installed && !canReset}
             <p class="auth-note">

@@ -1,9 +1,10 @@
 /*
  * A number typed on a marketing page reaches the panel in the fragment
  * (`#phone=%2B919876543210`), the one part of a URL no access log or Referer
- * sees. It is taken off the address bar as soon as it is read, used or not, so a
- * copied URL does not carry it onward. It only fills the form: signing up or in
- * stays the person's click.
+ * sees. It is taken off the address bar as soon as it is read, so a copied URL
+ * does not carry it onward. It only fills the form: the code form where one can
+ * be texted, and the "Email or phone" box either way. Sending a code costs money,
+ * and that stays the person's click.
  */
 
 const E164 = /^\+[1-9][0-9]{7,14}$/;
@@ -32,6 +33,11 @@ export function takePhoneFromFragment(loc = globalThis.location, hist = globalTh
     const { found, phone, rest } = phoneFromFragment(loc.hash);
     if (found) hist.replaceState(hist.state, "", loc.pathname + loc.search + rest);
     return phone;
+}
+
+/** phoneFragment is the number as a fragment again, for a link on to another screen. */
+export function phoneFragment(phone) {
+    return phone ? `#phone=${encodeURIComponent(phone)}` : "";
 }
 
 /** readablePhone spaces an Indian number the way people read it; any other stays as it came. */

@@ -36,8 +36,8 @@ const (
 	LoginEither        = "email_or_phone"
 )
 
-// EventLoginCode names the sign-in SMS.
-const EventLoginCode = "identity.login_code"
+// EventLoginCode names the sign-in SMS, which operators share (D193).
+const EventLoginCode = gocommerce.EventLoginCode
 
 const (
 	loginCodeTTL      = 10 * time.Minute
@@ -61,17 +61,6 @@ func (m *Module) registerSignIn(app *gocommerce.App) {
 			Options: []string{LoginEmailPassword, LoginPhoneOTP, LoginEither}, Default: LoginEmailPassword, Public: true,
 			Help: "email_password: an email address and a password. phone_otp: a phone number and a 4-digit code sent by SMS, which needs an SMS provider under Notifications. email_or_phone: either, and a customer signed in by email can add a phone with a code.",
 		}},
-	})
-	app.RegisterNotifyTemplate(gocommerce.NotifyTemplate{
-		Channel: gocommerce.ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
-		Description: "To a shopper signing in with their phone. The code works for ten minutes.",
-		Variables:   []string{"code", "store_name", "expires_in_minutes", "domain"},
-		// The wording of the DLT template MSG91 carries, so every SMS provider
-		// sends the same text. The last line, when the shopper is on the
-		// store's own site, is the one Chrome on Android reads to fill the
-		// code in (the Web OTP API).
-		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}` +
-			`{{with .domain}}` + "\n\n" + `@{{.}} #{{$.code}}{{end}}`,
 	})
 }
 

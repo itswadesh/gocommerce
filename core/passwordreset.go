@@ -294,6 +294,9 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	if err != nil {
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
+	if email == "" {
+		return ResetRequest{}, Conflictf("this person signs in with their phone and has no email to send a link to")
+	}
 
 	// The teammate is mailed as the store's: its brand names the email and
 	// its panel is where the link leads (D114).

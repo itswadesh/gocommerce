@@ -17,6 +17,9 @@ func (a *App) mountSuperuserRoutes() {
 	// Public by definition, and refused unless the install opened it
 	// (Config.Signup).
 	a.HandleFunc("POST /api/admin/signup", a.handleSignUp)
+	// Public, and answering the same for every number (phone_login.go).
+	a.HandleFunc("POST /api/admin/auth-with-phone/code", a.handleRequestPhoneCode)
+	a.HandleFunc("POST /api/admin/auth-with-phone", a.handleAuthWithPhone)
 
 	a.HandleAdminFunc("POST /api/admin/auth-refresh", a.handleAuthRefresh)
 	// A person's, not one store's: somebody still choosing a store (or in
@@ -70,6 +73,10 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// Whether the sign-in screen may offer to make an account: the
 		// install's choice, where it can be kept safely (signupOpen).
 		"signup": a.signupOpen(r.Context()),
+		// Whether a code could be texted, so nobody is offered a phone that
+		// leads nowhere (phone_login.go); the second is the same for a new person.
+		"phone_login":  a.phoneLoginOpen(r.Context()),
+		"phone_signup": a.phoneSignupOpen(r.Context()),
 		// Whether a reset email carries a link beside its code, so the
 		// forgot-password screen can say what to look for before it is asked.
 		"reset_link": brand.PanelURL != "",
@@ -137,6 +144,11 @@ func (a *App) handleAuthWithPassword(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.respondSignedIn(w, r, http.StatusOK, su, sess)
+}
+
+// respondSignedIn answers a sign-in, whichever way the person proved who they are.
+func (a *App) respondSignedIn(w http.ResponseWriter, r *http.Request, status int, su *Superuser, sess *Session) {
 	// Signed in with no store named: a person who works in exactly one store
 	// is answered with their standing there, as every later request of theirs
 	// will be (storeMW's sole-membership rule).
@@ -151,7 +163,7 @@ func (a *App) handleAuthWithPassword(w http.ResponseWriter, r *http.Request) {
 	} else if foreignStore(r.Context()) {
 		su.Role, su.VendorID, su.Rights = "", nil, []Right{}
 	}
-	Respond(w, http.StatusOK, authResponse{
+	Respond(w, status, authResponse{
 		Token:     sess.Token,
 		ExpiresAt: sess.ExpiresAt.UTC(),
 		Record:    su,
@@ -310,7 +322,7 @@ func (a *App) handleSetRole(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.log.Info("superuser role changed", "email", su.Email, "role", su.Role)
+	a.log.Info("superuser role changed", "who", su.who(), "role", su.Role)
 	a.maskSuperuserExceptSelf(r.Context(), su)
 	Respond(w, http.StatusOK, su)
 }

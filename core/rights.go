@@ -497,6 +497,9 @@ var rightsExempt = map[string]bool{
 	"GET /api/admin/me":                  true,
 	"PATCH /api/admin/me":                true,
 	"POST /api/admin/me/revoke-sessions": true,
+	"POST /api/admin/me/phone/code":      true,
+	"PUT /api/admin/me/phone":            true,
+	"DELETE /api/admin/me/phone":         true,
 	"GET /api/admin/settings":            true,
 	// The shop's own name and address. Exempt for the same reason settings
 	// is: it is not a secret from the shop's own staff, and an invoice, an

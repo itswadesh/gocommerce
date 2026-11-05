@@ -468,7 +468,7 @@ func blankTokens(path string) string {
 func requestContext(r *http.Request, status int) map[string]any {
 	c := map[string]any{"method": r.Method, "path": safePath(r), "status": status, "version": Version}
 	if su := SuperuserFrom(r.Context()); su != nil {
-		c["operator"] = su.Email
+		c["operator"] = su.who()
 	}
 	return c
 }
@@ -624,7 +624,7 @@ func (a *App) handleReportPanelError(w http.ResponseWriter, r *http.Request) {
 	// browser in a loop, or somebody filling the store's page on purpose.
 	who := "token"
 	if su := SuperuserFrom(r.Context()); su != nil {
-		who = su.Email
+		who = su.who()
 	}
 	if store, _ := StoreFrom(r.Context()); !allowReport(store+"\x00"+who, time.Now()) {
 		Respond(w, http.StatusAccepted, map[string]bool{"recorded": false})
@@ -639,7 +639,7 @@ func (a *App) handleReportPanelError(w http.ResponseWriter, r *http.Request) {
 	page = blankTokens(page)
 	c := map[string]any{"url": clip(page, 300), "user_agent": clip(r.UserAgent(), 300), "version": Version}
 	if su := SuperuserFrom(r.Context()); su != nil {
-		c["operator"] = su.Email
+		c["operator"] = su.who()
 	}
 	a.Errors().Capture(r.Context(), CapturedError{
 		Source: "panel", Kind: clip(strings.TrimSpace(in.Kind), 80), Message: in.Message, Stack: in.Stack, Context: c,

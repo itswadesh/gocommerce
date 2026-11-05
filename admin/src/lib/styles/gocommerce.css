@@ -11880,6 +11880,16 @@ html .tw\:rounded-2xl {
     font: inherit;
     cursor: pointer;
 }
+.auth-inline-btn:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+.auth-phone-foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 16px;
+}
 
 /* -------------------------------------------------------------------- AI */
 

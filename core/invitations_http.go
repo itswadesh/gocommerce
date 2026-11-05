@@ -28,6 +28,9 @@ func (a *App) mountTeamRoutes() {
 	a.HandleAdminFunc("GET /api/admin/me", a.handleGetMe)
 	a.HandleAdminFunc("PATCH /api/admin/me", a.handleUpdateMe)
 	a.HandleAdminFunc("POST /api/admin/me/revoke-sessions", a.handleRevokeMySessions)
+	a.HandleAdminFunc("POST /api/admin/me/phone/code", a.handleRequestMyPhoneCode)
+	a.HandleAdminFunc("PUT /api/admin/me/phone", a.handleSetMyPhone)
+	a.HandleAdminFunc("DELETE /api/admin/me/phone", a.handleRemoveMyPhone)
 
 	// Ending somebody else's sessions is an act of team management, and the one
 	// thing an owner wants before removing an account or reducing a role.
@@ -183,6 +186,8 @@ func (a *App) handleGetMe(w http.ResponseWriter, r *http.Request) {
 		"superuser":      su,
 		"sessions":       sessions,
 		"newest_session": newest,
+		// A person who signed up with a phone has none to confirm a change with.
+		"has_password": su.passwordHash != "",
 	})
 }
 

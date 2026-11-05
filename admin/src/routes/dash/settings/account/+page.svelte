@@ -9,7 +9,9 @@
      * invitations exist to end.
      *
      * The current password is asked for either way: a session left open on an
-     * unlocked laptop should not be enough to take the account over.
+     * unlocked laptop should not be enough to take the account over. The same
+     * goes for adding a phone to sign in with. A person who signed up with a
+     * phone has no password to ask for, so they have nothing to change here.
      */
     import { auth, getRecord } from "$lib/api.js";
     import { rightLabel, rightsSummary } from "$lib/rights.js";
@@ -32,6 +34,16 @@
     let errors = $state({});
 
     let confirmOpen = $state(false);
+
+    // Adding a phone: the number, then the code texted to it. Offered only
+    // where a code can be sent (auth-state's phone_login).
+    let hasPassword = $state(true);
+    let canPhone = $state(false);
+    let phoneForm = $state({ number: "+91 ", code: "", password: "" });
+    let phoneStep = $state("idle");
+    let phoneBusy = $state(false);
+    let phoneError = $state("");
+    let removeOpen = $state(false);
 
     /*
      * Typed and unsaved. A password half-entered here is not a big loss on its
@@ -61,6 +73,8 @@
             sessions = result.sessions ?? 0;
             newestSession = result.newest_session ?? null;
             form.email = me.email;
+            hasPassword = result.has_password !== false;
+            canPhone = !!(await auth.state()).phone_login;
         } catch (err) {
             if (err.status === 403) {
                 tokenOnly = true;
@@ -117,6 +131,60 @@
         }
     }
 
+    async function phoneAct(act, done) {
+        if (phoneBusy) return;
+        phoneBusy = true;
+        phoneError = "";
+        try {
+            await act();
+            done();
+        } catch (err) {
+            phoneError = err.message;
+        } finally {
+            phoneBusy = false;
+        }
+    }
+
+    function askPhoneCode(event) {
+        event?.preventDefault();
+        phoneAct(
+            () => auth.requestMyPhoneCode(phoneForm.number),
+            () => (phoneStep = "code"),
+        );
+    }
+
+    function savePhone(event) {
+        event.preventDefault();
+        phoneAct(
+            async () => {
+                await auth.setMyPhone(phoneForm.number, phoneForm.code, phoneForm.password);
+                await auth.refresh();
+            },
+            () => {
+                toast.success("You can now sign in with this phone");
+                phoneForm = { number: "+91 ", code: "", password: "" };
+                phoneStep = "idle";
+                load();
+            },
+        );
+    }
+
+    function removePhone(event) {
+        event.preventDefault();
+        phoneAct(
+            async () => {
+                await auth.removeMyPhone(phoneForm.password);
+                await auth.refresh();
+            },
+            () => {
+                toast.success("Phone removed");
+                phoneForm.password = "";
+                removeOpen = false;
+                load();
+            },
+        );
+    }
+
     async function signOutEverywhere() {
         try {
             await auth.revokeMySessions();
@@ -165,8 +233,15 @@
                 <div class="list-item">
                     <span class="txt-hint">Email</span>
                     <div class="flex-fill"></div>
-                    <span class="txt">{me.email}</span>
+                    <span class="txt">{me.email || "None"}</span>
                 </div>
+                {#if me.phone}
+                    <div class="list-item">
+                        <span class="txt-hint">Phone</span>
+                        <div class="flex-fill"></div>
+                        <span class="txt">{me.phone}</span>
+                    </div>
+                {/if}
                 <div class="list-item">
                     <span class="txt-hint">Role</span>
                     <div class="flex-fill"></div>
@@ -211,6 +286,11 @@
                 </div>
             </details>
 
+            {#if !hasPassword}
+                <div class="content txt-hint m-b-base">
+                    You sign in with a code texted to your phone, so there is no password here to change.
+                </div>
+            {:else}
             <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Change your details</h2>
             <form onsubmit={save} class="m-b-base">
                 <div class="field required" class:error={!!errors.current}>
@@ -284,6 +364,79 @@
                 </button>
             </form>
 
+            {#if me.phone && me.email}
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Sign in with your phone</h2>
+                {#if removeOpen}
+                    <form onsubmit={removePhone} class="m-b-base">
+                        <div class="field required" class:error={!!phoneError}>
+                            <label for="acc-phone-remove">Current password</label>
+                            <input id="acc-phone-remove" type="password" required autocomplete="current-password" bind:value={phoneForm.password} />
+                        </div>
+                        {#if phoneError}<div class="field-help error" role="alert">{phoneError}</div>{/if}
+                        <button type="submit" class="btn secondary m-t-base" class:loading={phoneBusy} disabled={phoneBusy}>
+                            <span class="txt">Remove {me.phone}</span>
+                        </button>
+                    </form>
+                {:else}
+                    <button type="button" class="btn secondary m-b-base" onclick={() => (removeOpen = true)}>
+                        <span class="txt">Remove this phone</span>
+                    </button>
+                {/if}
+            {:else if canPhone && !me.phone}
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Sign in with your phone</h2>
+                <form onsubmit={phoneStep === "code" ? savePhone : askPhoneCode} class="m-b-base">
+                    <div class="field required" class:error={!!phoneError}>
+                        <label for="acc-phone">Phone number</label>
+                        <input
+                            id="acc-phone"
+                            type="tel"
+                            inputmode="tel"
+                            required
+                            autocomplete="tel"
+                            readonly={phoneStep === "code"}
+                            bind:value={phoneForm.number}
+                        />
+                    </div>
+                    {#if phoneStep === "code"}
+                        <div class="fields m-t-sm">
+                            <div class="field required">
+                                <label for="acc-phone-code">Code we texted you</label>
+                                <input
+                                    id="acc-phone-code"
+                                    type="text"
+                                    inputmode="numeric"
+                                    pattern="[0-9]*"
+                                    maxlength="6"
+                                    required
+                                    autocomplete="one-time-code"
+                                    bind:value={phoneForm.code}
+                                />
+                            </div>
+                            <div class="delimiter"></div>
+                            <div class="field required">
+                                <label for="acc-phone-password">Current password</label>
+                                <input
+                                    id="acc-phone-password"
+                                    type="password"
+                                    required
+                                    autocomplete="current-password"
+                                    bind:value={phoneForm.password}
+                                />
+                            </div>
+                        </div>
+                    {/if}
+                    {#if phoneError}
+                        <div class="field-help error" role="alert">{phoneError}</div>
+                    {:else}
+                        <div class="field-help">With its country code. Your password keeps working too.</div>
+                    {/if}
+                    <button type="submit" class="btn secondary m-t-base" class:loading={phoneBusy} disabled={phoneBusy}>
+                        <span class="txt">{phoneStep === "code" ? "Add this phone" : "Text me a code"}</span>
+                    </button>
+                </form>
+            {/if}
+            {/if}
+
             <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Lost a device?</h2>
             <div class="content txt-hint m-b-sm">
                 Ends every session including this one, so you will be asked to sign in again.
@@ -296,7 +449,7 @@
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">
-                {#if me}Signed in as {me.email}{/if}
+                {#if me}Signed in as {me.email || me.phone}{/if}
             </span>
         </footer>
     </div>

@@ -251,6 +251,25 @@ export const auth = {
     },
 
     /**
+     * requestPhoneCode asks for a code by SMS. The answer is the same for
+     * every number. Like signup, these name no store.
+     */
+    async requestPhoneCode(phone) {
+        return await api.post("/api/admin/auth-with-phone/code", { phone }, { admin: false, store: false });
+    },
+
+    /** loginWithPhone exchanges the code for a session, making an account where sign-up is open. */
+    async loginWithPhone(phone, code) {
+        const result = await api.post("/api/admin/auth-with-phone", { phone, code }, { admin: false, store: false });
+        return beginSession(result);
+    },
+
+    /** requestMyPhoneCode texts a code to a number the signed-in person wants to add. */
+    requestMyPhoneCode: (phone) => api.post("/api/admin/me/phone/code", { phone }),
+    setMyPhone: (phone, code, current_password) => api.put("/api/admin/me/phone", { phone, code, current_password }),
+    removeMyPhone: (current_password) => api.delete("/api/admin/me/phone", { body: { current_password } }),
+
+    /**
      * requestReset asks for a reset email. The answer is the same for every
      * address; what it says is how this install delivers (delivery, link).
      */
