@@ -13,6 +13,7 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { tick, untrack } from "svelte";
+    import { hasStoreName, rememberStoreName } from "$lib/store-name.js";
     import { auth, events, can, session, stores, errors as errorReports } from "$lib/api.js";
     import { installErrorReporting } from "$lib/error-reporting.js";
     import { clearProfile, clearSettings, profile } from "$lib/settings.svelte.js";
@@ -414,11 +415,15 @@
             goto(`${base}${LOGIN}?next=${encodeURIComponent(here)}${page.url.hash}`, { replaceState: true });
         }
     });
+    // A store name typed on a marketing page outlives the redirects before the form.
+    if (globalThis.location) rememberStoreName(globalThis.location.search);
     $effect(() => {
         if (!ready || !authenticated || !onLogin) return;
         const state = myStores.state;
         const next = safeNext(page.url.searchParams.get("next"));
-        if (state === "ok") {
+        if (hasStoreName()) {
+            goto(`${base}${SELECT}?create`, { replaceState: true });
+        } else if (state === "ok") {
             goto(base + next, { replaceState: true });
         } else if (state === "choose" || state === "none") {
             goto(`${base}${SELECT}?next=${encodeURIComponent(next)}`, { replaceState: true });
