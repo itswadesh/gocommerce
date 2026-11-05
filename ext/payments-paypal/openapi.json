@@ -1,0 +1,43 @@
+{
+  "paths": {
+    "/x/payments-paypal/orders/{paypal_order_id}/capture": {
+      "post": {
+        "tags": ["checkout"],
+        "summary": "Take the money for a PayPal order the shopper approved",
+        "description": "For the storefront's return page. PayPal sends the shopper back to the checkout's `return_url` with `token` set to the PayPal order; posting it here captures an approved order at once and records the payment through the engine's settlement path, rather than waiting for the CHECKOUT.ORDER.APPROVED webhook, which does the same for a shopper who never came back. An order not yet approved is left alone. The answer is the order's number and payment status, nothing more. PayPal is reached at most once every 10 seconds for one PayPal order; calls in between are answered from the store. 409 when the order has since moved to another payment method.",
+        "parameters": [
+          {
+            "name": "paypal_order_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "The PayPal order id from the checkout's `client_data.paypal_order_id`, or the `token` PayPal added to the return URL."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The order's payment status after the attempt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "order": { "type": "string", "description": "The order number." },
+                        "payment_status": { "type": "string", "enum": ["pending", "paid", "failed", "refunded"] }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    }
+  }
+}

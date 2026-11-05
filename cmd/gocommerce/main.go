@@ -64,6 +64,7 @@ import (
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
 	lemonsqueezy "github.com/itswadesh/gocommerce/ext/payments-lemonsqueezy"
 	paddle "github.com/itswadesh/gocommerce/ext/payments-paddle"
+	paypal "github.com/itswadesh/gocommerce/ext/payments-paypal"
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
@@ -261,7 +262,7 @@ environment:
 		withMsg91    = fs.Bool("msg91", false, "install the MSG91 module: the store's SMS through MSG91 (MSG91_AUTH_KEY, or Notifications › Setup SMS)")
 		withWhatsApp = fs.Bool("whatsapp", false, "install the WhatsApp module idle: each store connects its own WhatsApp Business account under Notifications › Setup WhatsApp, and shoppers who opt in get order updates there")
 		withTelegram = fs.Bool("telegram", false, "install the Telegram alerts module idle: each store gives it a bot and a chat under Notifications › Setup Telegram, and its owner is told about every order there")
-		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, Cashfree, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
+		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, PayPal, Cashfree, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
@@ -565,7 +566,7 @@ environment:
 		// prefers the environment wires the module itself in its own main().
 		if *withGateways {
 			modules = append(modules,
-				stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), cashfree.New(cashfree.Config{}), adyen.New(adyen.Config{}),
+				stripe.New(stripe.Config{}), razorpay.New(razorpay.Config{}), paypal.New(paypal.Config{}), cashfree.New(cashfree.Config{}), adyen.New(adyen.Config{}),
 				paddle.New(paddle.Config{}), lemonsqueezy.New(lemonsqueezy.Config{}), creem.New(creem.Config{}),
 				helcim.New(helcim.Config{}), clover.New(clover.Config{}),
 				hyperswitch.New(hyperswitch.Config{}), revenuecat.New(revenuecat.Config{}),
