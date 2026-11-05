@@ -116,8 +116,17 @@ func coreMigrations() []Migration {
 		{ID: "0098_discount_auto_apply", SQL: migration0098DiscountAutoApply},
 		{ID: "0099_show_all_codes", SQL: migration0099ShowAllCodes},
 		{ID: "0100_discount_free_shipping", SQL: migration0100DiscountFreeShipping},
+		{ID: "0101_superuser_phone", SQL: migration0101SuperuserPhone},
 	}
 }
+
+// M101 — a person signing up may give a phone instead of an email (D191). The
+// email stops being required, and every row still has one or the other.
+const migration0101SuperuserPhone = `
+ALTER TABLE superusers ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE superusers ADD COLUMN phone text UNIQUE;
+ALTER TABLE superusers ADD CONSTRAINT superusers_email_or_phone CHECK (email IS NOT NULL OR phone IS NOT NULL);
+`
 
 // M100 — a percentage or fixed discount that also sends the order free
 // (D187): "5% off and free delivery when you pay online" is one promotion, and

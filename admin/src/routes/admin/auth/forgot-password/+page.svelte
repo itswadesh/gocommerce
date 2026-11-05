@@ -76,7 +76,7 @@
 <AuthShell>
     {#if sent && sent.delivery !== "none"}
         <header class="auth-head">
-            <h1 class="auth-title">Check your inbox</h1>
+            <h1 class="auth-title">{sent.delivery === "sms" ? "Check your messages" : "Check your inbox"}</h1>
             <p class="auth-lede">
                 If <strong>{sent.email}</strong> has an account here, a 6&#8209;digit code to choose a new
                 password is on its way. Enter it on the next screen{#if sent.link}, or open the link in the
@@ -102,7 +102,7 @@
              and a sentence is more use than a form that cannot work. -->
         <header class="auth-head">
             <h1 class="auth-title">No reset code can be sent</h1>
-            <p class="auth-lede">This install has no way to send email yet, so there is nowhere to send a code.</p>
+            <p class="auth-lede">This install can't send that kind of message yet, so there is nowhere to send a code.</p>
         </header>
         <p class="auth-note">
             Ask an owner to set a new password for you from Settings &rarr; Team. With access to the
@@ -120,17 +120,17 @@
             <h1 class="auth-title">Reset your password</h1>
             <p class="auth-lede">
                 <!-- A non-breaking hyphen, so a phone never wraps "6-" from "digit". -->
-                Type the email you sign in with, and we'll send a {link ? "link and a 6\u2011digit code" : "6\u2011digit code"}
+                Type the email or phone you sign in with, and we'll send a {link ? "link and a 6\u2011digit code" : "6\u2011digit code"}
                 to choose a new password.
             </p>
         </header>
         <form class="auth-form" onsubmit={submit}>
             <div class="field" class:error={!!problem}>
-                <label for="forgot_email">Email</label>
+                <label for="forgot_email">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="forgot_email"
-                    type="email"
+                    type="text"
                     inputmode="email"
                     required
                     autofocus

@@ -127,12 +127,12 @@
     {:else}
         <form class="auth-form auth-with-password-form" onsubmit={submit}>
             <div class="field" class:error={!!error}>
-                <label for="login_identity">Email</label>
+                <label for="login_identity">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="login_identity"
                     name="identity"
-                    type="email"
+                    type="text"
                     inputmode="email"
                     required
                     autofocus

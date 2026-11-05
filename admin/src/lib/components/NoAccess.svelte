@@ -43,8 +43,8 @@
             </h5>
 
             <p class="txt-hint">
-                {#if session.record?.email}
-                    Signed in as {session.record.email}{session.record.role
+                {#if session.record?.email || session.record?.phone}
+                    Signed in as {session.record.email || session.record.phone}{session.record.role
                         ? ` (${session.record.role})`
                         : ""}. Ask an owner to change what your role may do.
                 {:else}

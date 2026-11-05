@@ -71,8 +71,9 @@ func TestTextsTheSignInAndOrderCodes(t *testing.T) {
 func TestTemplatesFromTheEnvironmentServeEveryStore(t *testing.T) {
 	env := map[string]string{"SMS_OTP_TEMPLATE_ID": " env-signin ", "MSG91_TEMPLATE_ORDER_SHIPPED": "env-shipped", "UNRELATED": "x"}
 	tpl := EnvTemplates(func(k string) string { return env[k] })
-	if len(tpl) != 2 || tpl[EventLoginCode] != "env-signin" || tpl[gocommerce.EventOrderShipped] != "env-shipped" {
-		t.Fatalf("EnvTemplates = %v, want the sign-in and shipped ids", tpl)
+	if len(tpl) != 3 || tpl[EventLoginCode] != "env-signin" || tpl[gocommerce.EventSuperuserPasswordReset] != "env-signin" ||
+		tpl[gocommerce.EventOrderShipped] != "env-shipped" {
+		t.Fatalf("EnvTemplates = %v, want the shared code template and the shipped id", tpl)
 	}
 
 	s := &stub{}

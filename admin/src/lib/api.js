@@ -4,6 +4,7 @@
  * with curl.
  */
 
+import { toIdentity } from "$lib/identity.js";
 import { storeHeaders } from "$lib/store-scope.js";
 import {
     beginSession,
@@ -206,7 +207,7 @@ export const auth = {
     async login(identity, password) {
         const result = await api.post(
             "/api/admin/auth-with-password",
-            { identity, password },
+            { identity: toIdentity(identity), password },
             { admin: false },
         );
         return beginSession(result);
@@ -244,8 +245,8 @@ export const auth = {
      * worked in is somebody else's business, and may since have been
      * suspended.
      */
-    async signup(email, password) {
-        const result = await api.post("/api/admin/signup", { email, password }, { admin: false, store: false });
+    async signup(identity, password) {
+        const result = await api.post("/api/admin/signup", { identity: toIdentity(identity), password }, { admin: false, store: false });
         return beginSession(result);
     },
 
@@ -254,7 +255,7 @@ export const auth = {
      * address; what it says is how this install delivers (delivery, link).
      */
     async requestReset(email) {
-        return await api.post("/api/admin/password-reset", { identity: email }, { admin: false });
+        return await api.post("/api/admin/password-reset", { identity: toIdentity(email) }, { admin: false });
     },
 
     /** install creates the first operator on a fresh database and signs in. */

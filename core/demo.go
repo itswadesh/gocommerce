@@ -537,6 +537,7 @@ func (a *App) maskSuperuserExceptSelf(ctx context.Context, s *Superuser) {
 		return
 	}
 	s.Email = maskEmail(s.Email)
+	s.Phone = maskPhone(s.Phone)
 }
 
 func (a *App) maskInvitations(ctx context.Context, is []*Invitation) {

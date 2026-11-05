@@ -199,7 +199,7 @@
         if (!rows.length) return;
         bulkBusy = true;
         try {
-            await runBulk(rows, fn, { describe, noun, label: (row) => row.email });
+            await runBulk(rows, fn, { describe, noun, label: (row) => row.email || row.phone });
         } finally {
             bulkBusy = false;
         }
@@ -421,8 +421,8 @@
             const n = result.revoked ?? 0;
             toast.success(
                 n === 0
-                    ? `${su.email} was not signed in anywhere`
-                    : `Signed ${su.email} out of ${n} ${n === 1 ? "device" : "devices"}`,
+                    ? `${su.email || su.phone} was not signed in anywhere`
+                    : `Signed ${su.email || su.phone} out of ${n} ${n === 1 ? "device" : "devices"}`,
             );
         } catch (err) {
             toast.error(err);
@@ -442,7 +442,7 @@
         su.role = role;
         try {
             await auth.setRole(su.id, role);
-            toast.success(`${su.email} is now ${roleName(role).toLowerCase()}`);
+            toast.success(`${su.email || su.phone} is now ${roleName(role).toLowerCase()}`);
             // Their own rights just changed: re-read the record so the nav and
             // the buttons match what the engine will now allow. The record is a
             // rune, so writing it is enough — this used to reload the document
@@ -638,13 +638,13 @@
                                         />
                                         <label
                                             for="select-superuser-{su.id}"
-                                            aria-label="Select {su.email}"
+                                            aria-label="Select {su.email || su.phone}"
                                         ></label>
                                     </div>
                                 </td>
                             {/if}
                             <td class="col-field-name-id" data-name="Email">
-                                <span class="txt-bold">{su.email}</span>
+                                <span class="txt-bold">{su.email || su.phone}</span>
                                 {#if me && su.id === me.id}
                                     <span class="label sm you">you</span>
                                 {/if}
@@ -663,7 +663,7 @@
                                     <div class="field">
                                         <Select
                                             id="role-{su.id}"
-                                            ariaLabel="Role for {su.email}"
+                                            ariaLabel="Role for {su.email || su.phone}"
                                             value={su.role}
                                             onchange={(role) => changeRole(su, role)}
                                             options={roleOptions}
@@ -717,7 +717,7 @@
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary"
-                                        aria-label="Sign {su.email} out everywhere"
+                                        aria-label="Sign {su.email || su.phone} out everywhere"
                                         title={su.sessions
                                             ? "Sign out everywhere"
                                             : "Not signed in anywhere"}
@@ -730,7 +730,7 @@
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary row-delete"
-                                        aria-label="Remove {su.email}"
+                                        aria-label="Remove {su.email || su.phone}"
                                         title="Remove"
                                         onclick={(e) => askDelete(su, e)}
                                     >
@@ -983,7 +983,7 @@
 
 <Drawer
     open={editorOpen}
-    title={editing ? editing.email : "New superuser"}
+    title={editing ? editing.email || editing.phone : "New superuser"}
     size="sm"
     onclose={closeEditor}
 >

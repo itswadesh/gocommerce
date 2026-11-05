@@ -567,7 +567,7 @@ func (s *Stores) createOne(ctx context.Context, name, slug string, ownerID int64
 				id, ownerID, RoleOwner); err != nil {
 				return Internalf(err, "make the creator the store's owner")
 			}
-			if err := tx.QueryRowContext(bound, `SELECT email FROM superusers WHERE id = $1`, ownerID).Scan(&ev.OwnerEmail); err != nil {
+			if err := tx.QueryRowContext(bound, `SELECT COALESCE(email, ''), COALESCE(phone, '') FROM superusers WHERE id = $1`, ownerID).Scan(&ev.OwnerEmail, &ev.OwnerPhone); err != nil {
 				return Internalf(err, "read the new store's owner")
 			}
 		}

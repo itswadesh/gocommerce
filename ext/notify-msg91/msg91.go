@@ -98,11 +98,19 @@ var eventFields = []struct {
 	{gocommerce.EventOrderRefunded, "template_refund_issued", "Refund issued"},
 	{gocommerce.EventOrderLookupCode, "template_order_code", "Order code"},
 	{EventLoginCode, "template_sign_in_code", "Sign-in code"},
+	{gocommerce.EventSuperuserPasswordReset, "template_panel_password_reset", "Panel password reset"},
 }
 
 // EventLoginCode is the identity module's sign-in code (identity.EventLoginCode),
 // named here rather than imported: one module does not build on another.
 const EventLoginCode = "identity.login_code"
+
+// isOTP says an event is a one-time code, sent on an OTP template. A panel
+// password reset shares the sign-in code's: a DLT template says only that the
+// number is a code, so an install needs to register just one.
+func isOTP(event string) bool {
+	return event == EventLoginCode || event == gocommerce.EventSuperuserPasswordReset
+}
 
 // EnvTemplates reads the install's template ids from its environment: one
 // variable per event, MSG91_TEMPLATE_ and the event's field in capitals, such
@@ -114,7 +122,7 @@ func EnvTemplates(getenv func(string) string) map[string]string {
 	out := map[string]string{}
 	for _, f := range eventFields {
 		name := "MSG91_" + strings.ToUpper(f.key)
-		if f.event == EventLoginCode {
+		if isOTP(f.event) {
 			name = "SMS_OTP_TEMPLATE_ID"
 		}
 		if v := strings.TrimSpace(getenv(name)); v != "" {
@@ -272,7 +280,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		path    string
 		payload any
 	)
-	if n.Event == EventLoginCode {
+	if isOTP(n.Event) {
 		// A sign-in code's template is an OTP template, and MSG91 delivers one
 		// only through its OTP API: sent through the Flow API it answers
 		// success and no text arrives. The code goes as the API's otp, the

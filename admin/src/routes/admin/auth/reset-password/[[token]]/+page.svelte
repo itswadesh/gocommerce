@@ -24,6 +24,7 @@
      * place in this flow that confirms who has an account, which is exactly what
      * the request route's identical 202 refuses to do.
      */
+    import { toIdentity } from "$lib/identity.js";
     import { page } from "$app/state";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
@@ -108,7 +109,7 @@
                     ? { token, password }
                     : pastedToken
                       ? { token: typed, password }
-                      : { email: email.trim(), code, password },
+                      : { email: toIdentity(email), code, password },
                 { admin: false },
             );
             // The engine returns what a sign-in returns, so arriving by a reset
@@ -117,7 +118,7 @@
             // Whoever was signed in on this browser before, the store list
             // the shell holds is theirs: have it settle again, as at sign-in.
             forgetStores();
-            toast.success(`Your password has been changed, ${record.email}`);
+            toast.success(`Your password has been changed, ${record.email || record.phone}`);
             // `goto`, not a document load: the shell reads the session from a
             // rune, so signing in re-renders it.
             await goto(base + "/dash");
@@ -162,7 +163,7 @@
                 {#if linked}
                     This link works once, and expires {expiry}.
                 {:else}
-                    Enter the 6&#8209;digit code from the email we sent you. It works once, for an hour.
+                    Enter the 6&#8209;digit code we sent you. It works once, for an hour.
                 {/if}
             </p>
         </header>
@@ -170,11 +171,11 @@
         <form class="auth-form" onsubmit={submit}>
             {#if !linked}
                 <div class="field">
-                    <label for="reset_email">Email</label>
+                    <label for="reset_email">Email or phone</label>
                     <!-- svelte-ignore a11y_autofocus -->
                     <input
                         id="reset_email"
-                        type="email"
+                        type="text"
                         inputmode="email"
                         required={!pastedToken}
                         autofocus={!email}

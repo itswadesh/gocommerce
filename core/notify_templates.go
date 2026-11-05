@@ -567,6 +567,12 @@ Accept within {{.expires_in_hours}} hours:
 If you were not expecting this, you can ignore it; nothing happens unless the link is opened.`,
 	},
 	{
+		Channel: ChannelSMS, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
+		Description: "To a member of the team with a phone and no email who asked to reset their panel password.",
+		Variables:   []string{"code", "expires_in_minutes", "brand_name"},
+		Body:        `{{.code}} is your {{with .brand_name}}{{.}} {{end}}code to choose a new password. It works for {{.expires_in_minutes}} minutes.`,
+	},
+	{
 		Channel: ChannelEmail, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
 		Description: "To a member of the team who asked to reset their panel password.",
 		Variables:   []string{"operator_email", "reset_url", "reset_code", "reset_token", "expires_in_minutes", "brand_name"},

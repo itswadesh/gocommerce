@@ -109,21 +109,7 @@ func (m *Module) requireMethod(ctx context.Context, want string) error {
 	return &gocommerce.APIError{Status: http.StatusConflict, Code: "sign_in_method", Message: msg}
 }
 
-// normalizePhone keeps a leading + and the digits. A country code is required:
-// without one the same digits are somebody else's number in another country.
-func normalizePhone(phone string) (string, error) {
-	phone = strings.TrimSpace(phone)
-	var d []byte
-	for i := 0; i < len(phone); i++ {
-		if phone[i] >= '0' && phone[i] <= '9' {
-			d = append(d, phone[i])
-		}
-	}
-	if !strings.HasPrefix(phone, "+") || len(d) < 8 || len(d) > 15 {
-		return "", gocommerce.Validationf("enter the phone number with its country code, such as +91 98765 43210")
-	}
-	return "+" + string(d), nil
-}
+func normalizePhone(phone string) (string, error) { return gocommerce.NormalizePhone(phone) }
 
 // smsCarries is whether a sign-in code texted to phone now would reach it.
 // Asked of the code, not of SMS in general: MSG91 texts only what it has a

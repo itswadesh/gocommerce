@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // A superuser is an operator who signs in to the admin panel with an email
@@ -60,8 +61,11 @@ var pbkdf2Iterations = 600_000
 // serialized: the struct is returned directly from HTTP handlers, so the
 // absence of a json tag here is load-bearing.
 type Superuser struct {
-	ID    int64  `json:"id"`
+	ID int64 `json:"id"`
+	// Email is empty for somebody who signed up with a phone (D191).
 	Email string `json:"email"`
+	// Phone is in E.164, and only set for somebody who signed up with one.
+	Phone string `json:"phone,omitempty"`
 	// Role decides what they may do — see rights.go. Every operator that
 	// existed before roles did is an owner, which is what they were.
 	Role string `json:"role"`
@@ -206,6 +210,50 @@ func (s *Superusers) dummyVerify(ctx context.Context, password string) {
 
 // --------------------------------------------------------------- management
 
+// Contact is what to call this person in a log or on a screen: the email, or
+// the phone of somebody who signed up with one.
+func (s *Superuser) Contact() string {
+	if s.Email != "" {
+		return s.Email
+	}
+	return s.Phone
+}
+
+// NormalizePhone keeps a leading + and the digits. A country code is required:
+// without one the same digits are somebody else's number in another country.
+func NormalizePhone(phone string) (string, error) {
+	phone = strings.TrimSpace(phone)
+	var d []byte
+	for i := 0; i < len(phone); i++ {
+		if phone[i] >= '0' && phone[i] <= '9' {
+			d = append(d, phone[i])
+		}
+	}
+	if !strings.HasPrefix(phone, "+") || len(d) < 8 || len(d) > 15 {
+		return "", Validationf("enter the phone number with its country code, such as +91 98765 43210")
+	}
+	return "+" + string(d), nil
+}
+
+// looksLikePhone says what a person typed in a box taking an email or a phone.
+// Any letter makes it an email, so a mistyped address is told it is a bad
+// address rather than a bad number.
+func looksLikePhone(identity string) bool {
+	identity = strings.TrimSpace(identity)
+	return identity != "" && strings.IndexFunc(identity, unicode.IsLetter) < 0 && !strings.Contains(identity, "@")
+}
+
+// normalizeIdentity is the form a typed email or phone is stored and looked up
+// in. A phone that will not normalize stays as typed, and matches nobody.
+func normalizeIdentity(identity string) string {
+	if looksLikePhone(identity) {
+		if phone, err := NormalizePhone(identity); err == nil {
+			return phone
+		}
+	}
+	return normalizeEmail(identity)
+}
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
@@ -242,7 +290,7 @@ const (
 		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true)), '')`
 	memberVendorColumn = `(SELECT m.vendor_id FROM store_members m
 		WHERE m.superuser_id = superusers.id AND m.store_id = current_setting('gocommerce.store_id', true))`
-	superuserColumns = `superusers.id, superusers.email, superusers.password_hash, ` +
+	superuserColumns = `superusers.id, COALESCE(superusers.email, ''), COALESCE(superusers.phone, ''), superusers.password_hash, ` +
 		memberRoleColumn + `, ` + memberVendorColumn + `, superusers.created_at, superusers.updated_at`
 	// memberHere is true for a person who is staff of the bound store.
 	memberHere = `EXISTS (SELECT 1 FROM store_members m
@@ -276,7 +324,7 @@ func otherStores(ctx context.Context, q interface {
 // operator with no rights is refused everything, so forgetting fails closed.
 func scanSuperuser(row interface{ Scan(...any) error }) (*Superuser, error) {
 	var s Superuser
-	if err := row.Scan(&s.ID, &s.Email, &s.passwordHash, &s.Role, &s.VendorID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+	if err := row.Scan(&s.ID, &s.Email, &s.Phone, &s.passwordHash, &s.Role, &s.VendorID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -953,7 +1001,7 @@ func newSessionToken() (string, error) {
 // oracle, and the constant-time-ish path through dummyVerify keeps the timing
 // from saying what the message refuses to.
 func (s *Superusers) Authenticate(ctx context.Context, identity, password, clientIP string) (*Superuser, *Session, error) {
-	identity = normalizeEmail(identity)
+	identity = normalizeIdentity(identity)
 
 	// A demo with a designated demo account signs every visitor in as that
 	// account, whatever they typed: the form is a formality for a store whose
@@ -980,7 +1028,7 @@ func (s *Superusers) Authenticate(ctx context.Context, identity, password, clien
 	}
 
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+superuserColumns+` FROM superusers WHERE email = $1`, identity)
+		`SELECT `+superuserColumns+` FROM superusers WHERE email = $1 OR phone = $1`, identity)
 	su, err := s.scan(ctx, row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

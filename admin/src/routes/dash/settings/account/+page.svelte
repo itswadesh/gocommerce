@@ -232,6 +232,12 @@
                     </div>
                 {/if}
 
+                {#if me?.phone}
+                    <div class="field m-t-base">
+                        <label for="acc-phone">Phone</label>
+                        <input id="acc-phone" type="tel" value={me.phone} readonly />
+                    </div>
+                {/if}
                 <div class="field m-t-base">
                     <label for="acc-email">Email</label>
                     <input id="acc-email" type="email" bind:value={form.email} />

@@ -177,7 +177,7 @@
 
     /** Two letters for the avatar, from the email — there is no name to use. */
     const initials = $derived(
-        (record?.email || "at")
+        (record?.email || record?.phone || "at")
             .replace(/@.*$/, "")
             .split(/[._-]/)
             .filter(Boolean)
@@ -186,7 +186,7 @@
             .join("")
             // A single-word address gives one letter, and a lone initial in a
             // 28px disc reads as a mistake; take two from the word instead.
-            .padEnd(2, (record?.email || "at")[1]?.toUpperCase() ?? "")
+            .padEnd(2, (record?.email || record?.phone || "at")[1]?.toUpperCase() ?? "")
             .slice(0, 2) || "AT",
     );
 
@@ -762,7 +762,7 @@
             <span class="app-avatar" aria-hidden="true">{initials}</span>
             <span class="app-account-who">
                 <span class="app-account-store txt-ellipsis" data-store-name>{myStores.current?.name ?? brand.name}</span>
-                <span class="app-account-name txt-ellipsis">{record?.email || "admin token"}</span>
+                <span class="app-account-name txt-ellipsis">{record?.email || record?.phone || "admin token"}</span>
                 <span class="app-account-role txt-ellipsis">{roleLabel}</span>
             </span>
             <i class="ri-arrow-up-s-line" aria-hidden="true"></i>
