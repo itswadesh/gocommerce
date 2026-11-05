@@ -348,6 +348,9 @@ func (m *Module) handleVerifyPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := lockRow(ctx, tx, "retailassistant_supplier_payments", id); err != nil {
+			return err
+		}
 		var status string
 		var reversed bool
 		err := tx.QueryRowContext(ctx, `
@@ -385,6 +388,15 @@ type allocation struct {
 	invoiceID, amount   int64
 }
 
+// lockRow takes a row's lock in a statement of its own, and that is the point.
+// A subquery on the statement holding FOR UPDATE reads the snapshot from before
+// the wait for the lock, so whoever queued behind a committing allocation would
+// still add up the old balance. The next statement gets a fresh snapshot.
+func lockRow(ctx context.Context, tx *sql.Tx, table string, id int64) error {
+	_, err := tx.ExecContext(ctx, `SELECT 1 FROM `+table+` WHERE id = $1 FOR UPDATE`, id)
+	return err
+}
+
 // allocate spends part of a payment or credit against a bill. Both rows are
 // locked first, so two allocations racing cannot each find the same balance.
 func (m *Module) allocate(ctx context.Context, tx *sql.Tx, a allocation, key any) (int64, error) {
@@ -407,6 +419,9 @@ func (m *Module) allocate(ctx context.Context, tx *sql.Tx, a allocation, key any
 	var reversed bool
 	var sourceErr error
 	if a.paymentID != nil {
+		if err := lockRow(ctx, tx, "retailassistant_supplier_payments", *a.paymentID); err != nil {
+			return 0, err
+		}
 		sourceErr = tx.QueryRowContext(ctx, `
 			SELECT p.supplier_id, p.currency, p.status, p.amount_minor,
 			       COALESCE((SELECT sum(x.amount_minor) FROM retailassistant_payment_allocations x WHERE x.payment_id = p.id), 0),
@@ -415,6 +430,9 @@ func (m *Module) allocate(ctx context.Context, tx *sql.Tx, a allocation, key any
 			Scan(&supplier, &currency, &status, &amount, &used, &reversed)
 	} else {
 		status = "verified"
+		if err := lockRow(ctx, tx, "retailassistant_supplier_credits", *a.creditID); err != nil {
+			return 0, err
+		}
 		sourceErr = tx.QueryRowContext(ctx, `
 			SELECT c.supplier_id, c.currency, c.amount_minor,
 			       COALESCE((SELECT sum(x.amount_minor) FROM retailassistant_payment_allocations x WHERE x.credit_id = c.id), 0),
@@ -437,6 +455,9 @@ func (m *Module) allocate(ctx context.Context, tx *sql.Tx, a allocation, key any
 	var invSupplier, total, paid int64
 	var invCurrency string
 	var invReversed bool
+	if err := lockRow(ctx, tx, "retailassistant_purchase_invoices", a.invoiceID); err != nil {
+		return 0, err
+	}
 	err := tx.QueryRowContext(ctx, `
 		SELECT i.supplier_id, i.currency, i.total_minor,
 		       COALESCE((SELECT sum(x.amount_minor) FROM retailassistant_payment_allocations x WHERE x.invoice_id = i.id), 0),
@@ -531,6 +552,10 @@ func (m *Module) handleReversePayment(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		// Waits out an allocation in flight, so reverseAllocations below sees it.
+		if err := lockRow(ctx, tx, "retailassistant_supplier_payments", id); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO retailassistant_supplier_payments
 			    (supplier_id, amount_minor, currency, method, paid_on, reference, status, reverses_id, created_by)
@@ -629,6 +654,9 @@ func (m *Module) handleReverseCredit(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := lockRow(ctx, tx, "retailassistant_supplier_credits", id); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO retailassistant_supplier_credits
 			    (supplier_id, amount_minor, currency, kind, credit_no, reason, reverses_id, created_by)
@@ -700,6 +728,9 @@ func (m *Module) handleReverseInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := lockRow(ctx, tx, "retailassistant_purchase_invoices", id); err != nil {
+			return err
+		}
 		var allocated, received int64
 		var reversed bool
 		err := tx.QueryRowContext(ctx, `
