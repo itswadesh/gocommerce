@@ -518,6 +518,8 @@ module's tools exposed, you say so in `main()`.
   carries the rest. Before telling somebody a code is on its way, ask
   `app.WouldDeliver(ctx, n)`: a channel can deliver and still have nobody for
   one message, as MSG91 has nobody for an event without a template.
+  `gocommerce.EventLoginCode` is one message for shoppers and operators (D193),
+  so a provider that keeps a template per event needs one for it, not two.
 - **Calling out with `&http.Client{}`.** A store can set where most
   modules connect, so the default client is `app.OutboundClient(timeout)`,
   which reaches only public addresses unless the install allows otherwise

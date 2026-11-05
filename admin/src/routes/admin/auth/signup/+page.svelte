@@ -10,6 +10,10 @@
      * An address that already has an account is told so (the engine's 409):
      * an open sign-up cannot refuse one without saying why. The way on from
      * there is signing in, or a reset link for the same address.
+     *
+     * A phone is the other way to make the account, where a code can be texted
+     * to a new person (auth-state's phone_signup). It asks for no password, and
+     * a number that already has an account simply signs in.
      */
     import { onMount } from "svelte";
     import { base } from "$app/paths";
@@ -20,8 +24,9 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
+    import { phoneFragment, readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
     import { titled } from "$lib/brand.svelte.js";
-    import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
 
     const LOGIN = `${base}/admin/auth/login`;
 
@@ -29,7 +34,8 @@
     // "unreachable" when it could not be asked.
     let state = $state("loading");
     // A number typed on a landing page arrives in the fragment (phone-link.js).
-    let email = $state(readablePhone(takePhoneFromFragment()));
+    const linkedPhone = takePhoneFromFragment();
+    let email = $state(readablePhone(linkedPhone));
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
@@ -41,14 +47,32 @@
     // in for exactly that address.
     let taken = $state("");
     let attempt = $state(0);
+    let canPhone = $state(false);
+    let usePhone = $state(false);
+    // Where sign-up is shut, the way on is signing in, and the number goes along.
+    let loginHref = $state(LOGIN);
 
     function probe() {
         state = "loading";
         auth.state()
-            .then((s) => (state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed"))
+            .then((s) => {
+                canPhone = !!s.phone_signup;
+                // The box keeps the number either way.
+                if (linkedPhone && canPhone) usePhone = true;
+                if (linkedPhone && !s.signup) loginHref = LOGIN + phoneFragment(linkedPhone);
+                state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed";
+            })
             .catch(() => (state = "unreachable"));
     }
     onMount(probe);
+
+    async function onward() {
+        // Whoever was signed in on this browser before, the store list the
+        // shell holds is theirs: have it settle again, as at sign-in.
+        forgetStores();
+        toast.success("Your account is ready");
+        await goto(`${base}/select-store?signup`, { replaceState: true });
+    }
 
     async function submit(e) {
         e.preventDefault();
@@ -59,11 +83,7 @@
         taken = "";
         try {
             await auth.signup(email, password);
-            // Whoever was signed in on this browser before, the store list the
-            // shell holds is theirs: have it settle again, as at sign-in.
-            forgetStores();
-            toast.success("Your account is ready");
-            await goto(`${base}/select-store?signup`, { replaceState: true });
+            await onward();
         } catch (err) {
             attempt += 1;
             if (err.code === "email_taken") {
@@ -117,7 +137,7 @@
             </p>
         </header>
         <div class="auth-actions">
-            <a class="btn lg block next" href={LOGIN}>
+            <a class="btn lg block next" href={loginHref}>
                 <span class="txt">Go to sign in</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </a>
@@ -126,9 +146,17 @@
         <header class="auth-head">
             <p class="auth-step">Step 1 of 2</p>
             <h1 class="auth-title">Create your store</h1>
-            <p class="auth-lede">Start with the email or phone and the password you'll sign in with. You'll name your store next.</p>
+            <p class="auth-lede">
+                {usePhone ? "Start with the phone you'll sign in with." : "Start with the email or phone and the password you'll sign in with."}
+                You'll name your store next.
+            </p>
         </header>
 
+        {#if usePhone}
+            <div in:rise>
+                <PhoneCodeForm onauthenticated={onward} open label="Continue" number={canPhone ? linkedPhone : ""} />
+            </div>
+        {:else}
         <form class="auth-form" onsubmit={submit}>
             <div>
             <div class="field" class:error={emailRefused}>
@@ -206,6 +234,15 @@
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
+        {/if}
+
+        {#if canPhone}
+            <p class="auth-alt">
+                <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = !usePhone)}>
+                    {usePhone ? "Use a password instead" : "Text me a code instead"}
+                </button>
+            </p>
+        {/if}
 
         <p class="auth-alt">
             Already have an account? <a class="auth-link" href={LOGIN}>Sign in</a>

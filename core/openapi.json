@@ -2221,6 +2221,14 @@
                           "type": "boolean",
                           "description": "Anybody may make an account with POST /api/admin/signup: the install turned sign-up on (Config.Signup), is not a demo, has email of its own to send a reset with, and already has its first owner."
                         },
+                        "phone_login": {
+                          "type": "boolean",
+                          "description": "A sign-in code could be texted from here, so the sign-in screen may offer a phone. False with no SMS provider carrying the code, on a demo, and before the first owner."
+                        },
+                        "phone_signup": {
+                          "type": "boolean",
+                          "description": "Sign-up is open and the install itself can text, so a new person can sign up with a phone. A new person's code never goes out on a store's own provider."
+                        },
                         "reset_link": {
                           "type": "boolean",
                           "description": "A reset email carries a link: the panel URL of the brand this address belongs to is set (Config.PanelURL without brands). False, it carries a code to paste at /admin/auth/reset-password."
@@ -2336,6 +2344,120 @@
           },
           "429": {
             "description": "Too many sign-ups from this address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth-with-phone/code": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Text a sign-in code to a phone",
+        "description": "Public. Answers the same whether or not the number has an account, and never carries the code; a number with no account gets a text only where sign-up is open. The code has six digits, lasts ten minutes and takes five tries. A phone gets one code a minute and five a day, and one client address (an IPv6 /64) twenty an hour, counted in the database. It goes out on the install's SMS provider, unless the person works in the store the request reached and no other.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Taken, whoever the number belongs to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "expires_in_minutes": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "description": "Nothing could text this number (`sms_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many codes for this phone or from this address (`too_many_attempts`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth-with-phone": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Sign in with a code texted to a phone",
+        "description": "Spends one try at the phone's code. Right, it signs in the person on that number, as POST /api/admin/auth-with-password does; a number with no account makes a person in no store where sign-up is open (201). A wrong, spent or expired code, a disabled person and a number that cannot sign in all answer 422 `invalid_code`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneCodeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "201": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "description": "This install is a demo, which has no phone sign-in (`sms_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The code did not sign anybody in (`invalid_code`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -10783,6 +10905,179 @@
         }
       }
     },
+    "/api/admin/me/phone/code": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Text a code to a number you want to sign in with",
+        "description": "Shares the phone's codes and limits with POST /api/admin/auth-with-phone/code.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Taken."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "description": "Nothing could text this number (`sms_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many codes (`too_many_attempts`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/me/phone": {
+      "put": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Sign in with this phone from now on",
+        "description": "Needs the code texted to the number and your current password, as any change of how you sign in does. A number that opens another account is 409. A person with no password has none to give, so this is 403 for them.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone",
+                  "code",
+                  "current_password"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "current_password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "description": "The current password is not right.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "The code is wrong, spent or expired (`invalid_code`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Stop signing in with your phone",
+        "description": "Needs your current password, and an email to go on signing in with.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "current_password"
+                ],
+                "properties": {
+                  "current_password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record."
+          },
+          "403": {
+            "description": "The current password is not right.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/admin/me/revoke-sessions": {
       "post": {
         "tags": [
@@ -18056,6 +18351,33 @@
             }
           }
         ]
+      },
+      "PhoneInput": {
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "With its country code, such as +91 98765 43210."
+          }
+        }
+      },
+      "PhoneCodeInput": {
+        "type": "object",
+        "required": [
+          "phone",
+          "code"
+        ],
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
       },
       "Superuser": {
         "type": "object",

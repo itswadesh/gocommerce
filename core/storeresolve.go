@@ -36,6 +36,7 @@ var (
 var storeExempt = []string{
 	"/api/admin/auth-state",
 	"/api/admin/auth-with-password",
+	"/api/admin/auth-with-phone",
 	"/api/admin/auth-logout",
 	"/api/admin/password-reset",
 	"/api/admin/signup",

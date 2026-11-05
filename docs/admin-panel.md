@@ -1067,6 +1067,42 @@ new person in), then the store picker's create form, with its suggested name,
 country and currency. The account belongs to no store until that form opens
 one. An address that already has an account is told to sign in or reset it.
 
+### Signing in with a phone
+
+Where a code can be texted, the sign-in and sign-up screens offer **Text me a
+code instead**: a number with its country code, then a six-digit code
+(`POST /api/admin/auth-with-phone/code`, then `POST /api/admin/auth-with-phone`).
+Email and password work as they always did. `auth-state` says `phone_login` and
+`phone_signup`, so with no provider carrying a sign-in code the option is not
+there at all.
+
+A number with no account gets a code only where sign-up is open, and signing in
+with it makes the account, with no email and no password, in no store. The
+create form opens next, as after any sign-up. Elsewhere the screen says a code
+is on its way *if* the number has an account, because the engine answers every
+number the same. An operator with an email adds a number under Settings › Your
+account, with its code and their current password, and can remove it the same
+way. A number typed at sign-up with a password is not proved (D191), so the first
+code to prove it ends that password and its sessions; its owner sets a new one
+through a reset. A phone account and an email account are not merged (D193).
+
+A marketing page can bring a number with it:
+`/admin/auth/signup#phone=%2B919876543210`, or the same on `/admin/auth/login`.
+In the fragment, because no access log or Referer sees it. The panel takes it off
+the address bar at once and fills in the "Email or phone" box, and opens the code
+form with it where a code can be texted; nothing is sent until the person presses
+the button. Where sign-up is shut, **Go to sign in** carries the number on.
+
+A code lasts ten minutes and takes five tries. A phone gets one code a minute and
+five a day, and one client address twenty an hour. The code goes out on the
+install's SMS provider, unless the person works in the store the request reached
+and no other: a store's provider account is its owner's to read, and the code
+opens every store the person works in.
+
+`gocommerce superuser disable <email or phone>` shuts a person out of the whole
+install, by any way of signing in, and ends their sessions. `enable` lets them
+back. It has no screen, because one store must not lock somebody out of another.
+
 Turning it on is not always enough, and `gocommerce doctor` says when:
 
 - **It needs email of the install's own,** a provider key in the environment

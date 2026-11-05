@@ -26,6 +26,7 @@ core/                the engine — still `package gocommerce`
   catalog.go cart.go checkout.go orders.go inventory.go payments.go fulfillment.go
   outbox.go events.go  transactional outbox + event bus
   superusers.go      admin identity (email+password sessions)
+  phone_login.go     the same identity, signing in with a code by SMS (D193)
   doctor.go          operational diagnostics behind `gocommerce doctor`
   httpx.go           JSON envelope, error taxonomy, admin auth, pagination
 ext/                 bundled modules — see rule 2

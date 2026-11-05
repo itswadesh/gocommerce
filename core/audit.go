@@ -526,12 +526,12 @@ func auditActor(ctx context.Context) (kind string, id *int64, email, role, label
 		if su.KeyID != 0 {
 			keyID := su.KeyID
 			if su.KeyKind == KeyKindAgent {
-				return ActorAgent, &keyID, su.Contact(), su.Role, label
+				return ActorAgent, &keyID, su.who(), su.Role, label
 			}
-			return ActorKey, &keyID, su.Contact(), su.Role, label
+			return ActorKey, &keyID, su.who(), su.Role, label
 		}
 		actorID := su.ID
-		return ActorOperator, &actorID, su.Contact(), su.Role, label
+		return ActorOperator, &actorID, su.who(), su.Role, label
 	}
 	if AdminTokenFrom(ctx) {
 		return ActorToken, nil, "", "", label

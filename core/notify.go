@@ -217,8 +217,12 @@ func worthRetrying(err error) error {
 type logNotifier struct{ log *slog.Logger }
 
 func (l logNotifier) Notify(ctx context.Context, n Notification) error {
+	to := n.To
+	if n.Channel != ChannelEmail {
+		to = MaskPhone(to)
+	}
 	l.log.Info("notification (no delivery backend installed)",
-		"event", n.Event, "channel", n.Channel, "to", n.To,
+		"event", n.Event, "channel", n.Channel, "to", to,
 		"language", n.Language, "order", n.Data["order_number"])
 	return nil
 }

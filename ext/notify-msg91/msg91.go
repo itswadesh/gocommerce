@@ -305,7 +305,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		}
 		path, payload = "/api/v5/flow/", flow
 	}
-	id, err := m.post(ctx, key, path, payload)
+	id, err := m.post(ctx, key, path, payload, recipient["mobiles"])
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 	// and one that was never tried leave the same silence in the log. The id
 	// is what MSG91's reports file it under. The variables stay out: a
 	// sign-in code is one of them.
-	m.log.Info("text sent", "event", n.Event, "to", recipient["mobiles"], "template", templateID, "id", id)
+	m.log.Info("text sent", "event", n.Event, "to", gocommerce.MaskPhone(recipient["mobiles"]), "template", templateID, "id", id)
 	return nil
 }
 
@@ -335,8 +335,9 @@ func (m *Module) normalizeNumber(ctx context.Context, raw string) string {
 	return number
 }
 
-// post sends payload and answers the request id MSG91 gave the message.
-func (m *Module) post(ctx context.Context, key, path string, payload any) (string, error) {
+// post sends payload and answers the request id MSG91 gave the message. mobile
+// is masked in whatever MSG91 says back, which reaches the log.
+func (m *Module) post(ctx context.Context, key, path string, payload any, mobile string) (string, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -360,7 +361,8 @@ func (m *Module) post(ctx context.Context, key, path string, payload any) (strin
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body := []byte(gocommerce.MaskPhoneIn(string(raw), mobile))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		// MSG91 answers 200 to a rejected message too, with type "error".
 		var result struct {

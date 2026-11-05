@@ -648,4 +648,15 @@ If you are reading it, the store's email provider is set up and order emails wil
 		Variables:   []string{"code", "order_number", "store_name", "expires_in_minutes"},
 		Body:        `{{.code}} is your code to see order {{.order_number}}. It works for {{.expires_in_minutes}} minutes.`,
 	},
+	{
+		Channel: ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
+		Description: "To a shopper signing in with their phone, or an operator signing in to the panel. The code works for ten minutes.",
+		Variables:   []string{"code", "store_name", "expires_in_minutes", "domain"},
+		// The wording of the DLT template MSG91 carries, so every SMS provider
+		// sends the same text. The last line, when the shopper is on the
+		// store's own site, is the one Chrome on Android reads to fill the
+		// code in (the Web OTP API).
+		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}` +
+			`{{with .domain}}` + "\n\n" + `@{{.}} #{{$.code}}{{end}}`,
+	},
 }

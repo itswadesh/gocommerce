@@ -117,8 +117,40 @@ func coreMigrations() []Migration {
 		{ID: "0099_show_all_codes", SQL: migration0099ShowAllCodes},
 		{ID: "0100_discount_free_shipping", SQL: migration0100DiscountFreeShipping},
 		{ID: "0101_superuser_phone", SQL: migration0101SuperuserPhone},
+		{ID: "0102_operator_phone_login", SQL: migration0102OperatorPhoneLogin},
 	}
 }
+
+// M102 — signing in with a code texted to a phone (D193). phone_proved_at says
+// a code proved the number. A number given at sign-up is not proved (D191), so
+// the first code to prove it takes the account from whoever typed it: their
+// password and sessions end. disabled_at shuts a person out of the whole install.
+//
+// A code's row is written for every request, whoever the number belongs to, so
+// neither the limits nor the answer can tell a known phone from an unknown one.
+// consumed_at rather than expires_at = now(): now() is when a statement's
+// transaction began, so a second guess queued on the row lock would still read
+// a code the first one spent as open. No store_id: a person belongs to no store,
+// and a report's login is not granted a table without one.
+const migration0102OperatorPhoneLogin = `
+ALTER TABLE superusers
+    ADD COLUMN phone_proved_at timestamptz,
+    ADD COLUMN disabled_at timestamptz;
+
+CREATE TABLE superuser_login_codes (
+    id          bigserial   PRIMARY KEY,
+    phone       text        NOT NULL,
+    code_hash   text        NOT NULL,
+    -- The limit compares a client's address; it has no need to read one.
+    client_hash text        NOT NULL,
+    attempts    integer     NOT NULL DEFAULT 0,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    expires_at  timestamptz NOT NULL,
+    consumed_at timestamptz
+);
+CREATE INDEX superuser_login_codes_phone_idx ON superuser_login_codes (phone, created_at);
+CREATE INDEX superuser_login_codes_client_idx ON superuser_login_codes (client_hash, created_at);
+`
 
 // M101 — a person signing up may give a phone instead of an email (D191). The
 // email stops being required, and every row still has one or the other.

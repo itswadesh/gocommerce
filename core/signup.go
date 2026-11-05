@@ -188,7 +188,7 @@ func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
-	a.log.Info("superuser created", "email", su.Contact(), "via", "signup")
+	a.log.Info("superuser created", "who", su.who(), "via", "signup")
 	Respond(w, http.StatusCreated, authResponse{
 		Token:     sess.Token,
 		ExpiresAt: sess.ExpiresAt.UTC(),

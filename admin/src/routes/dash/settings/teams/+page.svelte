@@ -469,7 +469,7 @@
         if (saving) return;
 
         errors = {};
-        if (!form.email.trim()) errors.email = "An email is required.";
+        if (!form.email.trim() && !editing?.phone) errors.email = "An email is required.";
         if (!editing && form.password.length < 8) {
             errors.password = "A password of at least 8 characters is required.";
         }
@@ -525,7 +525,7 @@
     async function doDelete() {
         try {
             await auth.remove(pendingDelete.id);
-            toast.success(`Removed ${pendingDelete.email}`);
+            toast.success(`Removed ${pendingDelete.email || pendingDelete.phone}`);
             await load();
         } catch (err) {
             toast.error(err);
@@ -1177,7 +1177,7 @@
     bind:open={confirmOpen}
     title="Remove this superuser?"
     message={pendingDelete
-        ? `${pendingDelete.email} will lose access to this panel immediately, and every session they hold ends with them.`
+        ? `${pendingDelete.email || pendingDelete.phone} will lose access to this panel immediately, and every session they hold ends with them.`
         : ""}
     confirmLabel="Remove"
     danger
