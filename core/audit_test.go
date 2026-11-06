@@ -1196,6 +1196,16 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("erase the sample shop: %v", err)
 	}
 
+	// The store's own details changing.
+	details, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatalf("read the store's details: %v", err)
+	}
+	details.Name = "Vocabulary Store"
+	if _, err := app.Profile().Set(ctx, *details, nil); err != nil {
+		t.Fatalf("save the store's details: %v", err)
+	}
+
 	// A booked parcel called off, which stays on the order.
 	cancelling := confirmedOrder(t, app, orderSpec{"AUD-CANCEL", 1})
 	booked, err := app.Ship().Create(ctx, cancelling.ID, ProviderManual, ShipRequest{Tracking: "AUD-CANCEL-1"})
