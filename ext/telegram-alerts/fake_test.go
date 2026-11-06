@@ -25,10 +25,15 @@ type message struct {
 	// NoPreview is whether link previews were switched off, so an order link
 	// does not unfurl the panel's sign-in page into the owner's chat.
 	NoPreview bool
+	// Buttons is the callback data of each button under the message.
+	Buttons []string
+	// HasMarkup is whether reply_markup was sent at all.
+	HasMarkup bool
 }
 
-// fakeTelegram answers the two Bot API methods the module calls. Nothing
-// here talks to the real api.telegram.org.
+// fakeTelegram answers the Bot API methods the module calls, and refuses
+// getUpdates while a webhook is set, as the real one does. Nothing here talks
+// to the real api.telegram.org.
 type fakeTelegram struct {
 	mu   sync.Mutex
 	sent []message
@@ -38,6 +43,16 @@ type fakeTelegram struct {
 	// updates is getUpdates' result array.
 	updates string
 	methods []string
+	// webhooks is what setWebhook left, per bot token.
+	webhooks map[string]fakeWebhook
+	// refuse makes a method answer 500.
+	refuse map[string]bool
+}
+
+type fakeWebhook struct {
+	URL, Secret    string
+	AllowedUpdates []string
+	DropPending    bool
 }
 
 func (f *fakeTelegram) handler(w http.ResponseWriter, r *http.Request) {
@@ -56,16 +71,56 @@ func (f *fakeTelegram) handler(w http.ResponseWriter, r *http.Request) {
 			Preview *struct {
 				Disabled bool `json:"is_disabled"`
 			} `json:"link_preview_options"`
+			Markup *inlineKeyboard `json:"reply_markup"`
 		}
 		_ = json.Unmarshal(raw, &in)
 		chat, _ := in.ChatID.(string)
-		f.sent = append(f.sent, message{Token: token, ChatID: chat, Text: in.Text,
-			NoPreview: in.Preview != nil && in.Preview.Disabled})
+		sent := message{Token: token, ChatID: chat, Text: in.Text,
+			NoPreview: in.Preview != nil && in.Preview.Disabled, HasMarkup: in.Markup != nil}
+		if in.Markup != nil {
+			for _, row := range in.Markup.Rows {
+				for _, b := range row {
+					sent.Buttons = append(sent.Buttons, b.Data)
+				}
+			}
+		}
+		f.sent = append(f.sent, sent)
+	}
+	refused := f.refuse[method]
+	hook, hooked := f.webhooks[token]
+	if !refused {
+		switch method {
+		case "setWebhook":
+			var in struct {
+				URL            string   `json:"url"`
+				Secret         string   `json:"secret_token"`
+				AllowedUpdates []string `json:"allowed_updates"`
+				DropPending    bool     `json:"drop_pending_updates"`
+			}
+			_ = json.Unmarshal(raw, &in)
+			if f.webhooks == nil {
+				f.webhooks = map[string]fakeWebhook{}
+			}
+			f.webhooks[token] = fakeWebhook{in.URL, in.Secret, in.AllowedUpdates, in.DropPending}
+		case "deleteWebhook":
+			delete(f.webhooks, token)
+		}
 	}
 	f.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case refused:
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":500,"description":"Internal Server Error"}`))
+	case method == "setWebhook", method == "deleteWebhook", method == "answerCallbackQuery", method == "editMessageReplyMarkup":
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	case method == "getWebhookInfo":
+		info, _ := json.Marshal(map[string]string{"url": hook.URL})
+		_, _ = w.Write([]byte(`{"ok":true,"result":` + string(info) + `}`))
+	case method == "getUpdates" && hooked:
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":409,"description":"Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first"}`))
 	case method == "sendMessage" && status != 0:
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))

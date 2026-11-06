@@ -25,6 +25,9 @@
 // error that quotes the URL — and Go's network errors do — is never logged,
 // stored or answered as it stands.
 //
+// Separately, and off until the owner says so, the bot can take orders from
+// that same owner: see commands.go.
+//
 //	app, err := gocommerce.New(cfg, telegramalerts.New(telegramalerts.Config{}))
 package telegramalerts
 
@@ -144,6 +147,51 @@ CREATE INDEX telegram_alerts_deliveries_claim
     WHERE delivered_at IS NULL AND NOT dead;`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "telegram_alerts", "telegram_alerts_deliveries"),
+		{
+			ID: "0003_commands",
+			SQL: `
+-- A row means two-way control is on. Only the secret's hash is kept: Telegram
+-- is given the secret once, and nothing here ever has to show it again.
+CREATE TABLE telegram_commands (
+    store_id    text PRIMARY KEY,
+    bot_id      text NOT NULL,
+    chat_id     bigint NOT NULL CHECK (chat_id > 0),
+    secret_hash text NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- One row per store is the point: a confirmation asked for replaces the one
+-- before it, so there is only ever one change waiting, and a flood cannot
+-- pile up more.
+CREATE TABLE telegram_commands_pending (
+    store_id   text PRIMARY KEY,
+    token      text NOT NULL,
+    chat_id    bigint NOT NULL,
+    action     jsonb NOT NULL,
+    expires_at timestamptz NOT NULL
+);
+
+-- What Telegram has already handed over, for its redelivery of an update whose
+-- answer it did not see. Also what the rate limit counts.
+CREATE TABLE telegram_commands_updates (
+    update_id   bigint PRIMARY KEY,
+    received_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX telegram_commands_updates_received ON telegram_commands_updates (received_at);
+
+CREATE TABLE telegram_commands_audit (
+    id               bigserial PRIMARY KEY,
+    telegram_user_id bigint,
+    action           text NOT NULL,
+    arguments        jsonb NOT NULL DEFAULT '{}',
+    outcome          text NOT NULL,
+    detail           text,
+    created_at       timestamptz NOT NULL DEFAULT now()
+);`,
+		},
+		gocommerce.ScopeMigration("0004_commands_store_scope", "telegram_commands", "telegram_commands_pending",
+			"telegram_commands_updates", "telegram_commands_audit"),
+		gocommerce.WithholdFromReports("0005_withhold_from_reports", "telegram_commands.secret_hash", "telegram_commands_pending.token"),
 	}
 }
 
@@ -205,6 +253,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("POST "+base+"/test", m.handleTest, rightAlertsWrite)
 	app.HandleAdminFunc("GET "+base+"/deliveries", m.handleDeliveries, rightAlertsRead)
 	app.HandleAdminFunc("POST "+base+"/deliveries/{id}/retry", m.handleRetry, rightAlertsWrite)
+	app.HandleAdminFunc("GET "+base+"/commands", m.handleCommandsStatus, rightAlertsRead)
+	app.HandleAdminFunc("POST "+base+"/commands", m.handleCommandsSwitch, rightCommands)
+	app.HandleAdminFunc("GET "+base+"/commands/audit", m.handleCommandsAudit, rightAlertsRead)
+	// Public, and no less guarded: Telegram cannot sign in, so its proof is the
+	// secret this checks before it reads a byte of the body.
+	app.HandleFunc("POST "+webhookPath, m.handleWebhook)
 
 	app.OnStart(m.start)
 	return nil
@@ -253,6 +307,12 @@ func (m *Module) registerRights(app *gocommerce.App) {
 		Right:   rightAlertsWrite,
 		Label:   "Change the Telegram alerts",
 		Scope:   "Switching and rewording them, finding the chat, sending a test and retrying one that failed",
+		Default: nil,
+	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right:   rightCommands,
+		Label:   "Hand the store to a Telegram chat",
+		Scope:   "Switching two-way control on or off, which lets one private chat ship, cancel and reprice",
 		Default: nil,
 	})
 }
