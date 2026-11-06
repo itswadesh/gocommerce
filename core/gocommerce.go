@@ -186,6 +186,10 @@ type Config struct {
 	// one brand made of PanelURL and BaseDomain, called DefaultBrandName. Set,
 	// the first brand fills PanelURL and BaseDomain where they are empty.
 	Brands []Brand
+	// BrandName is what an install with no Brands calls itself in the panel and
+	// its emails (D222). Empty is DefaultBrandName. Unlike Brands it names no
+	// address, so no value of it can stop the engine starting.
+	BrandName string
 	// Signup lets anybody make an account on the panel's sign-in screen and
 	// open a store with it (POST /api/admin/signup). It is for an install that
 	// hosts stores for other people; a shop run for one business leaves it off
