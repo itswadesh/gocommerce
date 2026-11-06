@@ -148,6 +148,12 @@ func serveAdminPanel(w http.ResponseWriter, r *http.Request, frames []string) {
 	if name == "" || name == "." {
 		name = "index.html"
 	}
+	// A tab opened before the panel's files moved to /_panel still polls here
+	// for a new version. Answering keeps it noticing and reloading, instead of
+	// failing on its next chunk (D236).
+	if name == "_app/version.json" {
+		name = "_panel/version.json"
+	}
 
 	file, err := admin.DistFS.Open(name)
 	if err != nil {
@@ -246,14 +252,14 @@ func serveAdminPanel(w http.ResponseWriter, r *http.Request, frames []string) {
 }
 
 // setAdminCacheHeaders caches fingerprinted assets hard and the shell not at
-// all. SvelteKit hashes everything under _app/immutable, so those filenames
+// all. SvelteKit hashes everything under _panel/immutable, so those filenames
 // change whenever their contents do; index.html must never be cached or a
 // deploy would not reach anyone.
 func setAdminCacheHeaders(w http.ResponseWriter, name string) {
 	switch {
-	case strings.HasPrefix(name, "_app/immutable/"):
+	case strings.HasPrefix(name, "_panel/immutable/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	case strings.HasPrefix(name, "fonts/"):
+	case strings.HasPrefix(name, "_panel/fonts/"):
 		w.Header().Set("Cache-Control", "public, max-age=1209600")
 	case name == "index.html":
 		w.Header().Set("Cache-Control", "no-cache")

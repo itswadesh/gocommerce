@@ -184,7 +184,7 @@ func (m *Module) guardForeign(ctx context.Context, a *gocommerce.CheckoutAttempt
 		return err
 	}
 	return &gocommerce.APIError{Status: http.StatusForbidden, Code: "company_checkout_required",
-		Message: "this basket carries " + company + "'s prices; place it through the company account (POST /x/b2b/checkout)"}
+		Message: "this basket carries " + company + "'s prices; place it through the company account"}
 }
 
 // outstanding is what a company owes on account: orders placed on account

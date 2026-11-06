@@ -26,7 +26,7 @@ func TestAdminPanelIsServed(t *testing.T) {
 		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
 			t.Errorf("Content-Type = %q, want HTML", ct)
 		}
-		if !strings.Contains(rec.Body.String(), "_app/immutable") {
+		if !strings.Contains(rec.Body.String(), "_panel/immutable") {
 			t.Errorf("the response does not look like the built panel: %.200s", rec.Body)
 		}
 	})
@@ -55,7 +55,7 @@ func TestAdminPanelIsServed(t *testing.T) {
 	})
 
 	t.Run("assets are served", func(t *testing.T) {
-		rec := do(t, app, http.MethodGet, "/fonts/remixicon/remixicon.woff2")
+		rec := do(t, app, http.MethodGet, "/_panel/fonts/remixicon/remixicon.woff2")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
 		}
@@ -67,9 +67,17 @@ func TestAdminPanelIsServed(t *testing.T) {
 	t.Run("a missing asset is a 404, not the shell", func(t *testing.T) {
 		// Answering a missing .js with HTML would turn a build problem into a
 		// baffling syntax error in the console.
-		rec := do(t, app, http.MethodGet, "/_app/immutable/nope.js")
+		rec := do(t, app, http.MethodGet, "/_panel/immutable/nope.js")
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("a tab opened before the files moved still finds the version", func(t *testing.T) {
+		old := do(t, app, http.MethodGet, "/_app/version.json")
+		now := do(t, app, http.MethodGet, "/_panel/version.json")
+		if old.Code != http.StatusOK || old.Body.String() != now.Body.String() {
+			t.Errorf("old = %d %s, new = %d %s; want the same version", old.Code, old.Body, now.Code, now.Body)
 		}
 	})
 
@@ -78,7 +86,7 @@ func TestAdminPanelIsServed(t *testing.T) {
 		if got := shell.Header().Get("Cache-Control"); got != "no-cache" {
 			t.Errorf("index Cache-Control = %q, want no-cache", got)
 		}
-		font := do(t, app, http.MethodGet, "/fonts/remixicon/remixicon.woff2")
+		font := do(t, app, http.MethodGet, "/_panel/fonts/remixicon/remixicon.woff2")
 		if got := font.Header().Get("Cache-Control"); !strings.Contains(got, "max-age") {
 			t.Errorf("font Cache-Control = %q, want a max-age", got)
 		}

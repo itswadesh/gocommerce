@@ -48,6 +48,8 @@ func (m *Module) mountRoutes(app *gocommerce.App) {
 	// The storefront's dealer form, sent by a member of the public: the one
 	// route here with no session at all.
 	app.HandleFunc("POST /x/b2b/leads", m.handleFileLead)
+	// What a storefront may offer for this store, also without a session.
+	app.HandleFunc("GET /x/b2b/availability", m.handleAvailability)
 
 	// The store's side.
 	app.HandleAdminFunc("GET /api/admin/x/b2b/companies", m.handleAdminCompanies, rightCompaniesRead)
@@ -620,11 +622,41 @@ func (m *Module) handleFileLead(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// The honeypot, told what a person is told, as the contact form's is.
+	if strings.TrimSpace(in.Website) != "" {
+		gocommerce.Respond(w, http.StatusAccepted, leadAccepted{Accepted: true})
+		return
+	}
 	if _, err := m.FileLead(r.Context(), in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
 	gocommerce.Respond(w, http.StatusAccepted, leadAccepted{Accepted: true})
+}
+
+// availability is what a storefront may offer for a store. The module is on
+// for every store of an install and none has a switch for it, so what a store
+// actually does is read from its data: one with no company has nobody a trade
+// link could serve, and retail shops never show it. Two yeses and noes, and
+// nothing a competitor could not read off the storefront's own footer.
+type availability struct {
+	// Companies: the store has a company that is not closed.
+	Companies bool `json:"companies"`
+	// Dealers: such a company covers a territory, so an enquiry can reach one.
+	Dealers bool `json:"dealers"`
+}
+
+func (m *Module) handleAvailability(w http.ResponseWriter, r *http.Request) {
+	var a availability
+	err := m.db.QueryRowContext(r.Context(), `
+		SELECT EXISTS (SELECT 1 FROM b2b_companies WHERE status <> 'closed'),
+		       EXISTS (SELECT 1 FROM b2b_territories t JOIN b2b_companies c ON c.id = t.company_id WHERE c.status <> 'closed')`).
+		Scan(&a.Companies, &a.Dealers)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, a)
 }
 
 // dealer is the caller's company, for the lead routes: an enquiry is answered

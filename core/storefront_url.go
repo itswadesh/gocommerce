@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/url"
+	"strings"
 )
 
 // StorefrontURL is where shoppers reach the store ctx is bound to, as
@@ -35,6 +36,22 @@ func (a *App) StorefrontURL(ctx context.Context) string {
 		host = st.Slug + "." + base
 	}
 	return "https://" + host
+}
+
+// StoreLink fills a link an engine setting describes, for the store ctx is
+// bound to: {token} is token, and {domain} is the host StorefrontURL names, so
+// one setting serves every store of an install. It is empty when the setting
+// is, or when it names {domain} and the store has no address yet, so a caller
+// sends the token alone rather than a link to nowhere.
+func (a *App) StoreLink(ctx context.Context, setting, token string) string {
+	if strings.Contains(setting, "{domain}") {
+		host := strings.TrimPrefix(a.StorefrontURL(ctx), "https://")
+		if host == "" {
+			return ""
+		}
+		setting = strings.ReplaceAll(setting, "{domain}", host)
+	}
+	return strings.ReplaceAll(setting, "{token}", token)
 }
 
 // orderTrackingURL is the storefront page where a customer sees an order,

@@ -117,8 +117,8 @@ func (m *Module) notifyInvitation(ctx context.Context, c *Company, email, role, 
 		"invite_token":    token,
 		"expires_in_days": strconv.Itoa(int(m.cfg.InviteTTL / (24 * time.Hour))),
 	}
-	if m.cfg.InviteURL != "" {
-		data["invite_url"] = strings.ReplaceAll(m.cfg.InviteURL, "{token}", token)
+	if link := m.app.StoreLink(ctx, m.cfg.InviteURL, token); link != "" {
+		data["invite_url"] = link
 	}
 	m.send(ctx, EventInvitation, email, data, "invite_token", "invite_url")
 }

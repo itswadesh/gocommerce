@@ -39,8 +39,8 @@ test("new paths, other apps and assets are left alone", () => {
     for (const p of [
         "/dash", "/dash/orders", "/admin/auth/login", "/select-store", "/stores/create",
         "/portal", "/portal/orders",
-        "/_app/immutable/x.js", "/images/logo.svg", "/fonts/inter.woff2",
-        "/favicon.svg", "/theme.js", "/api/admin/orders",
+        "/_panel/immutable/x.js", "/_panel/images/logo.svg", "/_panel/fonts/inter.woff2",
+        "/_panel/favicon.svg", "/_panel/theme.js", "/api/admin/orders",
         // Served by the engine, not the panel: the API reference and liveness.
         "/docs", "/doc", "/health",
     ]) {
