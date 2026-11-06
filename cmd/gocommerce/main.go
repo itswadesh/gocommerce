@@ -1063,8 +1063,7 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		if err := sus.ChangePhone(ctx, args[1], args[2]); err != nil {
 			return err
 		}
-		fmt.Printf("%s now signs in with %s; their sessions were signed out
-", args[1], args[2])
+		fmt.Printf("%s now signs in with %s; their sessions were signed out\n", args[1], args[2])
 		return nil
 	}
 
