@@ -39,6 +39,7 @@
     import Confirm from "$lib/components/Confirm.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import OrderBusinessCard from "$lib/components/OrderBusinessCard.svelte";
     import OrderNoteCard from "$lib/components/OrderNoteCard.svelte";
     import OrderRefundList from "$lib/components/OrderRefundList.svelte";
@@ -370,11 +371,12 @@
 
     /**
      * Which card is being edited, or null. One at a time: these are short
-     * forms and two open at once would put two Save buttons on screen with
-     * nothing saying which is which.
+     * forms and the save bar has one Save, which must not have to say which of
+     * two it means.
      */
     let editingCard = $state(null);
     let form = $state({});
+    let noteDraft = $state("");
 
     const ADDRESS_FIELDS = ["line1", "line2", "city", "state", "postal_code", "country"];
 
@@ -441,6 +443,7 @@
 
     function startEditNotes() {
         editingCard = "notes";
+        noteDraft = orderNote;
     }
 
     function startEditPayment() {
@@ -477,12 +480,31 @@
         return ADDRESS_FIELDS.some((k) => (form.address[k] ?? "") !== (was[k] ?? ""));
     }
 
-    /**
-     * Saving whichever card is open. `noteText` comes from the note card, which
-     * owns its own draft; the other two read `form`.
-     */
-    function saveCard(noteText) {
+    const orderNote = $derived(typeof order?.metadata?.notes === "string" ? order.metadata.notes : "");
+
+    /* Compared as saveCard sends them, so it answers whether a save has work. */
+    const cardDirty = $derived.by(() => {
+        if (editingCard === "customer") {
+            return (
+                form.name.trim() !== (order.name ?? "") ||
+                form.email.trim() !== (order.email ?? "") ||
+                form.phone.trim() !== (order.phone ?? "") ||
+                addressChanged()
+            );
+        }
+        if (editingCard === "payment") {
+            return (
+                form.payment_provider !== (order.payment_provider ?? "") ||
+                form.payment_reference.trim() !== (order.payment_reference ?? "")
+            );
+        }
+        return editingCard === "notes" && noteDraft.trim() !== orderNote.trim();
+    });
+
+    /** Saving whichever card is open; the note's text is the note card's draft. */
+    function saveCard() {
         const card = editingCard;
+        const noteText = noteDraft;
 
         if (card === "customer") {
             const patch = {};
@@ -709,6 +731,25 @@
         draftLines = draftLines.filter((_, i) => i !== index);
     }
 
+    /* Lines by what saveEdit sends: price and title are not the operator's. */
+    const lineKeys = (lines) => JSON.stringify(lines.map((l) => [l.id || 0, l.variant_id, Number(l.quantity)]));
+    const linesDirty = $derived(!!draftLines && lineKeys(draftLines) !== lineKeys(order?.line_items ?? []));
+
+    /* One bar over the line editor and the open card, which are separate
+       writes: each keeps its call, and what failed stays open and dirty. */
+    async function saveEdits() {
+        if (linesDirty) {
+            if (!draftLines.length) toast.error("An order needs at least one line.");
+            else await saveEdit();
+        }
+        if (cardDirty) await saveCard();
+    }
+
+    function discardEdits() {
+        draftLines = null;
+        editingCard = null;
+    }
+
     const saveEdit = () =>
         act("Order updated", async () => {
             const result = await request("PUT", `/api/admin/orders/${order.id}/lines`, {
@@ -929,19 +970,10 @@
 
 <svelte:head><title>{titled(order ? `Order ${order.number}` : "Order")}</title></svelte:head>
 
-<!-- The same pair under every card that edits in place, so Save is always in
-     the same spot regardless of which card is open. -->
-{#snippet cardActions(formID, label = "Order updated")}
+<!-- Under every card that edits in place. Save is the bar's; this is how a card
+     opened by mistake closes, with nothing changed and so no bar to discard. -->
+{#snippet cardActions()}
     <div class="order-card-actions">
-        <button
-            type="submit"
-            form={formID}
-            class="btn sm"
-            class:loading={busy === label}
-            disabled={busy === label}
-        >
-            <span class="txt">Save</span>
-        </button>
         <button
             type="button"
             class="btn sm transparent secondary"
@@ -957,6 +989,13 @@
 {:else}
     <div class="page page-orders shopify-skin">
         <div class="page-content full-height">
+            <SaveBar
+                dirty={mayWrite && (linesDirty || cardDirty)}
+                saving={busy === "Order updated" || busy === "Note saved"}
+                onsave={saveEdits}
+                ondiscard={discardEdits}
+            />
+
             <header class="page-header">
                 <nav class="breadcrumbs">
                     <a href="{base}/dash/orders">Orders</a>
@@ -1443,15 +1482,6 @@
                                 <div class="inline-flex gap-sm m-t-sm">
                                     <button
                                         type="button"
-                                        class="btn sm"
-                                        class:loading={busy === "Order updated"}
-                                        disabled={busy === "Order updated" || !draftLines.length}
-                                        onclick={saveEdit}
-                                    >
-                                        <span class="txt">Save changes</span>
-                                    </button>
-                                    <button
-                                        type="button"
                                         class="btn sm transparent secondary"
                                         onclick={() => (draftLines = null)}
                                     >
@@ -1594,12 +1624,10 @@
                              before the reserved key existed are unconstrained, and
                              a module can still put an object there. -->
                         <OrderNoteCard
-                            note={typeof order.metadata?.notes === "string"
-                                ? order.metadata.notes
-                                : ""}
+                            note={orderNote}
+                            bind:draft={noteDraft}
                             editing={editingCard === "notes"}
                             onedit={mayWrite ? startEditNotes : undefined}
-                            onsave={saveCard}
                             {cardActions}
                         />
 
@@ -1789,7 +1817,7 @@
                                         moves none of it — it records how this order was actually
                                         settled.
                                     </div>
-                                    {@render cardActions("payment-form")}
+                                    {@render cardActions()}
                                 </form>
                             {:else}
                                 <div class="order-paid {paidClass}">
@@ -1985,7 +2013,7 @@
                                             fixes the record; it does not move the parcel.
                                         </div>
                                     {/if}
-                                    {@render cardActions("customer-form")}
+                                    {@render cardActions()}
                                 </form>
                             {:else}
                                 <div class="order-customer-name">{order.name || "—"}</div>

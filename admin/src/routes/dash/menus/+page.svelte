@@ -18,6 +18,7 @@
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -30,7 +31,9 @@
     let loading = $state(true);
     let selected = $state(null); // the menu being edited, with a working copy of its items
     let items = $state([]);
-    let dirty = $state(false);
+    // The rows as last read or saved, in the shape strip gives them.
+    let savedItems = $state("[]");
+    const dirty = $derived(!!selected && JSON.stringify(items) !== savedItems);
     let saving = $state(false);
 
     let createOpen = $state(false);
@@ -77,8 +80,7 @@
         try {
             const full = await request("GET", `/api/admin/x/navigation/menus/${menu.id}`);
             selected = full;
-            items = strip(full.items ?? []);
-            dirty = false;
+            adopt(full);
         } catch (err) {
             toast.error(err);
         }
@@ -95,6 +97,11 @@
         }));
     }
 
+    function adopt(menu) {
+        items = strip(menu.items ?? []);
+        savedItems = JSON.stringify(items);
+    }
+
     function blank() {
         return { title: "", kind: "url", target: "", children: [] };
     }
@@ -107,7 +114,6 @@
         return list;
     }
     function touch() {
-        dirty = true;
         items = [...items];
     }
     function add(path) {
@@ -153,8 +159,7 @@
                 body: { items },
             });
             selected = saved;
-            items = strip(saved.items ?? []);
-            dirty = false;
+            adopt(saved);
             menus = menus.map((m) => (m.id === saved.id ? { ...m, item_count: saved.item_count } : m));
             toast.success(`${saved.title} saved`);
         } catch (err) {
@@ -187,7 +192,6 @@
             toast.success(`${selected.title} deleted`);
             selected = null;
             items = [];
-            dirty = false;
             await load();
         } catch (err) {
             toast.error(err);
@@ -201,6 +205,13 @@
 
 <div class="page page-menus shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
+        <SaveBar
+            dirty={dirty && writable}
+            {saving}
+            onsave={save}
+            ondiscard={() => (items = JSON.parse(savedItems))}
+        />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Menus</div>
@@ -288,15 +299,6 @@
                                     <i class="ri-delete-bin-line" aria-hidden="true"></i>
                                     <span class="txt">Delete menu</span>
                                 </button>
-                                <button
-                                    type="button"
-                                    class="btn sm"
-                                    class:loading={saving}
-                                    disabled={saving || !dirty}
-                                    onclick={save}
-                                >
-                                    <span class="txt">{dirty ? "Save" : "Saved"}</span>
-                                </button>
                             {/if}
                         </div>
 
@@ -311,7 +313,6 @@
                                                     type="text"
                                                     placeholder="Title"
                                                     bind:value={row.title}
-                                                    oninput={() => (dirty = true)}
                                                     disabled={!writable}
                                                 />
                                             </div>
@@ -320,7 +321,6 @@
                                                     ariaLabel="Kind"
                                                     bind:value={row.kind}
                                                     options={KINDS}
-                                                    onchange={() => (dirty = true)}
                                                 />
                                             </div>
                                             <div class="field">
@@ -328,7 +328,6 @@
                                                     type="text"
                                                     placeholder={PLACEHOLDER[row.kind]}
                                                     bind:value={row.target}
-                                                    oninput={() => (dirty = true)}
                                                     disabled={!writable || row.kind === "home"}
                                                 />
                                             </div>

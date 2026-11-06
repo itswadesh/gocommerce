@@ -32,6 +32,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -109,7 +110,7 @@
     let tokenProblem = $state("");
 
     async function saveToken(e) {
-        e.preventDefault();
+        e?.preventDefault();
         if (savingToken) return;
         const value = tokenDraft.trim();
         if (!TOKEN.test(value)) {
@@ -168,6 +169,26 @@
         } finally {
             savingChat = "";
         }
+    }
+
+    /*
+     * The two boxes share one bar. Both start empty, and empty means "keep what
+     * is saved", so any text in one is a change. Each keeps its own call and
+     * says its own failure under its own box, which is what tells them apart.
+     */
+    const tokenDirty = $derived(!!tokenDraft.trim());
+    const chatDirty = $derived(!!chatDraft.trim());
+
+    async function saveBoxes() {
+        if (tokenDirty) await saveToken();
+        if (chatDirty) await useChat(chatDraft);
+    }
+
+    function discardBoxes() {
+        tokenDraft = "";
+        tokenProblem = "";
+        chatDraft = "";
+        chatProblem = "";
     }
 
     const chatTitle = $derived(chats?.find((c) => c.id === chatID)?.title ?? "");
@@ -386,6 +407,13 @@
 
 <div class="page page-notify-setup page-telegram shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
+        <SaveBar
+            dirty={seesBot && setsBot && (tokenDirty || chatDirty)}
+            saving={savingToken || !!savingChat}
+            onsave={saveBoxes}
+            ondiscard={discardBoxes}
+        />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Notifications</div>
@@ -449,9 +477,6 @@
                                     aria-describedby={tokenProblem ? "tg-token-problem" : undefined}
                                 />
                             </div>
-                            <button type="submit" class="btn" class:loading={savingToken} disabled={!setsBot || savingToken || !tokenDraft.trim()}>
-                                <span class="txt">Save token</span>
-                            </button>
                         </form>
                         {#if tokenProblem}
                             <p id="tg-token-problem" class="tg-result" role="alert" transition:rise>
@@ -545,9 +570,6 @@
                                     <label for="tg-chat">Chat ID</label>
                                     <input id="tg-chat" type="text" inputmode="numeric" autocomplete="off" placeholder="-1001234567890" disabled={!setsBot} bind:value={chatDraft} />
                                 </div>
-                                <button type="submit" class="btn secondary" class:loading={!!savingChat && savingChat === chatDraft.trim()} disabled={!setsBot || !chatDraft.trim() || !!savingChat}>
-                                    <span class="txt">Save chat</span>
-                                </button>
                             </form>
                         </details>
                     </section>

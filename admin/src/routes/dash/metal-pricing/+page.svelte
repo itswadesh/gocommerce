@@ -16,6 +16,7 @@
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
 
     const missing = $derived(modulesKnown() && !hasModule("metal-pricing"));
@@ -26,6 +27,9 @@
 
     let rates = $state([]);
     let typed = $state({});
+    // The boxes as loaded: a figure is formatted once, by the currency known then.
+    let savedTyped = $state({});
+    const changedRates = $derived(rates.filter((r) => typed[r.code] !== savedTyped[r.code]));
     let recipes = $state([]);
     let meta = $state({ page: 1, total_pages: 1, total: 0 });
     let loading = $state(true);
@@ -40,6 +44,7 @@
     async function loadRates() {
         rates = await metalPricing.rates();
         typed = Object.fromEntries(rates.map((r) => [r.code, fromMinor(r.rate_minor, currency)]));
+        savedTyped = { ...typed };
     }
 
     async function loadRecipes(page = meta.page) {
@@ -59,14 +64,31 @@
         }
     }
 
-    async function saveRate(rate) {
-        const value = typed[rate.code];
-        if (!isValidMoney(value)) return toast.error("Type the price of one gram, such as 6250");
-        await run(async () => {
-            const out = await metalPricing.setRate(rate.code, { name: rate.name, rate_minor: toMinor(value, currency) });
-            lastFailed = out.failed ?? [];
-            toast.success(repriceMessage(out));
-        });
+    /*
+     * Each changed rate on its own call, as each reprices its own designs. One
+     * refused keeps its figure in the box, and the bar up, for another try.
+     */
+    async function saveRates() {
+        if (busy) return;
+        const changed = changedRates;
+        if (changed.some((r) => !isValidMoney(typed[r.code]))) return toast.error("Type the price of one gram, such as 6250");
+        const refused = {};
+        const failed = [];
+        busy = true;
+        for (const rate of changed) {
+            try {
+                const out = await metalPricing.setRate(rate.code, { name: rate.name, rate_minor: toMinor(typed[rate.code], currency) });
+                failed.push(...(out.failed ?? []));
+                toast.success(changed.length > 1 ? `${rate.name}: ${repriceMessage(out)}` : repriceMessage(out));
+            } catch (err) {
+                refused[rate.code] = typed[rate.code];
+                toast.error(changed.length > 1 ? `${rate.name}: ${err?.message ?? err}` : err);
+            }
+        }
+        lastFailed = failed;
+        busy = false;
+        await Promise.all([loadRates(), loadRecipes()]).catch((err) => toast.error(err));
+        typed = { ...typed, ...refused };
     }
 
     /** Runs a change, shows its error, and always reads back what is now true. */
@@ -198,6 +220,13 @@
 
 <div class="page page-metal shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
+        <SaveBar
+            dirty={writable && changedRates.length > 0}
+            saving={busy}
+            onsave={saveRates}
+            ondiscard={() => (typed = { ...savedTyped })}
+        />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Products</div>
@@ -244,7 +273,6 @@
                                 <td class="min-width txt-hint" data-name="Last changed">{relativeTime(rate.updated_at)}</td>
                                 <td class="min-width" data-name="Actions">
                                     {#if writable}
-                                        <button type="button" class="btn sm" disabled={busy} onclick={() => saveRate(rate)}><span class="txt">Save rate</span></button>
                                         {#if !rate.designs}
                                             <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => removeMetal(rate)}><span class="txt">Remove</span></button>
                                         {/if}
