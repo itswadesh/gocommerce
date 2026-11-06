@@ -77,6 +77,9 @@ type Config struct {
 	// WhatsApp's customer-service window: one body variable, in each language a
 	// phone may choose. Empty, such a message is marked undelivered.
 	TemplateName string
+	// LoginTemplate is the Meta-approved authentication template that carries a
+	// panel sign-in code. Empty, sign-in codes go as they did.
+	LoginTemplate string
 	// B2B makes wholesale quotes. Nil, there are none.
 	B2B *b2b.Module
 	// Gateway reads PDFs and photos with a model. Nil, a person enters them.
@@ -393,6 +396,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 		}
 	}
 
+	if m.cfg.LoginTemplate != "" {
+		app.RegisterNotifier(gocommerce.ChannelSMS, loginCodes{m})
+	}
 	app.RegisterRight(gocommerce.RightSpec{
 		Right: rightRead, Label: "See supplier accounts",
 		Scope:   "Bills forwarded on WhatsApp, suppliers, what is owed to them and what was paid",

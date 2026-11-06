@@ -643,6 +643,7 @@ environment:
 				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
 				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
 				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
+				LoginTemplate:    os.Getenv("RETAIL_ASSISTANT_LOGIN_TEMPLATE"),
 				B2B:              trade,
 				Gateway:          gateway,
 				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
