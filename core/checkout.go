@@ -671,7 +671,7 @@ func (s *Orders) initiatePayment(ctx context.Context, provider PaymentProvider, 
 }
 
 // replayedPayment answers a checkout retried after its first answer went out,
-// which is a shopper paying again after closing the gateway's window (D231).
+// which is a shopper paying again after closing the gateway's window (D232).
 func (s *Orders) replayedPayment(ctx context.Context, provider PaymentProvider, result *CheckoutResult, in CheckoutInput, scope, key string) (*CheckoutResult, error) {
 	o := result.Order
 	unpaid := o.PaymentStatus == PaymentPending || o.PaymentStatus == PaymentFailed
