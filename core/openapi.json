@@ -9672,9 +9672,7 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "email"
-                ],
+                "required": [],
                 "properties": {
                   "email": {
                     "type": "string",
@@ -9689,6 +9687,7 @@
                     ],
                     "default": "staff"
                   },
+                  "phone": { "type": "string", "description": "Invite by number instead of email: no link and no email, the person is asked when they sign in. Takes the place of email." },
                   "send_email": {
                     "type": "boolean",
                     "default": true,
@@ -16380,6 +16379,62 @@
         }
       }
     },
+    "/api/stores/invitations": {
+      "get": {
+        "tags": ["stores"],
+        "summary": "List the stores asking the caller to join",
+        "security": [{ "adminToken": [] }],
+        "description": "Stores that invited the caller's proved phone number and are waiting on an answer.",
+        "responses": {
+          "200": {
+            "description": "The invitations waiting on the caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/PhoneInvitation" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/stores/invitations/answer": {
+      "post": {
+        "tags": ["stores"],
+        "summary": "Accept or decline a store's invitation",
+        "security": [{ "adminToken": [] }],
+        "description": "Accepting joins the store in the invited role. Declining keeps it on the store's list as withdrawn.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["store_id", "id", "accept"],
+                "properties": {
+                  "store_id": { "type": "string" },
+                  "id": { "type": "integer", "format": "int64" },
+                  "accept": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Answered." },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "description": "The invitation is no longer open, or is for another number." },
+          "409": { "description": "The invitation was already used, withdrawn or has expired." }
+        }
+      }
+    },
     "/api/stores/my": {
       "get": {
         "tags": [
@@ -21507,6 +21562,17 @@
           }
         }
       },
+      "PhoneInvitation": {
+        "type": "object",
+        "description": "A store asking the signed-in person to join, by their proved phone number.",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "store_id": { "type": "string" },
+          "store_name": { "type": "string" },
+          "role": { "type": "string" },
+          "invited_by": { "type": "string" }
+        }
+      },
       "Invitation": {
         "type": "object",
         "description": "An invitation to join the team. The alternative it replaces is an owner inventing somebody else's password and then telling it to them, which means two people know it from the moment it exists.",
@@ -21518,6 +21584,7 @@
           "email": {
             "type": "string"
           },
+          "phone": { "type": "string", "description": "Who a phone invitation is for, in place of email. It has no link." },
           "role": {
             "type": "string",
             "enum": [

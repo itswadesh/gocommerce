@@ -333,6 +333,8 @@ export const auth = {
     // way any earlier link for the address stops working.
     invite: (email, role, sendEmail = true) =>
         api.post("/api/admin/invitations", { email, role, send_email: sendEmail }),
+    // A number instead: no link and no email, they are asked when they sign in.
+    invitePhone: (phone, role) => api.post("/api/admin/invitations", { phone, role }),
     revokeInvitation: (id) => api.delete(`/api/admin/invitations/${id}`),
 
     // Ending sessions. Somebody else's is team management; your own is the
@@ -372,6 +374,13 @@ export const stores = {
     /** mine lists the caller's stores with their role in each, oldest first. */
     async mine() {
         return (await api.get("/api/stores/my")) ?? [];
+    },
+    /** invitations are the stores asking this person to join, by their phone. */
+    async invitations() {
+        return (await api.get("/api/stores/invitations")) ?? [];
+    },
+    async answerInvitation(storeID, id, accept) {
+        return await api.post("/api/stores/invitations/answer", { store_id: storeID, id, accept });
     },
     /** suggest is a name for a new store, with an address nobody has. */
     async suggest() {

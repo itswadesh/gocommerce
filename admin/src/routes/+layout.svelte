@@ -36,6 +36,7 @@
     import AuthShell from "$lib/components/AuthShell.svelte";
     import CommandPalette from "$lib/components/CommandPalette.svelte";
     import ShortcutHelp from "$lib/components/ShortcutHelp.svelte";
+    import TeamInvites from "$lib/components/TeamInvites.svelte";
 
     let { children } = $props();
 
@@ -1042,5 +1043,9 @@
         {/snippet}
     </svelte:boundary>
 </main>
+
+{#if ready && authenticated && !isPublic}
+    <TeamInvites />
+{/if}
 
 <Toasts />

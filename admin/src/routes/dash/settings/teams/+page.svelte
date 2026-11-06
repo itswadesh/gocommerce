@@ -24,6 +24,7 @@
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { looksLikePhone, toIdentity } from "$lib/identity.js";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -52,6 +53,9 @@
      */
     let invite = $state({ method: "link", email: "", role: "staff", password: "" });
     let inviting = $state(false);
+    /* A number has no link and no password to choose: they are asked when they
+       sign in with it (D205). */
+    const byPhone = $derived(looksLikePhone(invite.email));
     /** The invitation a row action is working on, so its own row shows it. */
     let busyInvite = $state("");
     // The invitation just created, while the drawer that reports it is open:
@@ -261,24 +265,29 @@
         errors = {};
         const email = invite.email.trim().toLowerCase();
         if (!email) {
-            errors.invite = "An email is required.";
+            errors.invite = "An email or phone number is required.";
             return;
         }
-        if (superusers.some((su) => su.email.toLowerCase() === email)) {
-            errors.invite = `${email} is already on the team.`;
+        const phone = byPhone ? toIdentity(invite.email) : "";
+        if (superusers.some((su) => (phone ? su.phone === phone : su.email?.toLowerCase() === email))) {
+            errors.invite = `${phone || email} is already on the team.`;
             return;
         }
         if (!roleOptions.some((r) => r.value === invite.role)) {
             errors.invite = "Choose a role.";
             return;
         }
-        if (invite.method === "password" && invite.password.length < 8) {
+        if (!byPhone && invite.method === "password" && invite.password.length < 8) {
             errors.password = "A password of at least 8 characters is required.";
             return;
         }
         inviting = true;
         try {
-            if (invite.method === "password") {
+            if (byPhone) {
+                await auth.invitePhone(phone, invite.role);
+                toast.success(`${phone} will be asked to join when they sign in`);
+                closeInvite({ deliberate: true });
+            } else if (invite.method === "password") {
                 await auth.create(email, invite.password, invite.role);
                 toast.success(`${email} added to the team`);
                 closeInvite({ deliberate: true });
@@ -385,7 +394,7 @@
     async function revokeInvite(inv) {
         try {
             await auth.revokeInvitation(inv.id);
-            toast.success(`Invitation to ${inv.email} revoked`);
+            toast.success(`Invitation to ${inv.email || inv.phone} revoked`);
             await load();
         } catch (err) {
             toast.error(err);
@@ -822,14 +831,14 @@
                                                         />
                                                         <label
                                                             for="select-invite-{inv.id}"
-                                                            aria-label="Select the invitation to {inv.email}"
+                                                            aria-label="Select the invitation to {inv.email || inv.phone}"
                                                         ></label>
                                                     </div>
                                                 {/if}
                                             </td>
                                         {/if}
                                         <td class="col-field-name-id" data-name="Email">
-                                            <span class="txt">{inv.email}</span>
+                                            <span class="txt">{inv.email || inv.phone}</span>
                                             {#if inv.invited_by}
                                                 <div class="txt-hint txt-sm">invited by {inv.invited_by}</div>
                                             {/if}
@@ -857,6 +866,7 @@
                                         <td class="col-meta min-width row-actions" data-name="Actions">
                                             {#if writable && open}
                                                 <div class="inline-flex gap-5">
+                                                    {#if inv.email}
                                                     <button
                                                         type="button"
                                                         class="btn circle sm transparent secondary"
@@ -878,11 +888,12 @@
                                                     >
                                                         <i class="ri-mail-send-line" aria-hidden="true"></i>
                                                     </button>
+                                                    {/if}
                                                     <button
                                                         type="button"
                                                         class="btn circle sm transparent secondary"
                                                         disabled={!!busyInvite}
-                                                        aria-label="Revoke the invitation to {inv.email}"
+                                                        aria-label="Revoke the invitation to {inv.email || inv.phone}"
                                                         title="Revoke"
                                                         onclick={() => revokeInvite(inv)}
                                                     >
@@ -1089,30 +1100,39 @@
         </div>
     {:else}
         <form id="invite-form" onsubmit={submitInvite}>
-            <div class="field">
-                <label for="invite-method">Invite method</label>
-                <Select id="invite-method" bind:value={invite.method} options={INVITE_METHODS} />
-            </div>
-            <div class="field-help">
-                {invite.method === "link"
-                    ? "They get an email with a link and set their own password."
-                    : "You choose their first password and tell it to them."}
-            </div>
+            {#if !byPhone}
+                <div class="field">
+                    <label for="invite-method">Invite method</label>
+                    <Select id="invite-method" bind:value={invite.method} options={INVITE_METHODS} />
+                </div>
+                <div class="field-help">
+                    {invite.method === "link"
+                        ? "They get an email with a link and set their own password."
+                        : "You choose their first password and tell it to them."}
+                </div>
+            {/if}
 
             <div class="field required m-t-sm" class:error={!!errors.invite}>
-                <label for="invite-email">Email</label>
+                <label for="invite-email">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="invite-email"
-                    type="email"
+                    type="text"
+                    autocapitalize="off"
                     autocomplete="off"
                     autofocus
-                    placeholder="name@example.com"
+                    placeholder="name@example.com or 98765 43210"
                     bind:value={invite.email}
                     oninput={() => (errors = {})}
                 />
             </div>
             {#if errors.invite}<div class="field-help error">{errors.invite}</div>{/if}
+            {#if byPhone}
+                <div class="field-help">
+                    No link to send. When they sign in with this number, they are asked to join
+                    this store.
+                </div>
+            {/if}
 
             <div class="field required m-t-sm">
                 <label for="invite-role">Role</label>
@@ -1120,7 +1140,7 @@
             </div>
             <div class="field-help">What they may do. It can be changed later from the list.</div>
 
-            {#if invite.method === "password"}
+            {#if invite.method === "password" && !byPhone}
                 <div class="field required m-t-sm" class:error={!!errors.password}>
                     <label for="invite-password">Password</label>
                     <input
@@ -1167,7 +1187,7 @@
                 class:loading={inviting}
                 disabled={inviting}
             >
-                <span class="txt">{invite.method === "link" ? "Send invitation" : "Add member"}</span>
+                <span class="txt">{byPhone ? "Add this number" : invite.method === "link" ? "Send invitation" : "Add member"}</span>
             </button>
         {/if}
     {/snippet}
