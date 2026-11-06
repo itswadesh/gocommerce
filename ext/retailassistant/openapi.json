@@ -928,6 +928,37 @@
         }
       }
     },
+    "/api/admin/x/retailassistant/invoices/{id}/lines": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "A bill's lines and whether their goods were booked in",
+        "description": "variant_id suggests the variant whose SKU is exactly the line's. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lines, oldest first"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such bill in this store"
+          }
+        }
+      }
+    },
     "/api/admin/x/retailassistant/invoices/{id}/receive": {
       "post": {
         "tags": [

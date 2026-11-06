@@ -38,6 +38,15 @@ export function moneyNote(row, format) {
     return notes.join(" · ");
 }
 
+/**
+ * What to prefill for a line's quantity. Stock moves in whole units, so "2.5 kg"
+ * is left for the person who can see the box rather than rounded for them.
+ */
+export function wholeQuantity(printed) {
+    const m = /^\s*(\d+)(?:\.0+)?\s*$/.exec(printed ?? "");
+    return m && Number(m[1]) > 0 ? m[1] : "";
+}
+
 /** A name for one press of a money button, so a retry records one thing. */
 export function newKey() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();

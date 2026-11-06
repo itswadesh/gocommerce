@@ -751,6 +751,16 @@ func TestABillMovesNoStockAndAReceiptMovesItOnce(t *testing.T) {
 	if rec.Code < 400 {
 		t.Fatalf("a missing variant = %d", rec.Code)
 	}
+	var lines []PurchaseLine
+	h.admin(http.MethodGet, path(fmt.Sprintf("/invoices/%d/lines", invoice), ""), nil, &lines, http.StatusOK)
+	if len(lines) != 1 || lines[0].Receipt == nil || lines[0].Receipt.Quantity != 10 || lines[0].Receipt.Status != "posted" {
+		t.Fatalf("lines after a receipt = %+v", lines)
+	}
+	h.admin(http.MethodGet, path(fmt.Sprintf("/invoices/%d/lines", fresh), ""), nil, &lines, http.StatusOK)
+	if len(lines) != 1 || lines[0].Receipt != nil {
+		t.Fatalf("a refused receipt still shows: %+v", lines)
+	}
+	h.admin(http.MethodGet, path("/invoices/999999/lines", ""), nil, nil, http.StatusNotFound)
 	if n := h.count("", "retailassistant_stock_receipts"); n != 1 {
 		t.Fatalf("%d receipts, want the one that moved stock", n)
 	}
