@@ -148,6 +148,10 @@ type Variant struct {
 	// answering different questions.
 	AtLocation     *VariantStock `json:"at_location,omitempty"`
 	TrackInventory bool          `json:"track_inventory"`
+	// UpdatedAt is for code that keeps a copy of a variant, such as a search
+	// index. A price edit moves this and not the product's own updated_at, which
+	// sitemaps and sorted listings read as the product's page having changed.
+	UpdatedAt time.Time `json:"-"`
 	// ContinueSelling takes the order when the count has run out, instead of
 	// refusing it. Off by default: overselling is a promise the store has to
 	// keep by hand, so it is opted into per variant rather than inherited.
@@ -1269,6 +1273,15 @@ func nullInt64Value(v sql.NullInt64) any {
 	return v.Int64
 }
 
+// touchProduct marks a product changed when it loses a variant: a variant that
+// is gone has no updated_at left to say so, and the price range it held has
+// moved. Callers run it before writing the variant, so these paths lock product
+// then variant, as an import does.
+func touchProduct(ctx context.Context, tx *sql.Tx, productID int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE products SET updated_at = now() WHERE id = $1`, productID)
+	return err
+}
+
 // DeleteVariant removes a variant. The last variant of a product cannot be
 // removed: a product with nothing sellable is not a product, and every
 // downstream reference assumes one exists.
@@ -1289,6 +1302,9 @@ func (c *Catalog) DeleteVariant(ctx context.Context, id int64) error {
 		}
 		if count <= 1 {
 			return Conflictf("a product must keep at least one variant")
+		}
+		if err := touchProduct(ctx, tx, productID); err != nil {
+			return err
 		}
 		var sku string
 		if err := tx.QueryRowContext(ctx,
@@ -1726,7 +1742,7 @@ const variantColumns = `v.id, v.product_id, v.sku, coalesce(v.barcode, ''), v.pr
 	v.track_inventory, v.continue_selling, v.active, v.origin_country, v.hs_code,
 	v.weight_grams, v.weight_unit,
 	v.length_mm, v.width_mm, v.height_mm, v.dimension_unit,
-	v.position, v.option_key, v.metadata`
+	v.position, v.option_key, v.metadata, v.updated_at`
 
 func (c *Catalog) queryVariants(ctx context.Context, where string, args ...any) ([]*Variant, error) {
 	return c.selectVariants(ctx, where, "v.position, v.id", "", args...)
@@ -1764,7 +1780,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 			&v.TrackInventory, &v.ContinueSelling, &v.Active, &v.OriginCountry, &v.HSCode,
 			&weight, &v.WeightUnit,
 			&length, &width, &height, &v.DimensionUnit,
-			&v.Position, &v.optionKey, &meta); err != nil {
+			&v.Position, &v.optionKey, &meta, &v.UpdatedAt); err != nil {
 			return nil, err
 		}
 		v.Price.Currency = currency
