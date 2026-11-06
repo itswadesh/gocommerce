@@ -49,7 +49,7 @@ func traefikRoutes(t *testing.T, app *App) (routers map[string]traefikRouter, se
 	return body.HTTP.Routers, body.HTTP.Services
 }
 
-func TestAProxyPollIsLoggedOnlyWhenItFails(t *testing.T) {
+func TestAProxyPollWritesNoRequestLine(t *testing.T) {
 	app := newTestApp(t)
 	app.cfg.TraefikToken, app.cfg.TraefikUpstream = testTraefikToken, "http://gocommerce:8080"
 	var logged bytes.Buffer
@@ -65,8 +65,8 @@ func TestAProxyPollIsLoggedOnlyWhenItFails(t *testing.T) {
 	if rec := do(t, app, http.MethodGet, TraefikConfigPath); rec.Code < http.StatusBadRequest {
 		t.Fatalf("poll without the token = %d, want it refused", rec.Code)
 	}
-	if !strings.Contains(logged.String(), "msg=request") {
-		t.Fatal("a refused poll was not logged")
+	if strings.Contains(logged.String(), "msg=request") {
+		t.Fatalf("a refused poll was logged: %s", logged.String())
 	}
 
 	// Every other route still gets its line.
