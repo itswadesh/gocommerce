@@ -46,6 +46,7 @@
     let acceptMismatch = $state(false);
     let phone = $state("");
     let issued = $state(null);
+    let confirmingRemove = $state(false);
 
     $effect(() => {
         if (readable && hasModule("retailassistant")) refresh();
@@ -91,6 +92,7 @@
     async function open(row) {
         await run(async () => {
             doc = await retailAssistant.document(row.id);
+            confirmingRemove = false;
             fill(doc);
         });
     }
@@ -167,6 +169,15 @@
         });
     }
 
+    async function removeFile() {
+        await run(async () => {
+            await retailAssistant.removeFile(doc.id);
+            toast.success("The file was deleted. The supplier's account did not change.");
+            confirmingRemove = false;
+            doc = await retailAssistant.document(doc.id);
+        });
+    }
+
     async function retry(row) {
         await run(async () => {
             await retailAssistant.retry(row.id);
@@ -216,7 +227,7 @@
         {:else if !readable}
             <NoAccess right="retailassistant.read" what="the store's supplier bills" />
         {:else}
-            <FeatureSwitch pluginKey="retailassistant" onchange={refresh} settings={false} />
+            <FeatureSwitch pluginKey="retailassistant" onchange={refresh} />
 
             {#if status && !status.enabled}
                 {#if !loading}
@@ -229,6 +240,13 @@
                     <div class="alert alert-warning tw:my-4" role="status">
                         <p>The install's WhatsApp number is not set up yet, so nothing can arrive here. Its operator sets the RETAIL_ASSISTANT_ settings.</p>
                     </div>
+                {/if}
+
+                {#if status.files_sealed || status.files_scanned}
+                    <p class="tw:mt-4 tw:text-sm tw:text-muted-foreground">
+                        {#if status.files_scanned}New files are checked by a virus scanner before they are kept.{/if}
+                        {#if status.files_sealed}New files are encrypted in the database.{/if}
+                    </p>
                 {/if}
 
                 <div class="tw:my-4 tw:flex tw:flex-wrap tw:gap-2" role="group" aria-label="Show documents">
@@ -349,10 +367,22 @@
         <div class="tw:mb-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <span class="label {statusOf(doc.status).cls}">{statusOf(doc.status).label}</span>
             <span class="txt-hint txt-sm">From +{doc.sender}</span>
-            <button type="button" class="btn sm transparent secondary" onclick={() => downloadBinary(`/api/admin/x/retailassistant/documents/${doc.id}/file`, safeFilename(doc.filename || `document-${doc.id}`))}>
-                <i class="ri-download-line" aria-hidden="true"></i>
-                <span class="txt">Original file</span>
-            </button>
+            {#if doc.file_removed_at}
+                <span class="txt-hint txt-sm">Original file deleted on {formatDate(doc.file_removed_at)}</span>
+            {:else}
+                <button type="button" class="btn sm transparent secondary" onclick={() => downloadBinary(`/api/admin/x/retailassistant/documents/${doc.id}/file`, safeFilename(doc.filename || `document-${doc.id}`))}>
+                    <i class="ri-download-line" aria-hidden="true"></i>
+                    <span class="txt">Original file</span>
+                </button>
+                {#if writable && ["posted", "rejected", "failed"].includes(doc.status)}
+                    {#if confirmingRemove}
+                        <button type="button" class="btn sm danger" class:loading={busy} disabled={busy} onclick={removeFile} in:rise><span class="txt">Yes, delete the file</span></button>
+                        <button type="button" class="btn sm transparent secondary" onclick={() => (confirmingRemove = false)}><span class="txt">Keep it</span></button>
+                    {:else}
+                        <button type="button" class="btn sm transparent secondary" onclick={() => (confirmingRemove = true)}><span class="txt">Delete file</span></button>
+                    {/if}
+                {/if}
+            {/if}
         </div>
 
         {#if exceptions.length}

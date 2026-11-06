@@ -53,7 +53,15 @@ type SupplierBalance struct {
 }
 
 func (m *Module) handleSuppliers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	out, err := m.supplierBalances(r.Context())
+	if err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list suppliers"))
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, out)
+}
+
+func (m *Module) supplierBalances(ctx context.Context) ([]SupplierBalance, error) {
 	rows, err := m.db.QueryContext(ctx, `
 		WITH invoiced AS (
 		    SELECT supplier_id, currency, sum(total_minor) AS n FROM retailassistant_purchase_invoices
@@ -84,8 +92,7 @@ func (m *Module) handleSuppliers(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN unverified u ON u.supplier_id = s.id AND u.currency = x.currency
 		ORDER BY s.name, 4`, m.app.Currency(ctx))
 	if err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list suppliers"))
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	out := []SupplierBalance{}
@@ -94,19 +101,14 @@ func (m *Module) handleSuppliers(w http.ResponseWriter, r *http.Request) {
 		var cur string
 		var inv, cred, alloc, ver, unver int64
 		if err := rows.Scan(&b.ID, &b.Name, &b.GSTIN, &cur, &inv, &cred, &alloc, &ver, &unver); err != nil {
-			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list suppliers"))
-			return
+			return nil, err
 		}
 		mk := func(n int64) gocommerce.Money { return gocommerce.Money{AmountMinor: n, Currency: cur} }
 		b.Invoiced, b.Credits, b.Paid = mk(inv), mk(cred), mk(alloc)
 		b.Outstanding, b.Advance, b.Unverified = mk(inv-cred-alloc), mk(ver-alloc), mk(unver)
 		out = append(out, b)
 	}
-	if err := rows.Err(); err != nil {
-		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list suppliers"))
-		return
-	}
-	gocommerce.Respond(w, http.StatusOK, out)
+	return out, rows.Err()
 }
 
 // Payable is one posted bill and what remains of it.

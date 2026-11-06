@@ -93,12 +93,19 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	t.Helper()
+	return setupWith(t, func(*Config) {})
+}
+
+func setupWith(t *testing.T, change func(*Config)) *harness {
+	t.Helper()
 	meta := &fakeMeta{files: map[string][]byte{}}
 	meta.srv = gctest.StubHTTP(t, meta.handler)
-	mod := New(Config{
+	cfg := Config{
 		AppSecret: testSecret, VerifyToken: "verify-me", AccessToken: "test-access-token", PhoneNumberID: phoneID,
 		BaseURL: meta.srv.URL, Client: meta.srv.Client(),
-	})
+	}
+	change(&cfg)
+	mod := New(cfg)
 	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mod)
 	st, err := app.Stores().Create(context.Background(), "Store B", "store-b")
 	if err != nil {
@@ -134,6 +141,13 @@ func (h *harness) enable(store string) {
 	}
 	if _, err := h.app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
 		h.t.Fatalf("switch on: %v", err)
+	}
+}
+
+func (h *harness) setRetention(days int) {
+	h.t.Helper()
+	if _, err := h.app.Plugins().Update(h.ctxOf(""), pluginKey, gocommerce.PluginPatch{Settings: map[string]any{"retention_days": days}}); err != nil {
+		h.t.Fatalf("set retention: %v", err)
 	}
 }
 

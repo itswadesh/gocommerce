@@ -5,6 +5,7 @@
      * The screen records and allocates; it never adds anything up itself.
      */
     import { api, can, retailAssistant } from "$lib/api.js";
+    import { downloadBinary } from "$lib/download.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import { formatMoney, fromMinor, isValidMoney, toMinor } from "$lib/format.js";
@@ -153,6 +154,16 @@
             await loadAccount(open);
         });
 
+    const EXPORTS = [
+        { kind: "suppliers", label: "Balances" },
+        { kind: "bills", label: "Bills" },
+        { kind: "payments", label: "Payments" },
+        { kind: "credits", label: "Credit notes" },
+    ];
+
+    const download = (kind) =>
+        run(() => downloadBinary(`/api/admin/x/retailassistant/export/${kind}`, `supplier-${kind}-${today()}.csv`));
+
     const receivable = $derived(writable && can("inventory.write"));
     let receiving = $state(null);
 
@@ -225,6 +236,15 @@
             <p class="tw:mb-4 tw:text-sm tw:text-muted-foreground">
                 What you owe is posted bills, less credit notes, less verified payments allocated to a bill. Stock is separate: a bill does not put goods on the shelf.
             </p>
+            <div class="tw:mb-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2" role="group" aria-label="Download as CSV">
+                <span class="tw:text-sm tw:text-muted-foreground">Download as CSV:</span>
+                {#each EXPORTS as x (x.kind)}
+                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => download(x.kind)}>
+                        <i class="ri-download-line" aria-hidden="true"></i>
+                        <span class="txt">{x.label}</span>
+                    </button>
+                {/each}
+            </div>
             <div class="page-table-wrapper retail-table tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead>

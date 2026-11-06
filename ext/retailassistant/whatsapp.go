@@ -474,6 +474,26 @@ func (m *Module) start(ctx context.Context) error {
 			}
 		}
 	}()
+	go func() {
+		t := time.NewTicker(retentionEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				if !m.enabled(ctx) {
+					return nil
+				}
+				return m.RetentionPass(ctx)
+			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				m.log.Error("retail assistant retention pass failed", "error", err)
+			}
+		}
+	}()
 	return nil
 }
 
@@ -524,6 +544,14 @@ func (m *Module) documentPass(ctx context.Context) error {
 
 	for _, j := range jobs {
 		data, err := m.download(ctx, j.media)
+		if err == nil {
+			err = m.scanFile(ctx, data)
+		}
+		var stored []byte
+		var sealed bool
+		if err == nil {
+			stored, sealed, err = m.sealFile(ctx, j.id, data)
+		}
 		if err != nil {
 			var perm errPermanent
 			permanent := errors.As(err, &perm)
@@ -536,7 +564,7 @@ func (m *Module) documentPass(ctx context.Context) error {
 			}
 			continue
 		}
-		if err := m.keepDocument(ctx, j.id, j.sender, j.filename, data); err != nil {
+		if err := m.keepDocument(ctx, j.id, j.sender, j.filename, data, stored, sealed); err != nil {
 			return err
 		}
 	}
@@ -549,7 +577,7 @@ func (m *Module) documentPass(ctx context.Context) error {
 // other row, because the engine's media store serves public addresses and a
 // supplier's bill must not have one. Move to object storage when volume hurts
 // the database.
-func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename string, data []byte) error {
+func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename string, data, stored []byte, sealed bool) error {
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
 	mime, draft := Extract(data, filename, m.app.Currency(ctx))
@@ -569,9 +597,9 @@ func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename st
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE retailassistant_documents
-			SET status = 'needs_review', content = $2, sha256 = $3, detected_mime = $4,
-			    extraction = $5, draft = $5, last_error = ''
-			WHERE id = $1`, id, data, hash, mime, raw); err != nil {
+			SET status = 'needs_review', content = $2, content_sealed = $6, content_removed_at = NULL,
+			    sha256 = $3, detected_mime = $4, extraction = $5, draft = $5, last_error = ''
+			WHERE id = $1`, id, stored, hash, mime, raw, sealed); err != nil {
 			return err
 		}
 		name := filename

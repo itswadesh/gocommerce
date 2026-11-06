@@ -636,6 +636,8 @@ environment:
 				PhoneNumberID:    os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
 				DisplayNumber:    os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
 				QuietToStrangers: envTrue("RETAIL_ASSISTANT_QUIET_TO_STRANGERS"),
+				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
+				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
 				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))
 		}

@@ -928,6 +928,83 @@
         }
       }
     },
+    "/api/admin/x/retailassistant/documents/{id}/remove-file": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Delete a reviewed document's original file",
+        "description": "The ledger is untouched. Refused while the document still waits for review. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file is gone"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such document in this store"
+          },
+          "409": {
+            "description": "The document still waits for review"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/export/{kind}": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Download suppliers, bills, payments or credits as CSV",
+        "description": "Amounts are decimal, beside their currency. Text that a spreadsheet would run as a formula starts with an apostrophe. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "suppliers",
+                "bills",
+                "payments",
+                "credits"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV file",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such export"
+          }
+        }
+      }
+    },
     "/api/admin/x/retailassistant/invoices/{id}/lines": {
       "get": {
         "tags": [

@@ -64,6 +64,11 @@ type Config struct {
 	// them; the address is the server owner's, so an ordinary client is right.
 	BaseURL string
 	Client  *http.Client
+	// FileKey is 32 bytes of base64 that seal documents in the database. Empty,
+	// they are kept in clear behind the store policy.
+	FileKey string
+	// ClamdAddr is a clamd's host:port. Empty, files are not scanned.
+	ClamdAddr string
 	// Poll is how often the worker looks for work; 0 is five seconds.
 	Poll time.Duration
 }
@@ -76,6 +81,9 @@ type Module struct {
 	log    *slog.Logger
 	client *http.Client
 	wake   chan struct{}
+
+	fileKey    []byte
+	fileKeyBad bool
 }
 
 // New constructs the module.
@@ -290,6 +298,10 @@ CREATE INDEX retailassistant_replies_claim ON retailassistant_replies (store_id,
 			"retailassistant_phone_links.code_hash", "retailassistant_documents.content",
 			"retailassistant_supplier_payments.idempotency_key", "retailassistant_supplier_credits.idempotency_key",
 			"retailassistant_payment_allocations.idempotency_key", "retailassistant_replies.dedupe_key"),
+		{ID: "0005_file_handling", SQL: `
+ALTER TABLE retailassistant_documents
+    ADD COLUMN content_sealed boolean NOT NULL DEFAULT false,
+    ADD COLUMN content_removed_at timestamptz;`},
 	}
 }
 
@@ -307,6 +319,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	if m.cfg.Poll <= 0 {
 		m.cfg.Poll = 5 * time.Second
 	}
+	m.loadFileKey()
 
 	app.RegisterRight(gocommerce.RightSpec{
 		Right: rightRead, Label: "See supplier accounts",
@@ -327,6 +340,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Key: pluginKey, Title: "Retail assistant", Icon: "ri-whatsapp-line", Category: "operations", DefaultEnabled: false,
 		Home:        "/dash/retail-assistant",
 		Description: "Forward supplier bills and payment proofs on WhatsApp, review what was read from them, and see what you owe each supplier.",
+		Fields: []gocommerce.PluginField{
+			{Key: "retention_days", Label: "Delete files after this many days", Kind: "number",
+				Help: "Counted from when a document was reviewed. Your supplier accounts stay as they are; only the original files go. Leave empty to keep files. Check with your accountant how long you must keep bills before setting this."},
+		},
 	})
 
 	// Meta's callback names no store and cannot be made to, so the address
@@ -356,6 +373,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/documents/{id}/approve", m.handleApprove)
 	write("POST "+adminBase+"/documents/{id}/reject", m.handleReject)
 	write("POST "+adminBase+"/documents/{id}/retry", m.handleRetry)
+	write("POST "+adminBase+"/documents/{id}/remove-file", m.handleRemoveFile)
+	read("GET "+adminBase+"/export/{kind}", m.handleExport)
 
 	read("GET "+adminBase+"/suppliers", m.handleSuppliers)
 	read("GET "+adminBase+"/payables", m.handlePayables)
@@ -403,6 +422,8 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"enabled":        m.enabled(r.Context()),
 		"channel_ready":  m.channelReady(),
 		"display_number": m.cfg.DisplayNumber,
+		"files_sealed":   m.fileKey != nil,
+		"files_scanned":  m.cfg.ClamdAddr != "",
 	})
 }
 
