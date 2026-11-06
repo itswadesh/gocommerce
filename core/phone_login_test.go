@@ -1125,3 +1125,17 @@ func TestSupportChangesALostPhone(t *testing.T) {
 		t.Error("took a number from the person who has it")
 	}
 }
+
+// Many numbers from many addresses cannot run up the install's SMS bill.
+func TestTheInstallStopsTextingCodesAtItsDailyLimit(t *testing.T) {
+	app, _ := phoneApp(t)
+	app.cfg.SMSCodesPerDay = 3
+	number := func(i int) string { return fmt.Sprintf("+91987651%04d", i) }
+	client := func(i int) string { return fmt.Sprintf("198.51.100.%d", i+1) }
+	if got := parallelAsks(t, app, number, 8, client); got != 3 {
+		t.Fatalf("%d codes stored, want 3", got)
+	}
+	if rec := askPhoneCode(t, app, "+919876599999", fromIP("198.51.100.200")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("past the limit = %d: %s", rec.Code, rec.Body)
+	}
+}

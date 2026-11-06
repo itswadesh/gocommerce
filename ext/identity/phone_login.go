@@ -180,6 +180,24 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone, site string) error {
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "identity-login:"+phone); err != nil {
 			return err
 		}
+		// The store's whole day of codes, so many numbers cannot run up its SMS
+		// bill. The rows are the store's own, behind the row policy. The lock
+		// has no store in its name, so stores queue together for this moment.
+		// ponytail: one cap per store, so many stores can still add up; a cap
+		// across the install if stores ever open faster than a person checks.
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('identity-login-store'))`); err != nil {
+			return err
+		}
+		var storeToday int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT count(*) FROM identity_login_codes WHERE created_at > now() - interval '1 day'`).Scan(&storeToday); err != nil {
+			return err
+		}
+		if limit := m.app.Config().SMSCodesPerDay; storeToday >= limit {
+			m.app.Log().Error("phone sign-in refused: the store reached its daily limit of texted codes", "limit", limit)
+			return &gocommerce.APIError{Status: http.StatusTooManyRequests, Code: "too_many_requests",
+				Message: "This shop has sent all its sign-in codes for today. Try again tomorrow, or sign in with your email."}
+		}
 		var recent, today int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FILTER (WHERE created_at > now() - $2::interval),
@@ -198,7 +216,7 @@ func (m *Module) sendPhoneCode(ctx context.Context, phone, site string) error {
 		}
 		// Only the latest code works.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE identity_login_codes SET expires_at = now() WHERE phone = $1 AND expires_at > now()`, phone); err != nil {
+			`UPDATE identity_login_codes SET expires_at = '-infinity' WHERE phone = $1 AND expires_at > now()`, phone); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx,
@@ -374,7 +392,7 @@ func (m *Module) spendPhoneProof(ctx context.Context, q rowQuerier, phone, token
 	}
 	var id int64
 	err = q.QueryRowContext(ctx, `
-		UPDATE identity_login_codes SET expires_at = now()
+		UPDATE identity_login_codes SET expires_at = '-infinity'
 		WHERE phone = $1 AND code_hash = $2 AND expires_at > now() RETURNING id`,
 		phone, phoneProofHash(phone, token)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -423,12 +441,14 @@ func (m *Module) spendPhoneCode(ctx context.Context, phone, code string) (string
 		return "", wrong
 	}
 	// Charged and matched in one statement, as an order's code is: a burst of
-	// guesses queues on the row lock, and a right code is spent with it.
+	// guesses queues on the row lock, and a right code is spent with it. Spent
+	// to -infinity, not now(): now() is when a transaction began, so a request
+	// that began earlier and queued on the row would still find it open.
 	var opened bool
 	err = m.db.QueryRowContext(ctx, `
 		WITH tried AS (
 			UPDATE identity_login_codes SET attempts = attempts + 1,
-			       expires_at = CASE WHEN code_hash = $2 THEN now() ELSE expires_at END
+			       expires_at = CASE WHEN code_hash = $2 THEN '-infinity' ELSE expires_at END
 			WHERE phone = $1 AND expires_at > now() AND attempts < $3
 			RETURNING code_hash)
 		SELECT true FROM tried WHERE code_hash = $2`,

@@ -162,11 +162,22 @@ func (s *Superusers) storeLoginCode(ctx context.Context, phone, clientIP string)
 	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
 		// In this order everywhere, and each statement after these sees what
 		// the holder before it committed.
-		for _, key := range []string{"phone:" + phone, "client:" + client} {
+		for _, key := range []string{"install", "phone:" + phone, "client:" + client} {
 			if _, err := tx.ExecContext(ctx,
 				`SELECT pg_advisory_xact_lock(hashtext('superuser_login_codes'), hashtext($1))`, key); err != nil {
 				return Internalf(err, "lock sign-in codes")
 			}
+		}
+		// The install's whole day of codes, so many numbers from many addresses
+		// cannot run up its SMS bill. People can still use a password.
+		var installToday int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT count(*) FROM superuser_login_codes WHERE created_at > now() - interval '1 day'`).Scan(&installToday); err != nil {
+			return Internalf(err, "count sign-in codes")
+		}
+		if limit := s.app.cfg.SMSCodesPerDay; installToday >= limit {
+			s.app.log.Error("phone sign-in refused: the install reached its daily limit of texted codes", "limit", limit)
+			return tooManyPhoneCodes()
 		}
 		var recent, today, fromClient int
 		if err := tx.QueryRowContext(ctx, `

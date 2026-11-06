@@ -180,6 +180,9 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  GOCOMMERCE_SMS_CODES_PER_DAY
+                    the sign-in codes texted in 24 hours, to operators in total
+                    and to each store's shoppers in total; unset, 500
   RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
   RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,
   RETAIL_ASSISTANT_DISPLAY_NUMBER
@@ -390,6 +393,12 @@ environment:
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
+		// A value that does not read is 0, the default: a typo in a spending
+		// limit is no reason to stop every store on the install.
+		SMSCodesPerDay: func() int {
+			n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("GOCOMMERCE_SMS_CODES_PER_DAY")))
+			return n
+		}(),
 		// Whether the addresses a store sets may reach the server's own
 		// network: the same kind of choice about who this install is for, read
 		// as a word for the same reason as the demo switch.
