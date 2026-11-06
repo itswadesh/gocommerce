@@ -4,6 +4,8 @@
      * and no model is near them. A claim the records cannot support, such as a
      * product being slow before any sales are recorded, is left out with the reason.
      */
+    import { t } from "$lib/retail-lang.svelte.js";
+    import RetailLanguage from "$lib/components/RetailLanguage.svelte";
     import { can, retailAssistant } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { formatDate, formatMoney } from "$lib/format.js";
@@ -44,15 +46,16 @@
     );
 </script>
 
-<svelte:head><title>{titled("Shop insights")}</title></svelte:head>
+<svelte:head><title>{titled(t("Shop insights"))}</title></svelte:head>
 
 <div class="page page-retail shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Retail assistant</div>
-                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Shop insights</h1>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">{t("Retail assistant")}</div>
+                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">{t("Shop insights")}</h1>
             </nav>
+            <RetailLanguage />
         </header>
 
         {#if missing}
@@ -60,66 +63,66 @@
         {:else if !readable}
             <NoAccess right="retailassistant.read" what="the store's supplier accounts" />
         {:else if !enabled}
-            <EmptyState icon="ri-line-chart-line" title="The retail assistant is off" text="Switch it on under Supplier bills to see this." />
+            <EmptyState icon="ri-line-chart-line" title={t("The retail assistant is off")} text={t("Switch it on under Supplier bills to see this.")} />
         {:else if data}
-            <p class="txt-hint txt-sm tw:mb-4">Worked out from your records on {formatDate(data.as_of)}.</p>
+            <p class="txt-hint txt-sm tw:mb-4">{t("Worked out from your records on {date}.", { date: formatDate(data.as_of) })}</p>
 
             <dl class="facts">
-                <div><dt>You owe suppliers</dt><dd>{formatMoney(data.ledger.outstanding)}</dd></div>
-                <div><dt>Bought in the last 30 days</dt><dd>{formatMoney(data.ledger.purchases_30d)}</dd></div>
-                <div><dt>Paid in the last 30 days</dt><dd>{formatMoney(data.ledger.paid_30d)}</dd></div>
+                <div><dt>{t("You owe suppliers")}</dt><dd>{formatMoney(data.ledger.outstanding)}</dd></div>
+                <div><dt>{t("Bought in the last 30 days")}</dt><dd>{formatMoney(data.ledger.purchases_30d)}</dd></div>
+                <div><dt>{t("Paid in the last 30 days")}</dt><dd>{formatMoney(data.ledger.paid_30d)}</dd></div>
                 {#if data.ledger.unverified.amount_minor}
-                    <div><dt>Payments not verified</dt><dd>{formatMoney(data.ledger.unverified)}</dd></div>
+                    <div><dt>{t("Payments not verified")}</dt><dd>{formatMoney(data.ledger.unverified)}</dd></div>
                 {/if}
             </dl>
 
             {#if todo.length}
-                <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">To do</h2>
+                <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">{t("To do")}</h2>
                 <ul class="rows">
-                    {#each todo as t (t.one)}
-                        <li><a href={t.href}><strong>{t.n}</strong> {t.n === 1 ? t.one : t.many}</a></li>
+                    {#each todo as item (item.one)}
+                        <li><a href={item.href}><strong>{item.n}</strong> {t(item.n === 1 ? item.one : item.many)}</a></li>
                     {/each}
                 </ul>
             {/if}
 
-            <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">Owed most</h2>
+            <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">{t("Owed most")}</h2>
             <ul class="rows">
                 {#each data.ledger.top_owed as s (s.id)}
                     <li class="row"><span>{s.name}</span><strong>{formatMoney(s.outstanding)}</strong></li>
                 {:else}
-                    <li class="txt-hint">You owe no supplier anything.</li>
+                    <li class="txt-hint">{t("You owe no supplier anything.")}</li>
                 {/each}
             </ul>
 
             {#if data.stock}
-                <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">Stock</h2>
+                <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">{t("Stock")}</h2>
                 <dl class="facts">
-                    <div><dt>Sales in the last 90 days</dt><dd>{data.stock.sales_90d}</dd></div>
-                    <div><dt>Stock at what it cost you</dt><dd>{formatMoney(data.stock.stock_value)}</dd></div>
+                    <div><dt>{t("Sales in the last 90 days")}</dt><dd>{data.stock.sales_90d}</dd></div>
+                    <div><dt>{t("Stock at what it cost you")}</dt><dd>{formatMoney(data.stock.stock_value)}</dd></div>
                 </dl>
                 <p class="txt-hint txt-sm tw:mt-2">
-                    Stock counts are only as good as your sales and goods records.
-                    {#if data.stock.items_with_no_cost === 1}1 product has no cost entered, so it is not in that figure.{:else if data.stock.items_with_no_cost}{data.stock.items_with_no_cost} products have no cost entered, so they are not in that figure.{/if}
+                    {t("Stock counts are only as good as your sales and goods records.")}
+                    {#if data.stock.items_with_no_cost === 1}{t("1 product has no cost entered, so it is not in that figure.")}{:else if data.stock.items_with_no_cost}{t("{n} products have no cost entered, so they are not in that figure.", { n: data.stock.items_with_no_cost })}{/if}
                 </p>
 
-                <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Running low</h3>
+                <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">{t("Running low")}</h3>
                 <ul class="rows">
                     {#each data.stock.low_stock as i (i.variant_id)}
-                        <li class="row"><a href={`/dash/products/${i.product_id}`}>{i.title} <span class="txt-hint txt-sm">{i.sku}</span></a><strong>{i.available} left</strong></li>
+                        <li class="row"><a href={`/dash/products/${i.product_id}`}>{i.title} <span class="txt-hint txt-sm">{i.sku}</span></a><strong>{t("{n} left", { n: i.available })}</strong></li>
                     {:else}
-                        <li class="txt-hint">Nothing is running low.</li>
+                        <li class="txt-hint">{t("Nothing is running low.")}</li>
                     {/each}
                 </ul>
 
-                <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Not sold in 90 days</h3>
+                <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">{t("Not sold in 90 days")}</h3>
                 {#if data.stock.slow_withheld}
-                    <p class="txt-hint txt-sm">{data.stock.slow_withheld}</p>
+                    <p class="txt-hint txt-sm">{t(data.stock.slow_withheld)}</p>
                 {:else}
                     <ul class="rows">
                         {#each data.stock.slow_stock as i (i.variant_id)}
-                            <li class="row"><a href={`/dash/products/${i.product_id}`}>{i.title} <span class="txt-hint txt-sm">{i.sku}</span></a><strong>{i.on_hand} on hand</strong></li>
+                            <li class="row"><a href={`/dash/products/${i.product_id}`}>{i.title} <span class="txt-hint txt-sm">{i.sku}</span></a><strong>{t("{n} on hand", { n: i.on_hand })}</strong></li>
                         {:else}
-                            <li class="txt-hint">Everything in stock has sold in the last 90 days.</li>
+                            <li class="txt-hint">{t("Everything in stock has sold in the last 90 days.")}</li>
                         {/each}
                     </ul>
                 {/if}

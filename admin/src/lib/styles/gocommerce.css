@@ -77,7 +77,7 @@ html .accent-surface {
 :root,
 .dropdown,
 .base-surface {
-    --baseFontFamily: "Inter", system-ui, sans-serif, emoji;
+    --baseFontFamily: "Inter", "Noto Sans Devanagari", system-ui, sans-serif, emoji;
 }
 
 /*

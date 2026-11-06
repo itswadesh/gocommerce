@@ -5,6 +5,8 @@
      * the wholesaler paid is shown here and goes nowhere near the quote, which is
      * reviewed and sent on ext/b2b's own screen.
      */
+    import { t } from "$lib/retail-lang.svelte.js";
+    import RetailLanguage from "$lib/components/RetailLanguage.svelte";
     import { api, can, query, retailAssistant } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
@@ -84,7 +86,7 @@
 
     function request() {
         const chosen = lines.filter((l) => l.on);
-        if (!chosen.length) throw new Error("Choose at least one line");
+        if (!chosen.length) throw new Error(t("Choose at least one line"));
         return {
             document_id: doc.id,
             company_id: Number(company),
@@ -93,12 +95,12 @@
             percent_bps: Math.round(Number(percent) * 100),
             allow_below_cost: belowCost,
             lines: chosen.map((l) => {
-                if (!l.variant) throw new Error(`Choose the product for ${l.description || `line ${l.index + 1}`}`);
+                if (!l.variant) throw new Error(t("Choose the product for {name}", { name: l.description || t("Line {n}", { n: l.index + 1 }) }));
                 const quantity = Number(l.quantity);
-                if (!Number.isInteger(quantity) || quantity <= 0) throw new Error(`Type a whole quantity for ${l.description || `line ${l.index + 1}`}`);
+                if (!Number.isInteger(quantity) || quantity <= 0) throw new Error(t("Type a whole quantity for {name}", { name: l.description || t("Line {n}", { n: l.index + 1 }) }));
                 const out = { index: l.index, variant_id: l.variant.id, quantity };
                 if (String(l.price).trim() !== "") {
-                    if (!isValidMoney(l.price)) throw new Error("Type a price as an amount, such as 1180.50");
+                    if (!isValidMoney(l.price)) throw new Error(t("Type a price as an amount, such as 1180.50"));
                     out.price_minor = toMinor(l.price, currency);
                 }
                 return out;
@@ -125,7 +127,7 @@
     const makeQuote = () =>
         run(async () => {
             made = await retailAssistant.wholesaleQuote(request(), key);
-            toast.success(`Quote ${made.number} is ready to review`);
+            toast.success(t("Quote {number} is ready to review", { number: made.number }));
         });
 
     const companyOptions = $derived(companies.map((c) => ({ value: String(c.id), label: c.name })));
@@ -134,15 +136,16 @@
     const canAsk = $derived(!!company && !!buyer && lines.some((l) => l.on));
 </script>
 
-<svelte:head><title>{titled("Wholesale quote")}</title></svelte:head>
+<svelte:head><title>{titled(t("Wholesale quote"))}</title></svelte:head>
 
 <div class="page page-retail shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Retail assistant</div>
-                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Wholesale quote</h1>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">{t("Retail assistant")}</div>
+                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">{t("Wholesale quote")}</h1>
             </nav>
+            <RetailLanguage />
         </header>
 
         {#if missing}
@@ -151,83 +154,83 @@
             <NoAccess right="quotes.write" what="wholesale quotes" />
         {:else if made}
             <div class="alert alert-success tw:my-4" role="status" in:rise>
-                <p><strong>Quote {made.number} is drafted for {made.company_name}.</strong> It has not been sent. Review it, then send it from its own screen.</p>
+                <p><strong>{t("Quote {number} is drafted for {company}.", { number: made.number, company: made.company_name })}</strong> {t("It has not been sent. Review it, then send it from its own screen.")}</p>
             </div>
             <div class="tw:flex tw:flex-wrap tw:gap-2">
-                <a class="btn" href={`/dash/b2b/quotes/${made.id}`}><span class="txt">Review and send</span></a>
-                <button type="button" class="btn transparent secondary" onclick={() => { doc = null; made = null; preview = null; }}><span class="txt">Make another</span></button>
+                <a class="btn" href={`/dash/b2b/quotes/${made.id}`}><span class="txt">{t("Review and send")}</span></a>
+                <button type="button" class="btn transparent secondary" onclick={() => { doc = null; made = null; preview = null; }}><span class="txt">{t("Make another")}</span></button>
             </div>
         {:else if !doc}
             <p class="tw:mb-4 tw:text-sm tw:text-muted-foreground">
-                Choose a manufacturer's bill or price list that arrived on WhatsApp. It stays a document: quoting from it does not put anything on your supplier accounts.
+                {t("Choose a manufacturer's bill or price list that arrived on WhatsApp. It stays a document: quoting from it does not put anything on your supplier accounts.")}
             </p>
             <ul class="ws-list">
                 {#each docs as d (d.id)}
                     <li>
                         <span>
-                            <strong>{d.draft.supplier?.name || d.filename || `Document ${d.id}`}</strong>
-                            <span class="txt-hint txt-sm">{d.draft.invoice_no || ""} · {d.draft.lines.length} {d.draft.lines.length === 1 ? "line" : "lines"}</span>
+                            <strong>{d.draft.supplier?.name || d.filename || t("Document {id}", { id: d.id })}</strong>
+                            <span class="txt-hint txt-sm">{d.draft.invoice_no || ""} · {d.draft.lines.length === 1 ? t("1 line") : t("{n} lines", { n: d.draft.lines.length })}</span>
                         </span>
-                        <button type="button" class="btn sm" onclick={() => choose(d)}><span class="txt">Make a quote</span></button>
+                        <button type="button" class="btn sm" onclick={() => choose(d)}><span class="txt">{t("Make a quote")}</span></button>
                     </li>
                 {:else}
                     {#if !loading}
-                        <li><EmptyState icon="ri-file-list-3-line" title="No documents with lines" text="Forward a manufacturer's bill on WhatsApp. A document appears here once its lines have been read." /></li>
+                        <li><EmptyState icon="ri-file-list-3-line" title={t("No documents with lines")} text={t("Forward a manufacturer's bill on WhatsApp. A document appears here once its lines have been read.")} /></li>
                     {/if}
                 {/each}
             </ul>
         {:else}
             <div class="ws-grid" in:rise>
                 <div class="field">
-                    <label for="ws-company">Retailer</label>
-                    <Select id="ws-company" bind:value={company} options={companyOptions} placeholder="Choose a retailer" onchange={pickCompany} />
+                    <label for="ws-company">{t("Retailer")}</label>
+                    <Select id="ws-company" bind:value={company} options={companyOptions} placeholder={t("Choose a retailer")} onchange={pickCompany} />
                 </div>
                 {#if company}
                     <div class="field">
-                        <label for="ws-buyer">Goes to</label>
+                        <label for="ws-buyer">{t("Goes to")}</label>
                         {#if memberOptions.length}
                             <Select id="ws-buyer" bind:value={buyer} options={memberOptions} />
                         {:else}
-                            <p class="txt-hint txt-sm">This retailer has no buyers yet. Add one under Customers.</p>
+                            <p class="txt-hint txt-sm">{t("This retailer has no buyers yet. Add one under Customers.")}</p>
                         {/if}
                     </div>
                 {/if}
                 <div class="field">
-                    <label for="ws-mode">Price rule</label>
-                    <Select id="ws-mode" bind:value={mode} options={PRICING_RULES} />
+                    <label for="ws-mode">{t("Price rule")}</label>
+                    <Select id="ws-mode" bind:value={mode} options={PRICING_RULES.map((o) => ({ ...o, label: t(o.label) }))} />
                 </div>
                 <div class="field">
-                    <label for="ws-percent">Percent</label>
+                    <label for="ws-percent">{t("Percent")}</label>
                     <input id="ws-percent" type="number" min="0" max="500" step="0.01" inputmode="decimal" bind:value={percent} />
-                    <div class="field-help">{ruleExample(mode, Number(percent))}</div>
+                    <div class="field-help">{ruleExample(mode, Number(percent), t)}</div>
                 </div>
             </div>
 
-            <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">Lines</h2>
+            <h2 class="tw:mt-6 tw:mb-2 tw:text-lg tw:font-semibold">{t("Lines")}</h2>
             <ul class="ws-list">
                 {#each lines as line (line.index)}
                     <li class="ws-line">
                         <label class="ws-check">
                             <input type="checkbox" bind:checked={line.on} />
-                            <span><strong>{line.description || `Line ${line.index + 1}`}</strong> <span class="txt-hint txt-sm">You pay {line.cost != null ? money(line.cost) : "an amount not on the bill"}</span></span>
+                            <span><strong>{line.description || t("Line {n}", { n: line.index + 1 })}</strong> <span class="txt-hint txt-sm">{line.cost != null ? t("You pay {amount}", { amount: money(line.cost) }) : t("You pay an amount not on the bill")}</span></span>
                         </label>
                         {#if line.on}
                             {#if line.variant}
                                 <div class="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
                                     <span class="txt-sm">{line.variant.product?.title ?? ""} <span class="txt-code">{line.variant.sku}</span></span>
-                                    <button type="button" class="btn sm transparent secondary" onclick={() => (line.variant = null)}><span class="txt">Change</span></button>
+                                    <button type="button" class="btn sm transparent secondary" onclick={() => (line.variant = null)}><span class="txt">{t("Change")}</span></button>
                                 </div>
                             {:else}
                                 <VariantSearch id={`ws-variant-${line.index}`} onpick={(row) => (line.variant = row)} />
                             {/if}
                             <div class="ws-pair">
                                 <div class="field">
-                                    <label for={`ws-qty-${line.index}`}>Quantity</label>
+                                    <label for={`ws-qty-${line.index}`}>{t("Quantity")}</label>
                                     <input id={`ws-qty-${line.index}`} type="number" min="1" step="1" inputmode="numeric" bind:value={line.quantity} />
                                 </div>
                                 <div class="field">
-                                    <label for={`ws-price-${line.index}`}>Price instead ({currency})</label>
-                                    <input id={`ws-price-${line.index}`} inputmode="decimal" placeholder={line.cost != null ? "From the rule" : "Required"} bind:value={line.price} />
+                                    <label for={`ws-price-${line.index}`}>{t("Price instead ({currency})", { currency })}</label>
+                                    <input id={`ws-price-${line.index}`} inputmode="decimal" placeholder={line.cost != null ? t("From the rule") : t("Required")} bind:value={line.price} />
                                 </div>
                             </div>
                         {/if}
@@ -237,18 +240,18 @@
 
             {#if preview}
                 <div class="ws-box" in:rise>
-                    <h2 class="tw:mb-2 tw:text-lg tw:font-semibold">Prices</h2>
-                    <p class="txt-hint txt-sm tw:mb-2">Only you see what you pay and your margin. The retailer sees the price.</p>
+                    <h2 class="tw:mb-2 tw:text-lg tw:font-semibold">{t("Prices")}</h2>
+                    <p class="txt-hint txt-sm tw:mb-2">{t("Only you see what you pay and your margin. The retailer sees the price.")}</p>
                     <ul class="ws-list">
                         {#each preview.lines as p (p.index)}
                             <li>
                                 <span>{p.description} <span class="txt-hint txt-sm">× {p.quantity}</span>
-                                    {#if p.below_cost}<span class="label danger">Below what you pay</span>{/if}
-                                    {#if p.overridden}<span class="label">Typed</span>{/if}
+                                    {#if p.below_cost}<span class="label danger">{t("Below what you pay")}</span>{/if}
+                                    {#if p.overridden}<span class="label">{t("Typed")}</span>{/if}
                                 </span>
                                 <span>
                                     <strong>{money(p.price_minor)}</strong>
-                                    {#if p.margin_bps != null}<span class="txt-hint txt-sm">{(p.margin_bps / 100).toFixed(2)}% margin</span>{/if}
+                                    {#if p.margin_bps != null}<span class="txt-hint txt-sm">{t("{n}% margin", { n: (p.margin_bps / 100).toFixed(2) })}</span>{/if}
                                 </span>
                             </li>
                         {/each}
@@ -256,16 +259,16 @@
                     {#if anyBelow}
                         <label class="ws-check tw:mt-2">
                             <input type="checkbox" bind:checked={belowCost} />
-                            <span>I mean to sell below what I pay.</span>
+                            <span>{t("I mean to sell below what I pay.")}</span>
                         </label>
                     {/if}
                 </div>
             {/if}
 
             <div class="tw:mt-4 tw:flex tw:flex-wrap tw:gap-2">
-                <button type="button" class="btn transparent secondary" disabled={busy || !canAsk} onclick={showPrices}><span class="txt">Show prices</span></button>
-                <button type="button" class="btn" class:loading={busy} disabled={busy || !canAsk || !preview || (anyBelow && !belowCost)} onclick={makeQuote}><span class="txt">Draft the quote</span></button>
-                <button type="button" class="btn transparent secondary" onclick={() => (doc = null)}><span class="txt">Back</span></button>
+                <button type="button" class="btn transparent secondary" disabled={busy || !canAsk} onclick={showPrices}><span class="txt">{t("Show prices")}</span></button>
+                <button type="button" class="btn" class:loading={busy} disabled={busy || !canAsk || !preview || (anyBelow && !belowCost)} onclick={makeQuote}><span class="txt">{t("Draft the quote")}</span></button>
+                <button type="button" class="btn transparent secondary" onclick={() => (doc = null)}><span class="txt">{t("Back")}</span></button>
             </div>
         {/if}
     </div>

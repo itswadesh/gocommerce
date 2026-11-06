@@ -103,7 +103,13 @@ and is not retried.
 of everything sent to it, or the owner can set it beside the phone. Before a phone is
 linked, replies come in both. **The Hindi is a machine translation that no native
 speaker has reviewed; have one read `ext/retailassistant/messages.go` before showing it
-to shopkeepers.** What a person sees in the panel is still English.
+to shopkeepers.**
+
+The retail assistant's screens have an **English / हिंदी** switch, remembered in each
+browser. **That Hindi is a machine translation too, in `admin/src/lib/retail-hindi.js`.**
+The sidebar, the rest of the panel, and messages the engine writes, such as a refused
+amount or what is wrong with a bill, stay in English. The screens' Hindi has not been
+read by a native speaker.
 
 **Stopping.** A phone can reply `STOP`, or `बंद`, to end confirmations in every store
 it is linked to, including any already queued. It can still send bills. An owner cannot
@@ -329,4 +335,4 @@ Then:
 - AI reading against a real model. Its prompt and answer shape have only met a stand-in.
 - Real supplier documents. The reader's labels and columns are a first guess at how Indian bills are laid out, and only real documents will show how far off that is.
 - Meta's real template approval and sending. The request follows Meta's documentation.
-- The Hindi wording with a native speaker, and the panel in Hindi, which is not built.
+- The Hindi wording, on WhatsApp and in the panel, with a native speaker.
