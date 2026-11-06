@@ -399,12 +399,13 @@ export const stores = {
         return await api.post("/api/stores/switch", { store_id: storeID });
     },
     /** create opens a store with the caller as its owner, and enters it. */
-    async create(name, slug, currency = "", country = "", sampleContent = false) {
+    async create(name, slug, currency = "", country = "", timezone = "", sampleContent = false) {
         return await api.post("/api/stores/create", {
             name,
             slug,
             currency,
             country,
+            timezone,
             sample_content: sampleContent,
         });
     },

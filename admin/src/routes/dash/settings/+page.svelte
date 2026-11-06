@@ -34,7 +34,8 @@
     import StoreImages from "$lib/components/StoreImages.svelte";
     import Select from "$lib/components/Select.svelte";
     import SaveBar from "$lib/components/SaveBar.svelte";
-    import { countryOptions } from "$lib/countries.js";
+    import ZoneClock from "$lib/components/ZoneClock.svelte";
+    import { countryOptions, timezoneOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
     import { languageName, languageOptions } from "$lib/languages.js";
     import { rise, flipDuration } from "$lib/motion.js";
@@ -147,7 +148,9 @@
     }
 
     function optionsFor(key) {
-        if (key === "timezone") return zones;
+        // A zone saved from another browser, which may spell it differently,
+        // stays a choice rather than showing blank.
+        if (key === "timezone") return zones.length ? timezoneOptions(draft?.timezone) : [];
         if (key === "state") return draft?.country === "IN" ? stateOptions(draft?.state) : [];
         if (key === "country") return countryOptions(draft?.country);
         if (key === "currency") return currencyOptions(draft?.currency);
@@ -439,6 +442,7 @@
                                                     : "What the store sells in. Fixed once an order is paid or sent out. Changing it now relabels the prices already entered, without converting them; orders already placed keep their currency."}
                                             </div>
                                         {:else if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                        {#if f.key === "timezone"}<div class="field-help"><ZoneClock zone={draft.timezone} /></div>{/if}
                                     </div>
                                 </div>
                             {/each}
