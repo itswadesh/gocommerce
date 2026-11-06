@@ -1120,9 +1120,11 @@ the button. Where sign-up is shut, **Go to sign in** carries the number on.
 
 A code lasts ten minutes and takes five tries. A phone gets one code a minute and
 five a day, and one client address twenty an hour. The code goes out on the
-install's SMS provider, unless the person works in the store the request reached
-and no other: a store's provider account is its owner's to read, and the code
-opens every store the person works in.
+install's SMS provider, never a store's, because a store's provider account is its
+staff's to read and the code opens an account. The one exception is an install
+closed to sign-ups with a single store, whose panel settings are the install's. A
+code asked for from Your account only adds the address to that account; it signs
+nobody in. Resets go the same way.
 
 A team member can be added by phone number instead of email: the Invite box takes
 either. Nothing is sent. When that number signs in, with an account or not, the panel
