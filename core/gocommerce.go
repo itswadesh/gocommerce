@@ -171,6 +171,9 @@ type Config struct {
 	// X-Forwarded-Host would carry a live token to a host they chose. Left
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
+	// PlatformOwnerPhone is the one person who may read every store's owners
+	// and counts, once a code has proved the number (D215). Empty, nobody may.
+	PlatformOwnerPhone string
 	// Brands are the names this install answers under, each with its own
 	// admin domain and base domain (brands.go, D114). Empty, the install is
 	// one brand made of PanelURL and BaseDomain, called DefaultBrandName. Set,
