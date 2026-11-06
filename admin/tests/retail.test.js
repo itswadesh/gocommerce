@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { aiReadable, isMismatch, moneyNote, newKey, ruleExample, statusOf, wholeQuantity } from "../src/lib/retail.js";
+import { aiReadable, basketAdd, basketSet, isMismatch, moneyNote, newKey, ruleExample, statusOf, wholeQuantity } from "../src/lib/retail.js";
 import { HINDI, translate } from "../src/lib/retail-hindi.js";
 
 test("the two pricing rules say different prices", () => {
@@ -45,7 +45,7 @@ test("the note says only what is there", () => {
 
 test("a screen's words are all in the Hindi list, with the same blanks", () => {
     const base = "src/routes/dash/retail-assistant/";
-    const screens = ["+page.svelte", "suppliers/+page.svelte", "bank/+page.svelte", "insights/+page.svelte", "wholesale/+page.svelte"];
+    const screens = ["+page.svelte", "suppliers/+page.svelte", "bank/+page.svelte", "insights/+page.svelte", "wholesale/+page.svelte", "counter/+page.svelte"];
     const missing = [];
     for (const screen of screens) {
         const source = readFileSync(base + screen, "utf8");
@@ -64,6 +64,21 @@ test("an unknown key reads in English and the blanks are filled", () => {
     assert.equal(translate("hi", "Nothing in the list"), "Nothing in the list");
     assert.equal(translate("hi", "{n} left", { n: 3 }), "3 बचे");
     assert.equal(translate("en", "{n} left", { n: 3 }), "3 left");
+});
+
+test("scanning the same item again adds one, and the newest is on top", () => {
+    const a = { variant_id: 1, title: "A" };
+    const b = { variant_id: 2, title: "B" };
+    let basket = basketAdd([], a);
+    basket = basketAdd(basket, b);
+    basket = basketAdd(basket, a);
+    assert.deepEqual(basket.map((l) => [l.variant_id, l.quantity]), [[1, 2], [2, 1]]);
+});
+
+test("a quantity down to nothing takes the line off", () => {
+    const basket = [{ variant_id: 1, quantity: 1 }, { variant_id: 2, quantity: 3 }];
+    assert.deepEqual(basketSet(basket, 1, 0).map((l) => l.variant_id), [2]);
+    assert.equal(basketSet(basket, 2, 5)[1].quantity, 5);
 });
 
 test("each press gets its own name", () => {

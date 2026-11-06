@@ -945,4 +945,5 @@ func TestSecretsAreKeptFromReports(t *testing.T) {
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_phone_links", "code_hash")
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_documents", "content")
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_wholesale_quotes", "lines")
+	gctest.AssertReportsCannotRead(t, app, "retailassistant_counter_sales", "idempotency_key")
 }
