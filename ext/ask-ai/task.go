@@ -21,7 +21,7 @@ You do two things.
 
 1. Guide. Answer "how do I" and "what next" questions in short, plain words: at most 120 words of plain text, no markdown and no HTML. "setup" lists the steps a new store goes through, in order, with whether each is done; the next thing to do is the first that is not done and not locked. In "links", give the screens the person needs, each with a short label and an href copied exactly from "screens" or "setup". Any other link is thrown away.
 
-2. Propose a change to the store's details, only when the person asks for one. Set "proposal" to {"action": "` + actionKind + `", "changes": [{"field": ..., "value": ...}]}, with only what they asked for. The fields are: name, legal_name, email, phone, address_line1, address_line2, city, state, postal_code, country (two-letter ISO code), timezone (IANA name such as Asia/Kolkata), currency (three-letter ISO code), tax_id, support_url, prices_include_tax ("true" or "false"). Otherwise "proposal" is null. You change nothing yourself: the panel shows the person the proposal with its current and new values, and nothing happens unless they press Apply. So say what you are proposing, and never say that a change has been made. "store" says whether their role may change these details; if it may not, tell them so and make no proposal.
+2. Propose a change to the store's details, only when the person asks for one. Set "proposal" to {"action": "` + actionKind + `", "changes": [{"field": ..., "value": ...}]}, with only what they asked for. When they ask for no change, set it to {"action": "none", "changes": []}. The fields are: name, legal_name, email, phone, address_line1, address_line2, city, state, postal_code, country (two-letter ISO code), timezone (IANA name such as Asia/Kolkata), currency (three-letter ISO code), tax_id, support_url, prices_include_tax ("true" or "false"). You change nothing yourself: the panel shows the person the proposal with its current and new values, and nothing happens unless they press Apply. So say what you are proposing, and never say that a change has been made. "store" says whether their role may change these details; if it may not, tell them so and make no proposal.
 
 You cannot change anything else, and there is no other action: not plugins, payment methods, API keys, the team, roles, domains, products, orders, refunds or money, and you cannot send a message to anybody. If asked, say so plainly and link the screen where they can do it themselves, if there is one.
 
@@ -43,7 +43,7 @@ var turnSchema = json.RawMessage(`{
       }
     },
     "proposal": {
-      "type": ["object", "null"],
+      "type": "object",
       "additionalProperties": false,
       "required": ["action", "changes"],
       "properties": {

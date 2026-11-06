@@ -17,6 +17,9 @@ import (
 // have no action, so there is nothing for an answer to reach.
 const actionKind = "store.update_details"
 
+// noProposal is what the model names when the person asked for no change.
+const noProposal = "none"
+
 // detailField is a store detail Ask AI may propose, and how it reads and writes
 // the profile. The list is the allowlist.
 type detailField struct {

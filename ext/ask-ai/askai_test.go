@@ -151,7 +151,7 @@ func TestGuideAnswerKeepsOnlyAllowedLinks(t *testing.T) {
 		{"label":"Win a prize","href":"https://evil.example/x"},
 		{"label":"Secret","href":"/dash/not-a-screen"},
 		{"label":"Script","href":"javascript:alert(1)"},
-		{"label":"Again","href":"/dash/products"}],"proposal":null}`)
+		{"label":"Again","href":"/dash/products"}],"proposal":{"action":"none","changes":[]}}`)
 	out := h.turn(t, h.owner, "What should I do next?")
 	if out.Answer != "Add a product next." || out.Proposal != nil {
 		t.Errorf("answer = %+v", out)
@@ -429,7 +429,7 @@ func TestNoPersonalDataReachesTheModel(t *testing.T) {
 	gctest.PlaceOrder(t, h.app, "cod")
 	colleague := gctest.OperatorToken(t, h.app, "colleague.staff@example.com", gocommerce.RoleOwner)
 
-	h.model.say(`{"answer":"Fine.","links":[],"proposal":null}`)
+	h.model.say(`{"answer":"Fine.","links":[],"proposal":{"action":"none","changes":[]}}`)
 	h.turn(t, colleague, "What should I do next?")
 	reqs := h.model.requests()
 	if len(reqs) != 1 {
@@ -536,7 +536,7 @@ func TestOutOfCreditIsAPlainMessage(t *testing.T) {
 // brings it back.
 func TestChangingCurrencyWarnsAndThenStopsCredit(t *testing.T) {
 	h := newHarness(t, aigateway.Config{})
-	h.model.say(`{"answer":"Fine.","links":[],"proposal":null}`)
+	h.model.say(`{"answer":"Fine.","links":[],"proposal":{"action":"none","changes":[]}}`)
 	h.turn(t, h.owner, "Hello") // Seeds the credit row, in INR.
 
 	h.model.say(proposalAnswer(actionKind, "currency", "USD"))
@@ -606,7 +606,7 @@ func TestASecondStoreCannotTouchTheFirstStoresProposal(t *testing.T) {
 	}
 
 	// The instructions name no store: the same words for both (D104).
-	h.model.say(`{"answer":"Fine.","links":[],"proposal":null}`)
+	h.model.say(`{"answer":"Fine.","links":[],"proposal":{"action":"none","changes":[]}}`)
 	rec := gctest.SessionRequest(t, h.app, session.Token, http.MethodPost, "/api/admin/x/ask-ai/turn?store="+second.ID, ask("Hello"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("store B's turn = %d: %s", rec.Code, rec.Body)
@@ -704,5 +704,15 @@ func TestOnlyAPersonAsksAndWithinTheirLimits(t *testing.T) {
 	}
 	if _, ok := h.mod.allowTurn(key, now.Add(turnWindow)); !ok {
 		t.Error("the window did not pass")
+	}
+}
+
+// The schema has the model say "none" when nothing was asked for.
+func TestAnAnswerWithNoChangeProposesNothing(t *testing.T) {
+	m := &Module{}
+	for _, p := range []*modelProposal{nil, {Action: noProposal, Changes: []fieldChange{}}} {
+		if view, notice := m.file(context.Background(), nil, p, nil); view != nil || notice != "" {
+			t.Errorf("%+v: proposal %+v, notice %q", p, view, notice)
+		}
 	}
 }
