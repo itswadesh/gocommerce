@@ -144,8 +144,9 @@ a file goes either way between the two stores without an edit.
 
 ```http
 GET  /api/admin/export/admin-products?format=shopify
-POST /api/admin/import/products                 # the header says which dialect
-POST /api/admin/import/products?mode=insert     # create only what is new
+GET  /api/admin/import/products/template            # ?format=gocommerce or ?format=shopify
+POST /api/admin/import/products                     # the header says which dialect
+POST /api/admin/import/products?mode=insert         # create only what is new
 ```
 
 On the way in the dialect is read off the header (a Shopify file has a
