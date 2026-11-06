@@ -432,7 +432,7 @@ func (s *Superusers) ConfirmReset(ctx context.Context, proof ResetProof, passwor
 
 		// scanSuperuser rather than the resolving scan: this is inside a
 		// transaction, and that one would take a second pool connection.
-		other := `phone = NULL, phone_proved_at = NULL`
+		other := `phone = NULL, phone_proved_at = NULL, email_proved = email`
 		if proof.Code != "" && !isEmailAddress(proof.Email) {
 			other = `email = CASE WHEN phone_proved_at IS NULL THEN NULL ELSE email END,
 				phone_proved_at = coalesce(phone_proved_at, now())`

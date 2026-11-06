@@ -321,6 +321,11 @@ func TestTheResetEmailLinkActuallyWorks(t *testing.T) {
 		"owner@example.com", "the new password", "10.0.0.2"); err != nil {
 		t.Errorf("sign in with the password set through the link: %v", err)
 	}
+	var proved bool
+	if err := app.db.QueryRow(`SELECT email_proved = email FROM superusers WHERE email = 'owner@example.com'`).
+		Scan(&proved); err != nil || !proved {
+		t.Errorf("the emailed link did not prove the address: %v, %v", proved, err)
+	}
 }
 
 // ---------------------------------------------------------------- the code

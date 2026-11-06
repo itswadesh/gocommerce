@@ -8,6 +8,7 @@
      */
     import { stores } from "$lib/api.js";
     import { titled } from "$lib/brand.svelte.js";
+    import { formatDate, relativeTime } from "$lib/format.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
 
     let loading = $state(true);
@@ -29,7 +30,24 @@
     }
 
     load();
+
+    // The audit trail writes sentences and the event log writes order.placed.
+    function activityName(name) {
+        if (name.includes(" ")) return name;
+        const words = name.replace(/[._]/g, " ");
+        return words.charAt(0).toUpperCase() + words.slice(1);
+    }
 </script>
+
+{#snippet contact(href, text, verified)}
+    <span class="contact">
+        <a {href}>{text}</a>
+        <span class="proof" class:proved={verified}>
+            <i class={verified ? "ri-checkbox-circle-fill" : "ri-question-line"} aria-hidden="true"></i>
+            {verified ? "Verified" : "Not verified"}
+        </span>
+    </span>
+{/snippet}
 
 <svelte:head><title>{titled("All stores")}</title></svelte:head>
 
@@ -62,10 +80,13 @@
                     <thead>
                         <tr>
                             <th>Store</th>
+                            <th>Domain</th>
                             <th>Legal name</th>
                             <th>Owner</th>
                             <th class="col-field-type-number min-width">Products</th>
                             <th class="col-field-type-number min-width">Orders</th>
+                            <th class="min-width">Last activity</th>
+                            <th class="min-width">Created</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -79,13 +100,20 @@
                                         </span>
                                     </div>
                                 </td>
+                                <td data-name="Domain">
+                                    {#if store.domain}
+                                        <a class="domain" href="https://{store.domain}" target="_blank" rel="noopener noreferrer">{store.domain}</a>
+                                    {:else}
+                                        —
+                                    {/if}
+                                </td>
                                 <td data-name="Legal name">{store.legal_name || "—"}</td>
                                 <td data-name="Owner">
                                     <div class="owners">
                                         {#each store.owners as owner, i (i)}
                                             <div class="contacts">
-                                                {#if owner.phone}<a href="tel:{owner.phone}">{owner.phone}</a>{/if}
-                                                {#if owner.email}<a href="mailto:{owner.email}">{owner.email}</a>{/if}
+                                                {#if owner.phone}{@render contact(`tel:${owner.phone}`, owner.phone, owner.phone_verified)}{/if}
+                                                {#if owner.email}{@render contact(`mailto:${owner.email}`, owner.email, owner.email_verified)}{/if}
                                             </div>
                                         {:else}
                                             —
@@ -94,6 +122,17 @@
                                 </td>
                                 <td class="col-field-type-number min-width" data-name="Products">{store.products.toLocaleString("en-IN")}</td>
                                 <td class="col-field-type-number min-width" data-name="Orders">{store.orders.toLocaleString("en-IN")}</td>
+                                <td class="activity" data-name="Last activity">
+                                    {#if store.last_activity_at}
+                                        <div class="row-name row-name-stacked">
+                                            <span class="txt-nowrap" title={formatDate(store.last_activity_at)}>{relativeTime(store.last_activity_at)}</span>
+                                            <span class="txt-hint">{activityName(store.last_activity)}</span>
+                                        </div>
+                                    {:else}
+                                        —
+                                    {/if}
+                                </td>
+                                <td class="min-width txt-nowrap" data-name="Created" title={formatDate(store.created_at)}>{relativeTime(store.created_at)}</td>
                             </tr>
                         {/each}
                     </tbody>
@@ -117,17 +156,39 @@
     .contacts {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 4px;
         overflow-wrap: anywhere;
     }
-    .contacts a {
+    .contact {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        column-gap: 8px;
+    }
+    .activity {
+        min-width: 200px;
+    }
+    .proof {
+        font-size: 0.85em;
+        white-space: nowrap;
+        opacity: 0.75;
+    }
+    .proof.proved {
+        color: var(--successColor);
+        opacity: 1;
+    }
+    .contacts a,
+    .domain {
         transition: opacity 150ms ease;
     }
     .contacts a:hover,
-    .contacts a:active {
+    .contacts a:active,
+    .domain:hover,
+    .domain:active {
         opacity: 0.65;
     }
-    .contacts a:focus-visible {
+    .contacts a:focus-visible,
+    .domain:focus-visible {
         outline: 2px solid currentColor;
         outline-offset: 2px;
     }
@@ -148,6 +209,7 @@
     }
     @media (prefers-reduced-motion: reduce) {
         .contacts a,
+        .domain,
         .page-table-wrapper {
             transition: none;
         }

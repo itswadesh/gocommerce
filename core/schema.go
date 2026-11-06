@@ -120,8 +120,18 @@ func coreMigrations() []Migration {
 		{ID: "0102_operator_phone_login", SQL: migration0102OperatorPhoneLogin},
 		{ID: "0103_login_codes_identity", SQL: migration0103LoginCodesIdentity},
 		{ID: "0104_phone_invitations", SQL: migration0104PhoneInvitations},
+		{ID: "0105_superuser_email_proved", SQL: migration0105SuperuserEmailProved},
 	}
 }
+
+// M105 — which email a person has proved is theirs, so the install owner's list
+// can say so (D218). The address rather than a time, because an account's email
+// changes in more than one place and a time would have to be cleared in each:
+// an address that no longer matches has simply stopped being proved. Nothing is
+// backfilled, since nothing recorded who proved what before now.
+const migration0105SuperuserEmailProved = `
+ALTER TABLE superusers ADD COLUMN email_proved text;
+`
 
 // M104 — a team invitation can name a phone, with no link to send (D205). The
 // invitee signs in with no store chosen, and invitations are scoped to a store,

@@ -597,7 +597,7 @@ func (s *Superusers) SetOwnEmail(ctx context.Context, id int64, currentPassword,
 	var su *Superuser
 	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
 		var err error
-		su, err = scanSuperuser(tx.QueryRowContext(ctx, `UPDATE superusers SET email = $2, updated_at = now()
+		su, err = scanSuperuser(tx.QueryRowContext(ctx, `UPDATE superusers SET email = $2, email_proved = $2, updated_at = now()
 			WHERE id = $1 RETURNING `+superuserColumns, id, email))
 		switch {
 		case isUniqueViolation(err):
