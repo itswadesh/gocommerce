@@ -30,6 +30,12 @@ type DirectoryOwner struct {
 	EmailSent *OwnerEmailSent `json:"email_sent,omitempty"`
 }
 
+// DirectoryDomain is one domain a store has added, verified or not.
+type DirectoryDomain struct {
+	Host     string `json:"host"`
+	Verified bool   `json:"verified"`
+}
+
 // DirectoryStore is one row of the install owner's list.
 type DirectoryStore struct {
 	ID     string `json:"id"`
@@ -39,6 +45,10 @@ type DirectoryStore struct {
 	// Domain is the store's verified domain, primary first, else its subdomain,
 	// else empty.
 	Domain string `json:"domain"`
+	// Domains is every domain the store has added, the verified ones first. A
+	// store whose own domain is still unverified has it here and only its
+	// subdomain in Domain, and the list must still show whose it is (D225).
+	Domains []DirectoryDomain `json:"domains"`
 	// LegalName is what the store typed as its registered business, empty when
 	// it has not.
 	LegalName string           `json:"legal_name"`
@@ -112,7 +122,12 @@ func (a *App) storeDirectory(ctx context.Context) ([]DirectoryStore, error) {
 		if row.Owners == nil {
 			row.Owners = []DirectoryOwner{}
 		}
-		row.Domain = domains[st.ID]
+		row.Domains = domains[st.ID]
+		if row.Domains == nil {
+			row.Domains = []DirectoryDomain{}
+		} else if row.Domains[0].Verified {
+			row.Domain = row.Domains[0].Host
+		}
 		if base := a.storeBrand(st.BrandHost).BaseDomain; row.Domain == "" && base != "" {
 			row.Domain = st.Slug + "." + base
 		}
@@ -185,22 +200,24 @@ func (a *App) storeOwners(ctx context.Context) (map[string][]DirectoryOwner, err
 	return out, rows.Err()
 }
 
-// storeHosts is each store's verified domain, chosen as myStores chooses one.
-func (a *App) storeHosts(ctx context.Context) (map[string]string, error) {
+// storeHosts is each store's domains. The first verified one is the one myStores
+// would choose, which is what Domain shows.
+func (a *App) storeHosts(ctx context.Context) (map[string][]DirectoryDomain, error) {
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (store_id) store_id, host FROM store_domains
-		WHERE verified_at IS NOT NULL ORDER BY store_id, is_primary DESC, created_at, host`)
+		SELECT store_id, host, verified_at IS NOT NULL FROM store_domains
+		ORDER BY store_id, verified_at IS NULL, is_primary DESC, created_at, host`)
 	if err != nil {
 		return nil, Internalf(err, "list store domains")
 	}
 	defer rows.Close()
-	out := map[string]string{}
+	out := map[string][]DirectoryDomain{}
 	for rows.Next() {
-		var id, host string
-		if err := rows.Scan(&id, &host); err != nil {
+		var id string
+		var d DirectoryDomain
+		if err := rows.Scan(&id, &d.Host, &d.Verified); err != nil {
 			return nil, Internalf(err, "scan store domain")
 		}
-		out[id] = host
+		out[id] = append(out[id], d)
 	}
 	return out, rows.Err()
 }

@@ -48,6 +48,9 @@ func TestTheInstallOwnerSeesEveryStoreWithItsOwnersAndCounts(t *testing.T) {
 	if _, err := app.db.ExecContext(ctx, `INSERT INTO store_domains (host, store_id, verified_at) VALUES ('seller.example.com', $1, now())`, other); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := app.db.ExecContext(ctx, `INSERT INTO store_domains (host, store_id) VALUES ('pending.example.co.in', $1)`, other); err != nil {
+		t.Fatal(err)
+	}
 	for _, slug := range []string{"one", "two"} {
 		if _, err := app.db.ExecContext(ctx,
 			`INSERT INTO products (slug, title, currency) VALUES ($1, $1, 'INR')`, slug); err != nil {
@@ -91,6 +94,10 @@ func TestTheInstallOwnerSeesEveryStoreWithItsOwnersAndCounts(t *testing.T) {
 	}
 	if found.Domain != "seller.example.com" {
 		t.Fatalf("domain = %q", found.Domain)
+	}
+	if len(found.Domains) != 2 || found.Domains[0] != (DirectoryDomain{"seller.example.com", true}) ||
+		found.Domains[1] != (DirectoryDomain{"pending.example.co.in", false}) {
+		t.Fatalf("domains = %+v, want the verified one first and the pending one kept", found.Domains)
 	}
 	if found.LastActivity != "" || found.LastActivityAt != nil {
 		t.Fatalf("activity = %q at %v, want none yet", found.LastActivity, found.LastActivityAt)
@@ -178,4 +185,29 @@ func TestTheStoreDirectoryIsShutUntilAnOwnerIsNamed(t *testing.T) {
 			t.Errorf("%s: status = %d, want 403", who, rec.Code)
 		}
 	}
+}
+
+// A store with only an unverified domain keeps it on the list, and does not get
+// to claim it as where the shop is.
+func TestAnUnverifiedDomainIsListedButIsNotTheStoresAddress(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.PlatformOwnerPhone = directoryPhone
+	tok := directoryOwner(t, app, "me@example.com", true)
+	store := addTestStore(t, app, "pending-only")
+	if _, err := app.db.ExecContext(WithStore(context.Background(), store),
+		`INSERT INTO store_domains (host, store_id) VALUES ('pending.example.co.in', $1)`, store); err != nil {
+		t.Fatal(err)
+	}
+	var list []DirectoryStore
+	decodeData(t, do(t, app, http.MethodGet, "/api/stores/directory", bearer(tok)), &list)
+	for _, row := range list {
+		if row.ID != store {
+			continue
+		}
+		if row.Domain != "" || len(row.Domains) != 1 || row.Domains[0].Verified {
+			t.Fatalf("row = %+v", row)
+		}
+		return
+	}
+	t.Fatal("the store is not listed")
 }
