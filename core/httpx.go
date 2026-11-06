@@ -458,10 +458,9 @@ func (a *App) logMW(next http.Handler) http.Handler {
 		if re := requestErrorsFrom(r.Context()); re != nil {
 			store = re.store
 		}
-		// Traefik polls this every few seconds, which would bury every other
-		// line, so this route writes none, refused polls included (the owner's
-		// call). A server fault still logs its error from RespondError.
-		if r.URL.Path == TraefikConfigPath {
+		// Only the API gets a line (D230): Traefik's polls, assets and module routes
+		// would bury it. A server fault anywhere still logs its error from RespondError.
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			return
 		}
 		a.log.Info("request",

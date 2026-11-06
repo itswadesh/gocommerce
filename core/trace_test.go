@@ -150,12 +150,12 @@ func TestASuppliedTraceIDIsKeptOnlyWhenItIsWellFormed(t *testing.T) {
 func TestTheRequestLogLineCarriesTheStoreAndTheTrace(t *testing.T) {
 	app, logs := newTracedApp(t)
 	store := firstStore(t, app)
-	rec := do(t, app, http.MethodGet, "/x/tracer/echo", header("X-Trace-Id", "trace-for-the-log"))
+	rec := do(t, app, http.MethodGet, "/api/categories", header("X-Trace-Id", "trace-for-the-log"))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("echo = %d: %s", rec.Code, rec.Body)
+		t.Fatalf("categories = %d: %s", rec.Code, rec.Body)
 	}
 	for _, line := range logs.lines() {
-		if line["msg"] != "request" || line["path"] != "/x/tracer/echo" {
+		if line["msg"] != "request" || line["path"] != "/api/categories" {
 			continue
 		}
 		if line["trace_id"] != "trace-for-the-log" {

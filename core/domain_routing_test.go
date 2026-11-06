@@ -49,7 +49,7 @@ func traefikRoutes(t *testing.T, app *App) (routers map[string]traefikRouter, se
 	return body.HTTP.Routers, body.HTTP.Services
 }
 
-func TestAProxyPollWritesNoRequestLine(t *testing.T) {
+func TestOnlyTheAPIWritesRequestLines(t *testing.T) {
 	app := newTestApp(t)
 	app.cfg.TraefikToken, app.cfg.TraefikUpstream = testTraefikToken, "http://gocommerce:8080"
 	var logged bytes.Buffer
@@ -69,11 +69,16 @@ func TestAProxyPollWritesNoRequestLine(t *testing.T) {
 		t.Fatalf("a refused poll was logged: %s", logged.String())
 	}
 
-	// Every other route still gets its line.
-	logged.Reset()
+	// Only the API gets a line (D230).
+	do(t, app, http.MethodGet, "/health")
+	do(t, app, http.MethodGet, "/x/nothing-here")
+	do(t, app, http.MethodGet, "/some/page")
+	if strings.Contains(logged.String(), "msg=request") {
+		t.Fatalf("a route outside /api/ was logged: %s", logged.String())
+	}
 	do(t, app, http.MethodGet, "/api/health")
 	if !strings.Contains(logged.String(), "msg=request") {
-		t.Fatal("another route lost its log line")
+		t.Fatal("an API route lost its log line")
 	}
 }
 
