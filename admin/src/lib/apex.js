@@ -13,3 +13,13 @@ export function apexDomain(host) {
     const keep = countryCode && labels.length > 2 && SECOND_LEVEL.has(labels.at(-2)) ? 3 : 2;
     return labels.slice(-keep).join(".");
 }
+
+/**
+ * isApexDomain says a host is a name of its own rather than an address under
+ * someone else's. www counts, since www.example.com is still example.com's owner
+ * pointing at their own name.
+ */
+export function isApexDomain(host) {
+    const name = (host ?? "").toLowerCase().replace(/^www\./, "");
+    return name !== "" && apexDomain(name) === name;
+}

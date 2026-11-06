@@ -6,32 +6,19 @@
      * "Legal name" is what a store typed as its registered business. A person
      * has no name in the engine, so there is no owner's name to show here.
      */
-    import { apexDomain } from "$lib/apex.js";
+    import { isApexDomain } from "$lib/apex.js";
     import { stores } from "$lib/api.js";
     import { titled } from "$lib/brand.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
-    import Select from "$lib/components/Select.svelte";
-
-    // An apex has a dot, so this can never be one.
-    const NO_DOMAIN = "none";
 
     let loading = $state(true);
     let refused = $state(false);
     let failed = $state("");
     let list = $state([]);
-    let apex = $state("");
+    let apexOnly = $state(false);
 
-    const apexOf = (store) => apexDomain(store.domain) || NO_DOMAIN;
-    const apexOptions = $derived.by(() => {
-        const counts = new Map();
-        for (const store of list) counts.set(apexOf(store), (counts.get(apexOf(store)) ?? 0) + 1);
-        const rows = [...counts]
-            .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
-            .map(([value, n]) => ({ value, label: `${value === NO_DOMAIN ? "No domain" : value} (${n})` }));
-        return [{ value: "", label: `All domains (${list.length})` }, ...rows];
-    });
-    const shown = $derived(apex ? list.filter((store) => apexOf(store) === apex) : list);
+    const shown = $derived(apexOnly ? list.filter((store) => isApexDomain(store.domain)) : list);
 
     async function load() {
         loading = true;
@@ -92,11 +79,12 @@
         {:else if !loading && list.length === 0}
             <EmptyState icon="ri-store-3-line" title="No stores yet" />
         {:else if list.length}
-            <div class="apex-filter">
-                <Select ariaLabel="Filter by domain" value={apex} options={apexOptions} onchange={(v) => (apex = v)} />
+            <div class="field apex-filter">
+                <input id="apex-only" type="checkbox" bind:checked={apexOnly} />
+                <label for="apex-only">Apex domains only</label>
             </div>
             {#if shown.length === 0}
-                <EmptyState icon="ri-filter-off-line" title="No stores on this domain" onclear={() => (apex = "")} />
+                <EmptyState icon="ri-filter-off-line" title="No stores on an apex domain" clearLabel="Show all stores" onclear={() => (apexOnly = false)} />
             {:else}
             <div class="page-table-wrapper tw:rounded-xl tw:border" class:reloading={loading}>
                 <table class="table responsive-table">
@@ -168,7 +156,6 @@
 
 <style>
     .apex-filter {
-        max-width: 320px;
         margin-bottom: 12px;
     }
     .store-total {
