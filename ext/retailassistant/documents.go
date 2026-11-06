@@ -48,18 +48,21 @@ type Document struct {
 	ReviewedBy string     `json:"reviewed_by,omitempty"`
 	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
-	Draft      *Draft     `json:"draft"`
+	// FileRemovedAt is when the original was deleted, by the retention rule or a
+	// person. The file route answers 404 after it.
+	FileRemovedAt *time.Time `json:"file_removed_at,omitempty"`
+	Draft         *Draft     `json:"draft"`
 	// Extraction is what was read before anybody corrected it.
 	Extraction *Draft `json:"extraction,omitempty"`
 }
 
-const documentColumns = `id, sender, filename, detected_mime, status, version, last_error, reviewed_by, reviewed_at, created_at, draft, extraction`
+const documentColumns = `id, sender, filename, detected_mime, status, version, last_error, reviewed_by, reviewed_at, created_at, content_removed_at, draft, extraction`
 
 func scanDocument(row interface{ Scan(...any) error }) (*Document, error) {
 	var d Document
 	var draft, extraction []byte
 	if err := row.Scan(&d.ID, &d.Sender, &d.Filename, &d.MimeType, &d.Status, &d.Version, &d.LastError,
-		&d.ReviewedBy, &d.ReviewedAt, &d.CreatedAt, &draft, &extraction); err != nil {
+		&d.ReviewedBy, &d.ReviewedAt, &d.CreatedAt, &d.FileRemovedAt, &draft, &extraction); err != nil {
 		return nil, err
 	}
 	if draft != nil {
@@ -151,7 +154,8 @@ func (m *Module) handleDocumentFile(w http.ResponseWriter, r *http.Request) {
 	}
 	var content []byte
 	var filename string
-	err = m.db.QueryRowContext(r.Context(), `SELECT content, filename FROM retailassistant_documents WHERE id = $1`, id).Scan(&content, &filename)
+	var sealed bool
+	err = m.db.QueryRowContext(r.Context(), `SELECT content, filename, content_sealed FROM retailassistant_documents WHERE id = $1`, id).Scan(&content, &filename, &sealed)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && content == nil) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("document %d has no file", id))
 		return
@@ -159,6 +163,12 @@ func (m *Module) handleDocumentFile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read a document"))
 		return
+	}
+	if sealed {
+		if content, err = m.openFile(r.Context(), id, content); err != nil {
+			respondTx(w, r, err, "open a document's file")
+			return
+		}
 	}
 	name := strings.TrimSpace(safeFilename.ReplaceAllString(filename, "_"))
 	if name == "" {

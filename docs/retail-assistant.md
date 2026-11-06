@@ -22,8 +22,7 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
 Also not built: barcode checkout, wholesale quotes, insights, WhatsApp sign-in,
-OCR or AI reading, a virus scan, retention and deletion rules, encrypting files
-at rest, template messages, and bank reconciliation.
+OCR or AI reading, template messages, and bank reconciliation.
 
 ## Setting it up
 
@@ -48,6 +47,8 @@ through.
 | `RETAIL_ASSISTANT_PHONE_NUMBER_ID` | The shared number's id at Meta |
 | `RETAIL_ASSISTANT_DISPLAY_NUMBER` | The number as people dial it, shown when a store links a phone |
 | `RETAIL_ASSISTANT_QUIET_TO_STRANGERS` | `1` when the number is shared with another service: nobody unlinked gets a reply |
+| `RETAIL_ASSISTANT_FILE_KEY` | Optional. 32 random bytes in base64 that encrypt new files in the database |
+| `RETAIL_ASSISTANT_CLAMD_ADDR` | Optional. The `host:port` of a ClamAV daemon that scans new files |
 
 With any of the first four unset, webhooks are refused or nothing can be sent,
 and the panel says the number is not set up.
@@ -89,6 +90,33 @@ are free text, so Meta only delivers them inside its customer-service window aft
 the phone last wrote. Outside that window Meta refuses them, and the refusal is
 kept on the message's row. Template messages are not built yet; if you add them,
 their wording has to be approved by Meta first.
+
+## Keeping files safe
+
+**Encryption.** Make a key with `openssl rand -base64 32` and set
+`RETAIL_ASSISTANT_FILE_KEY`. New files are then sealed with AES-256-GCM; files
+already kept stay readable as they were. **Keep the key somewhere other than the
+database's backups, and do not lose it: a file sealed with a lost key cannot be
+opened.** The ledger is unaffected, since only the original files are sealed, and
+what was read from a file is not. A mistyped key does not stop the engine: each new
+file fails with the reason, and none is stored in clear until the key is fixed.
+There is no key rotation yet.
+
+**Virus scanning.** Run [ClamAV's daemon](https://docs.clamav.net/) and set
+`RETAIL_ASSISTANT_CLAMD_ADDR` to its address. A flagged file is not kept, and its
+document shows as failed with the reason. While the scanner is down, files wait and
+are retried, and after five tries the document fails. **Try again** fetches it from
+Meta again, which works only while Meta still holds the file.
+
+**Deleting files.** Under **Orders › Supplier bills**, **Settings** takes a number
+of days. Past that, counted from the review, a posted document loses its file, and
+a rejected or failed one also loses what was read from it. Supplier accounts never
+change. Empty keeps files for good. Check with your accountant how long you have to
+keep bills before setting this. A reviewed document's own **Delete file** button
+does the same for one file, at any time.
+
+**Exports.** **Orders › Suppliers** downloads balances, bills, payments and credit
+notes as CSV for an accountant.
 
 ## Who can do what
 

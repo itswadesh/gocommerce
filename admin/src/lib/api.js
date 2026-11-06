@@ -603,6 +603,7 @@ export const retailAssistant = {
     approve: (id, body) => api.post(`${RETAIL}/documents/${id}/approve`, body),
     reject: (id, body) => api.post(`${RETAIL}/documents/${id}/reject`, body),
     retry: (id) => api.post(`${RETAIL}/documents/${id}/retry`),
+    removeFile: (id) => api.post(`${RETAIL}/documents/${id}/remove-file`),
     suppliers: () => api.get(`${RETAIL}/suppliers`),
     payables: (params) => api.get(`${RETAIL}/payables` + query(params)),
     payments: (params) => api.get(`${RETAIL}/payments` + query(params)),
