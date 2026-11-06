@@ -204,7 +204,8 @@ type PublicCollection struct {
 	ID    int64  `json:"id"`
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
-	// Image is the collection's picture (its metadata's image), or empty.
+	// Image is the collection's picture (its metadata's image), or its first
+	// product's when it has none of its own, or empty.
 	Image string `json:"image,omitempty"`
 	// Description is the first line of the collection's description, cut
 	// at a word near 160 characters (cardLine).
@@ -420,6 +421,9 @@ func (m *Module) collectionCards(ctx context.Context, ids []int64) []PublicColle
 		c, err := m.app.Collections().Get(ctx, id)
 		if err != nil {
 			continue
+		}
+		if err := m.app.Collections().FillCovers(ctx, c); err != nil {
+			m.app.Log().Warn("collection cover", "collection", c.ID, "error", err) // the card still reads without one
 		}
 		image, _ := c.Metadata["image"].(string)
 		if !safeURL(image) {
