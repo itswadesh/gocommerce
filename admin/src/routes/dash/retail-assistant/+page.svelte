@@ -10,7 +10,7 @@
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import { formatDate, formatMoney, fromMinor, isValidMoney, toMinor } from "$lib/format.js";
-    import { CREDIT_KINDS, DOCUMENT_TYPES, isMismatch, statusOf } from "$lib/retail.js";
+    import { aiReadable, CREDIT_KINDS, DOCUMENT_TYPES, isMismatch, statusOf } from "$lib/retail.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise } from "$lib/motion.js";
     import { titled } from "$lib/brand.svelte.js";
@@ -47,6 +47,7 @@
     let phone = $state("");
     let issued = $state(null);
     let confirmingRemove = $state(false);
+    let compared = $state(false);
 
     $effect(() => {
         if (readable && hasModule("retailassistant")) refresh();
@@ -100,6 +101,7 @@
     function fill(d) {
         const draft = d.draft ?? {};
         acceptMismatch = false;
+        compared = false;
         form = {
             document_type: draft.document_type || "purchase_invoice",
             supplier: draft.supplier?.name ?? "",
@@ -118,7 +120,8 @@
     const reviewing = $derived(doc?.status === "needs_review" && writable);
     const exceptions = $derived(doc?.draft?.exceptions ?? []);
     const hasMismatch = $derived(exceptions.some(isMismatch));
-    const canApprove = $derived(exceptions.every(isMismatch) && (!hasMismatch || acceptMismatch));
+    const readByAI = $derived(doc?.draft?.source?.extraction_method === "ai");
+    const canApprove = $derived(exceptions.every(isMismatch) && (!hasMismatch || acceptMismatch) && (!readByAI || compared));
 
     function minor(value, name) {
         if (value.trim() === "") return null;
@@ -152,7 +155,7 @@
 
     async function approve() {
         const ok = await run(async () => {
-            await retailAssistant.approve(doc.id, { version: doc.version, accept_mismatch: acceptMismatch });
+            await retailAssistant.approve(doc.id, { version: doc.version, accept_mismatch: acceptMismatch, compared_with_file: compared });
             toast.success("Posted to the supplier's account");
             doc = null;
             await loadAll();
@@ -165,6 +168,15 @@
             await retailAssistant.reject(doc.id, { version: doc.version });
             toast.success("Rejected. It stays on record and counts for nothing.");
             doc = null;
+            await loadAll();
+        });
+    }
+
+    async function readAgain() {
+        await run(async () => {
+            doc = await retailAssistant.readWithAI(doc.id);
+            fill(doc);
+            toast.success("Read. Compare every figure with the file.");
             await loadAll();
         });
     }
@@ -385,6 +397,31 @@
             {/if}
         </div>
 
+        {#if readByAI}
+            <div class="alert alert-info tw:mb-3" role="status" in:rise>
+                <p><strong>Read by AI{doc.draft.source.confidence != null ? `, ${doc.draft.source.confidence}% sure` : ""}.</strong> It can misread a figure and still look right, so compare each one with the file.</p>
+                {#if doc.draft.source.notes?.length}
+                    <ul>
+                        {#each doc.draft.source.notes as note (note)}<li>{note}</li>{/each}
+                    </ul>
+                {/if}
+            </div>
+        {/if}
+
+        {#if reviewing && !readByAI && aiReadable(doc.mime_type)}
+            <div class="tw:mb-3" in:rise>
+                {#if status?.ai_reading}
+                    {#if doc.last_error}<p class="txt-hint txt-sm tw:mb-2">{doc.last_error}</p>{/if}
+                    <button type="button" class="btn sm" class:loading={busy} disabled={busy} onclick={readAgain}>
+                        <i class="ri-sparkling-line" aria-hidden="true"></i>
+                        <span class="txt">Read with AI</span>
+                    </button>
+                {:else if status?.ai_reading_why}
+                    <p class="txt-hint txt-sm">{status.ai_reading_why}</p>
+                {/if}
+            </div>
+        {/if}
+
         {#if exceptions.length}
             <div class="alert alert-warning tw:mb-3" role="status" in:rise>
                 <ul>
@@ -463,6 +500,12 @@
             </div>
         {/if}
 
+        {#if reviewing && readByAI}
+            <label class="retail-check tw:mt-4">
+                <input type="checkbox" bind:checked={compared} />
+                <span>I compared these figures with the file.</span>
+            </label>
+        {/if}
         {#if reviewing && hasMismatch}
             <label class="retail-check tw:mt-4">
                 <input type="checkbox" bind:checked={acceptMismatch} />

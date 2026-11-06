@@ -286,6 +286,8 @@ func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Version        int  `json:"version"`
 		AcceptMismatch bool `json:"accept_mismatch"`
+		// ComparedWithFile is a person saying they checked a model's reading.
+		ComparedWithFile bool `json:"compared_with_file"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -301,6 +303,9 @@ func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := checkApprovable(*d, in.AcceptMismatch); err != nil {
 			return err
+		}
+		if d.Source.ExtractionMethod == extractionAI && !in.ComparedWithFile {
+			return gocommerce.Validationf("this was read by AI: compare it with the file and say so before approving")
 		}
 		if d.Currency != "" && d.Currency != currency {
 			return gocommerce.Validationf("this store's ledger is in %s, and this document says %s", currency, d.Currency)
@@ -341,7 +346,7 @@ func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if err := m.audit(ctx, tx, "document.approved", "document", id, map[string]any{
-			"entity": entity, "entity_id": entityID, "accept_mismatch": in.AcceptMismatch,
+			"entity": entity, "entity_id": entityID, "accept_mismatch": in.AcceptMismatch, "compared_with_file": in.ComparedWithFile,
 		}); err != nil {
 			return err
 		}

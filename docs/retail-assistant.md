@@ -15,14 +15,14 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 
 | It does | It does not |
 |---|---|
-| Takes files and photos on one shared WhatsApp number | Read PDFs or photos: a person enters those by hand |
+| Takes files and photos on one shared WhatsApp number | Read PDFs or photos unless a store turns on AI reading: otherwise a person enters them |
 | Reads tables in CSV, XLSX and DOCX files | Post anything without a person approving it |
 | Keeps each store's records apart, behind the store policy | Keep a file from a number no store has linked |
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
 Also not built: barcode checkout, wholesale quotes, insights, WhatsApp sign-in,
-OCR or AI reading, template messages, and bank reconciliation.
+template messages, and bank reconciliation.
 
 ## Setting it up
 
@@ -90,6 +90,32 @@ are free text, so Meta only delivers them inside its customer-service window aft
 the phone last wrote. Outside that window Meta refuses them, and the refusal is
 kept on the message's row. Template messages are not built yet; if you add them,
 their wording has to be approved by Meta first.
+
+## Reading PDFs and photos with AI
+
+CSV, XLSX and DOCX tables are read exactly by the engine. A PDF or a photo needs a
+model, so it stays off until both of these are done:
+
+1. The install runs with `-ai-gateway`, and the store's **AI gateway** plugin can
+   make calls and has **Share documents** on.
+2. **Read PDFs and photos with AI** is on in the settings under **Orders › Supplier
+   bills**. This is separate on purpose: using AI for product listings is not
+   agreeing to send supplier bills to a provider.
+
+A new PDF or photo is then sent through the gateway, under its spending cap, and
+the review form fills in from what comes back. **Read with AI** asks again after a
+failure. Amounts are read as text and through the same parser as a typed amount.
+A smaller model's reading goes to a stronger one when it is unsure, or when its
+figures do not add up. An amount that cannot be parsed fails the reading, and a
+person types the document in, as they would with no AI.
+
+It can still misread a figure and look right. So a document a model read stops at
+review like any other, and the engine refuses to approve it until a person says
+they compared it with the file; saying so goes in the audit trail. A person's typing
+is never overwritten by a reading that arrives late.
+
+The accuracy on real bills has not been measured. Try it on real documents before
+relying on it.
 
 ## Keeping files safe
 
@@ -202,5 +228,6 @@ Then:
 ## What has not been tested
 
 - Meta's real webhook, media download and message sending. The request shapes follow Meta's documentation and `ext/notify-whatsapp`.
+- AI reading against a real model. Its prompt and answer shape have only met a stand-in.
 - Real supplier documents. The reader's labels and columns are a first guess at how Indian bills are laid out, and only real documents will show how far off that is.
 - Hindi. The module's wording is in English and is not yet set up for translation.

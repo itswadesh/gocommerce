@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isMismatch, moneyNote, newKey, statusOf, wholeQuantity } from "../src/lib/retail.js";
+import { aiReadable, isMismatch, moneyNote, newKey, statusOf, wholeQuantity } from "../src/lib/retail.js";
+
+test("only a PDF or a picture goes to a model", () => {
+    assert.equal(aiReadable("application/pdf"), true);
+    assert.equal(aiReadable("image/jpeg"), true);
+    assert.equal(aiReadable("text/csv"), false);
+});
 
 test("only a whole quantity is prefilled", () => {
     assert.equal(wholeQuantity("10"), "10");

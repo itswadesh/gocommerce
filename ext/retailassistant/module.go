@@ -12,7 +12,8 @@
 //
 // Nothing is posted unread. Every document stops at needs_review however well
 // it parsed, and a figure the reader could not find stays null: nothing here
-// guesses an amount, and there is no AI in this package.
+// guesses an amount. A model may read a PDF or a photo through the AI gateway when
+// the store has agreed to that, and what it reads still stops there.
 //
 // The number is shared and the records are not. A message names no store, so
 // the sender decides, and only a number the store's owner named and that then
@@ -26,9 +27,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
 )
 
 const (
@@ -69,6 +72,8 @@ type Config struct {
 	FileKey string
 	// ClamdAddr is a clamd's host:port. Empty, files are not scanned.
 	ClamdAddr string
+	// Gateway reads PDFs and photos with a model. Nil, a person enters them.
+	Gateway *aigateway.Module
 	// Poll is how often the worker looks for work; 0 is five seconds.
 	Poll time.Duration
 }
@@ -84,6 +89,7 @@ type Module struct {
 
 	fileKey    []byte
 	fileKeyBad bool
+	tasks      sync.Once
 }
 
 // New constructs the module.
@@ -320,6 +326,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 		m.cfg.Poll = 5 * time.Second
 	}
 	m.loadFileKey()
+	if m.cfg.Gateway != nil {
+		var err error
+		m.tasks.Do(func() { err = m.cfg.Gateway.RegisterTask(m.readTask()) })
+		if err != nil {
+			return err
+		}
+	}
 
 	app.RegisterRight(gocommerce.RightSpec{
 		Right: rightRead, Label: "See supplier accounts",
@@ -343,6 +356,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Fields: []gocommerce.PluginField{
 			{Key: "retention_days", Label: "Delete files after this many days", Kind: "number",
 				Help: "Counted from when a document was reviewed. Your supplier accounts stay as they are; only the original files go. Leave empty to keep files. Check with your accountant how long you must keep bills before setting this."},
+			{Key: "ai_reading", Label: "Read PDFs and photos with AI", Kind: "bool", Default: false,
+				Help: "Sends each PDF and photo to the AI provider set up in the AI gateway, and fills in the review form from what it reads. You still compare every figure with the file before approving. It uses your AI credit."},
 		},
 	})
 
@@ -374,6 +389,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/documents/{id}/reject", m.handleReject)
 	write("POST "+adminBase+"/documents/{id}/retry", m.handleRetry)
 	write("POST "+adminBase+"/documents/{id}/remove-file", m.handleRemoveFile)
+	write("POST "+adminBase+"/documents/{id}/read", m.handleRead)
 	read("GET "+adminBase+"/export/{kind}", m.handleExport)
 
 	read("GET "+adminBase+"/suppliers", m.handleSuppliers)
@@ -418,7 +434,10 @@ func (m *Module) on(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
+	reading, why := m.aiAvailable(r.Context())
 	gocommerce.Respond(w, http.StatusOK, map[string]any{
+		"ai_reading":     reading,
+		"ai_reading_why": why,
 		"enabled":        m.enabled(r.Context()),
 		"channel_ready":  m.channelReady(),
 		"display_number": m.cfg.DisplayNumber,

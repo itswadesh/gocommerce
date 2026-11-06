@@ -567,6 +567,7 @@ func (m *Module) documentPass(ctx context.Context) error {
 		if err := m.keepDocument(ctx, j.id, j.sender, j.filename, data, stored, sealed); err != nil {
 			return err
 		}
+		m.readIfAllowed(ctx, j.id)
 	}
 	return nil
 }

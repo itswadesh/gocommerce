@@ -106,7 +106,11 @@ func setupWith(t *testing.T, change func(*Config)) *harness {
 	}
 	change(&cfg)
 	mod := New(cfg)
-	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mod)
+	mods := []gocommerce.Module{mod}
+	if cfg.Gateway != nil {
+		mods = []gocommerce.Module{cfg.Gateway, mod}
+	}
+	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mods...)
 	st, err := app.Stores().Create(context.Background(), "Store B", "store-b")
 	if err != nil {
 		t.Fatal(err)
