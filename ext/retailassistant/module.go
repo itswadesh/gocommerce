@@ -370,6 +370,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/credits/{id}/reverse", m.handleReverseCredit)
 	write("POST "+adminBase+"/allocations/{id}/reverse", m.handleReverseAllocation)
 	write("POST "+adminBase+"/invoices/{id}/reverse", m.handleReverseInvoice)
+	read("GET "+adminBase+"/invoices/{id}/lines", m.handleInvoiceLines)
 	// Receiving goods moves stock, so it takes the inventory right as well.
 	app.HandleAdminFunc("POST "+adminBase+"/invoices/{id}/receive", m.on(m.handleReceive), rightWrite, gocommerce.RightInventoryWrite)
 

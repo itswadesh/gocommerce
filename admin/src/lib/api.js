@@ -612,6 +612,8 @@ export const retailAssistant = {
     addCredit: (body, key) => api.post(`${RETAIL}/credits`, body, keyed(key)),
     allocateCredit: (id, body, key) => api.post(`${RETAIL}/credits/${id}/allocate`, body, keyed(key)),
     reverseCredit: (id) => api.post(`${RETAIL}/credits/${id}/reverse`),
+    invoiceLines: (id) => api.get(`${RETAIL}/invoices/${id}/lines`),
+    receive: (id, body) => api.post(`${RETAIL}/invoices/${id}/receive`, body),
 };
 
 /**

@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isMismatch, moneyNote, newKey, statusOf } from "../src/lib/retail.js";
+import { isMismatch, moneyNote, newKey, statusOf, wholeQuantity } from "../src/lib/retail.js";
+
+test("only a whole quantity is prefilled", () => {
+    assert.equal(wholeQuantity("10"), "10");
+    assert.equal(wholeQuantity(" 10.00 "), "10");
+    assert.equal(wholeQuantity("2.5"), "");
+    assert.equal(wholeQuantity("0"), "");
+    assert.equal(wholeQuantity("10 pcs"), "");
+    assert.equal(wholeQuantity(null), "");
+});
 
 test("a status with no wording of its own still reads", () => {
     assert.equal(statusOf("needs_review").label, "Needs review");

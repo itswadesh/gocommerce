@@ -112,12 +112,17 @@ worked back from what was recorded.
 
 ## Goods
 
-A bill does not put goods on the shelf. `POST /api/admin/x/retailassistant/invoices/{id}/receive`
-books a line in, naming the variant and the quantity, and moves stock through the
-stock service once per line. There is no screen for this yet. If the server dies
-between recording a receipt and moving the stock, the line stays `pending` and
-cannot be received again: a person checks the stock and corrects it, rather than
-it being counted twice.
+A bill does not put goods on the shelf. Under **Orders › Suppliers**, open a
+supplier and press **Book in goods** on a bill. Each line asks which product it is
+and how many arrived; a line whose SKU is exactly a variant's comes matched, and a
+whole quantity on the bill comes filled in. Lines left without a product stay open
+for later. Behind it, `POST /api/admin/x/retailassistant/invoices/{id}/receive`
+moves stock through the stock service once per line, and needs
+`retailassistant.write` and `inventory.write`.
+
+If the server dies between recording a receipt and moving the stock, the line stays
+`pending`, shows as **Interrupted**, and cannot be received again: a person checks
+the stock and corrects it, rather than it being counted twice.
 
 ## A walkthrough with no Meta account
 
