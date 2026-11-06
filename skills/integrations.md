@@ -417,8 +417,19 @@ each one so the answer can name it), `ext/catalog-ai`'s `catalog.improve`
 shows a two-rung ladder that climbs on the model's own confidence and on a
 `Check` that reads the store (the category must be one it has),
 `ext/reviews`' `reviews.summarize` shows one whose answer must cite only what
-it was sent, with a `Deterministic` step that answers without a model, and
-[the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
+it was sent, with a `Deterministic` step that answers without a model,
+`ext/ask-ai`'s `ask-ai.turn` shows a task whose answer may propose a change,
+and [the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
+
+A model never writes. A module that wants one to suggest a change registers an
+`Action` with `RegisterAction`: its `Preview` only reads, and its `Execute` goes
+through the core service with the person on the context. `Propose` files the
+model's suggestion, and `Approve` runs it as the person who pressed the button,
+if the preview they saw still holds. `ext/ask-ai` is the worked example (D233):
+its `store.update_details` allowlists fields, sets `Label` so the audit trail
+says where the change came from, and sets `OwnRightSuffices` because `store.write`
+already opens the form with those fields, so the queue's `ai.approve` would add
+nothing. Set that only for an action a person asked for and could do by hand.
 
 ## MCP: the same state machine, a different door
 

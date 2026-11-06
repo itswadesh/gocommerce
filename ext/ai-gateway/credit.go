@@ -368,6 +368,36 @@ func (m *Module) CreditLedger(ctx context.Context, limit, offset int) ([]CreditE
 	return out, total, rows.Err()
 }
 
+// CurrencyChangeWarning says what moving ctx's store to currency would do to
+// its AI, in the owner's words, or "" when nothing would change. A run on the
+// platform's key prices in the store's currency and reserves only in the one
+// the credit is held in, so the move can stop AI altogether; on a store's own
+// key the cap and prices are bare numbers, read in whatever the store sells in.
+func (m *Module) CurrencyChangeWarning(ctx context.Context, currency string) (string, error) {
+	s, err := m.settings(ctx)
+	if err != nil {
+		return "", err
+	}
+	if s.platform {
+		if _, ok := m.platform.prices(currency); !ok {
+			return fmt.Sprintf("The platform's AI is not priced in %s, so AI features, Ask AI among them, stop for this store after this change.", currency), nil
+		}
+		var held string
+		err := m.db.QueryRowContext(ctx, `SELECT currency FROM ai_credits`).Scan(&held)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+		if err == nil && held != currency {
+			return fmt.Sprintf("This store's AI credit is held in %s and cannot be spent in %s, so AI features, Ask AI among them, stop until the platform moves it or the store goes back to %s.", held, currency, held), nil
+		}
+		return "", nil
+	}
+	if s.capMinor != nil {
+		return fmt.Sprintf("The AI monthly cap and model prices under Plugins are plain numbers, and are read in %s after this change.", currency), nil
+	}
+	return "", nil
+}
+
 // creditReason is what a run says when the store has no credit left: the
 // owner's copy, told apart by whether the store has ever been topped up.
 func (m *Module) creditReason(ctx context.Context) string {

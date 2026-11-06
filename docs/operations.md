@@ -292,8 +292,12 @@ search does not.
 
 ### AI on the platform's key
 
-The engine runs with `-ai-gateway` (and the modules built on it). Every model
-call goes through the gateway, which records it and charges it (D107, D151).
+The engine runs with `-ai-gateway` (and the modules built on it, `-ask-ai` among
+them). Every model call goes through the gateway, which records it and charges
+it (D107, D151). Ask AI's button appears for a store only once the gateway can
+make calls for it; Plugins › AI gateway › "Share store facts" (on unless a store
+switches it off) says whether it may see the store's trading name, country,
+currency, timezone and setup steps. It never sees contact details.
 
 - **The key.** Set `ANTHROPIC_API_KEY` in the host's environment tab (Dokploy:
   the compose service's Environment) and redeploy. It is the platform's own

@@ -75,6 +75,9 @@ services:
       - -ai-gateway
       - -photo-products
       - -catalog-ai
+      # "Ask AI" in the panel: setup questions, and changes to the store's
+      # details that a person applies. Runs through the gateway above.
+      - -ask-ai
       # Ads intelligence: the ads report, ad spend and its AI summary.
       - -ads
       - serve

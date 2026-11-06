@@ -235,6 +235,9 @@ const (
 	// AuditStoreSetImages is the store's logo, dark logo or icon changed
 	// (D148): the face every storefront page shows.
 	AuditStoreSetImages = "store.set_images"
+	// AuditStoreSetDetails is the store's name, contact details, address, tax
+	// id, timezone, currency or tax-inclusive pricing changed.
+	AuditStoreSetDetails = "store.set_details"
 
 	AuditLocationCreate     = "location.create"
 	AuditLocationUpdate     = "location.update"
@@ -309,7 +312,7 @@ var AllAuditActions = []string{
 
 	AuditCustomerGroupTaxExemption,
 
-	AuditStoreSetBrand, AuditStoreSetImages,
+	AuditStoreSetBrand, AuditStoreSetImages, AuditStoreSetDetails,
 }
 
 // AuditChanges is what a row says actually moved.

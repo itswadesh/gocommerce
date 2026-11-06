@@ -291,6 +291,198 @@ func (p *StoreProfiles) Get(ctx context.Context) (*StoreProfile, error) {
 // and a partial update would need a way to say "clear this field" that an
 // empty string already means here.
 func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser) (*StoreProfile, error) {
+	w, err := p.prepare(ctx, &in)
+	if err != nil {
+		return nil, err
+	}
+	var updatedBy *int64
+	if by != nil {
+		updatedBy = &by.ID
+	}
+	err = InTx(ctx, p.app.db, func(tx *sql.Tx) error {
+		if err := p.setImages(ctx, tx, in.LogoMediaID, in.LogoDarkMediaID, in.IconMediaID); err != nil {
+			return err
+		}
+		if err := p.auditDetails(ctx, tx, &in, w.currency); err != nil {
+			return err
+		}
+		if w.currency != "" {
+			locked, err := p.app.hasOrders(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if locked {
+				return currencyLocked()
+			}
+			if err := p.app.setCurrency(ctx, tx, w.currency); err != nil {
+				return err
+			}
+		}
+		if w.languages != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE stores SET languages = $1::text[] WHERE id = $2`,
+				stringArray(w.languages), p.app.storeOf(ctx)); err != nil {
+				return err
+			}
+			if oldMain := p.app.mainLanguage(ctx); w.languages[0] != oldMain {
+				if err := p.app.notifyTemplates.keepOldWording(ctx, tx, oldMain); err != nil {
+					return err
+				}
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+		UPDATE store_profile SET
+		    name = $1, legal_name = $2, email = $3, phone = $4,
+		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
+		    postal_code = $9, country = $10, tax_id = $11, support_url = $12,
+		    timezone = $13, updated_at = now(), updated_by = $14,
+		    show_address = coalesce($15, show_address),
+		    map_location = coalesce($16, map_location),
+		    opening_hours = coalesce($17::jsonb, opening_hours),
+		    prices_include_tax = coalesce($18, prices_include_tax)
+		WHERE id = 1`,
+			in.Name, in.LegalName, in.Email, in.Phone,
+			in.AddressLine1, in.AddressLine2, in.City, in.State,
+			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
+			in.Timezone, updatedBy,
+			in.ShowAddress, in.MapLocation, w.hours, in.PricesIncludeTax); err != nil {
+			return err
+		}
+		// A store has one name: this one, which is what the store list and
+		// the account menu show (D83). Blank leaves the old one, since a
+		// store listed as nothing cannot be picked out.
+		if in.Name == "" {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx,
+			`UPDATE stores SET name = $1 WHERE id = $2`, in.Name, p.app.storeOf(ctx))
+		return err
+	})
+	var api *APIError
+	if errors.As(err, &api) {
+		return nil, api
+	}
+	if err != nil {
+		return nil, Internalf(err, "save the store profile")
+	}
+	if w.currency != "" {
+		ctx = withStoreCurrency(ctx, w.currency)
+	}
+	if w.languages != nil {
+		ctx = withStoreLanguages(ctx, w.languages)
+	}
+	return p.Get(ctx)
+}
+
+// currencyLocked is the refusal to move a store with paid or sent-out orders to
+// another currency.
+func currencyLocked() *APIError {
+	return Conflictf("this store has orders that were paid or sent out, so its currency is fixed: changing it would change what their amounts mean")
+}
+
+// Validate puts in through what Set would refuse and tidies it the way Set
+// would, writing nothing, so a change can be judged before anybody commits to
+// it. Set checks it all again when it saves.
+func (p *StoreProfiles) Validate(ctx context.Context, in *StoreProfile) error {
+	w, err := p.prepare(ctx, in)
+	if err != nil {
+		return err
+	}
+	if w.currency != "" {
+		locked, err := p.app.hasOrders(ctx, p.app.db)
+		if err != nil {
+			return Internalf(err, "read whether the store has orders")
+		}
+		if locked {
+			return currencyLocked()
+		}
+	}
+	return nil
+}
+
+// profileWrite is what prepare worked out beyond the tidied profile itself.
+type profileWrite struct {
+	// hours is the opening hours as JSON, nil when none were sent.
+	hours *string
+	// languages is nil when they are not changing, currency "" likewise.
+	languages []string
+	currency  string
+}
+
+// auditDetails records what a save changes, on the save's own transaction.
+//
+// The store's contact details and address are named but not copied into
+// Before and After: on a shop run from home they are a person's own (D156), and
+// the trail is read further and kept longer than the form. Languages and
+// opening hours are not trailed.
+func (p *StoreProfiles) auditDetails(ctx context.Context, tx *sql.Tx, in *StoreProfile, currency string) error {
+	var was StoreProfile
+	var inclusive sql.NullBool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT name, legal_name, email, phone, address_line1, address_line2, city, state, postal_code,
+		       country, tax_id, support_url, timezone, prices_include_tax
+		FROM store_profile WHERE id = 1 FOR UPDATE`).Scan(
+		&was.Name, &was.LegalName, &was.Email, &was.Phone, &was.AddressLine1, &was.AddressLine2, &was.City,
+		&was.State, &was.PostalCode, &was.Country, &was.TaxID, &was.SupportURL, &was.Timezone, &inclusive); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	var names []string
+	before, after := map[string]any{}, map[string]any{}
+	for _, f := range []struct {
+		name     string
+		was, now string
+		private  bool
+	}{
+		{"name", was.Name, in.Name, false},
+		{"legal_name", was.LegalName, in.LegalName, false},
+		{"email", was.Email, in.Email, true},
+		{"phone", was.Phone, in.Phone, true},
+		{"address_line1", was.AddressLine1, in.AddressLine1, true},
+		{"address_line2", was.AddressLine2, in.AddressLine2, true},
+		{"city", was.City, in.City, true},
+		{"state", was.State, in.State, true},
+		{"postal_code", was.PostalCode, in.PostalCode, true},
+		{"country", was.Country, in.Country, false},
+		{"tax_id", was.TaxID, in.TaxID, false},
+		{"support_url", was.SupportURL, in.SupportURL, false},
+		{"timezone", was.Timezone, in.Timezone, false},
+	} {
+		if f.was == f.now {
+			continue
+		}
+		names = append(names, f.name)
+		if !f.private {
+			before[f.name], after[f.name] = f.was, f.now
+		}
+	}
+	if currency != "" {
+		names = append(names, "currency")
+		before["currency"], after["currency"] = p.app.Currency(ctx), currency
+	}
+	if in.PricesIncludeTax != nil {
+		old := p.app.cfg.PricesIncludeTax
+		if inclusive.Valid {
+			old = inclusive.Bool
+		}
+		if old != *in.PricesIncludeTax {
+			names = append(names, "prices_include_tax")
+			before["prices_include_tax"], after["prices_include_tax"] = old, *in.PricesIncludeTax
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return writeAudit(ctx, tx, auditRecord{
+		Action: AuditStoreSetDetails, Entity: AuditEntityStore, Key: p.app.storeOf(ctx),
+		Summary: "Changed the store's details: " + strings.Join(names, ", "),
+		Before:  before, After: after,
+	})
+}
+
+// prepare validates in and tidies it in place.
+func (p *StoreProfiles) prepare(ctx context.Context, in *StoreProfile) (*profileWrite, error) {
 	fields := map[string]*string{
 		"name":         &in.Name,
 		"legal name":   &in.LegalName,
@@ -409,12 +601,12 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 	}
 
 	images := []struct {
-		column, name string
-		id           *int64
+		name string
+		id   *int64
 	}{
-		{"logo_media_id", "logo", in.LogoMediaID},
-		{"logo_dark_media_id", "logo for dark backgrounds", in.LogoDarkMediaID},
-		{"icon_media_id", "icon", in.IconMediaID},
+		{"logo", in.LogoMediaID},
+		{"logo for dark backgrounds", in.LogoDarkMediaID},
+		{"icon", in.IconMediaID},
 	}
 	for _, img := range images {
 		if img.id == nil || *img.id == 0 {
@@ -433,79 +625,7 @@ func (p *StoreProfiles) Set(ctx context.Context, in StoreProfile, by *Superuser)
 		}
 	}
 
-	var updatedBy *int64
-	if by != nil {
-		updatedBy = &by.ID
-	}
-	err := InTx(ctx, p.app.db, func(tx *sql.Tx) error {
-		if err := p.setImages(ctx, tx, images[0].id, images[1].id, images[2].id); err != nil {
-			return err
-		}
-		if currency != "" {
-			locked, err := p.app.hasOrders(ctx, tx)
-			if err != nil {
-				return err
-			}
-			if locked {
-				return Conflictf("this store has orders that were paid or sent out, so its currency is fixed: changing it would change what their amounts mean")
-			}
-			if err := p.app.setCurrency(ctx, tx, currency); err != nil {
-				return err
-			}
-		}
-		if languages != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE stores SET languages = $1::text[] WHERE id = $2`,
-				stringArray(languages), p.app.storeOf(ctx)); err != nil {
-				return err
-			}
-			if oldMain := p.app.mainLanguage(ctx); languages[0] != oldMain {
-				if err := p.app.notifyTemplates.keepOldWording(ctx, tx, oldMain); err != nil {
-					return err
-				}
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `
-		UPDATE store_profile SET
-		    name = $1, legal_name = $2, email = $3, phone = $4,
-		    address_line1 = $5, address_line2 = $6, city = $7, state = $8,
-		    postal_code = $9, country = $10, tax_id = $11, support_url = $12,
-		    timezone = $13, updated_at = now(), updated_by = $14,
-		    show_address = coalesce($15, show_address),
-		    map_location = coalesce($16, map_location),
-		    opening_hours = coalesce($17::jsonb, opening_hours),
-		    prices_include_tax = coalesce($18, prices_include_tax)
-		WHERE id = 1`,
-			in.Name, in.LegalName, in.Email, in.Phone,
-			in.AddressLine1, in.AddressLine2, in.City, in.State,
-			in.PostalCode, in.Country, in.TaxID, in.SupportURL,
-			in.Timezone, updatedBy,
-			in.ShowAddress, in.MapLocation, hours, in.PricesIncludeTax); err != nil {
-			return err
-		}
-		// A store has one name: this one, which is what the store list and
-		// the account menu show (D83). Blank leaves the old one, since a
-		// store listed as nothing cannot be picked out.
-		if in.Name == "" {
-			return nil
-		}
-		_, err := tx.ExecContext(ctx,
-			`UPDATE stores SET name = $1 WHERE id = $2`, in.Name, p.app.storeOf(ctx))
-		return err
-	})
-	var api *APIError
-	if errors.As(err, &api) {
-		return nil, api
-	}
-	if err != nil {
-		return nil, Internalf(err, "save the store profile")
-	}
-	if currency != "" {
-		ctx = withStoreCurrency(ctx, currency)
-	}
-	if languages != nil {
-		ctx = withStoreLanguages(ctx, languages)
-	}
-	return p.Get(ctx)
+	return &profileWrite{hours: hours, languages: languages, currency: currency}, nil
 }
 
 // setImages writes the pictures a save names and audits the change. Nil

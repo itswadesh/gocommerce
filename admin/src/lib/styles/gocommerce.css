@@ -6094,7 +6094,7 @@ tr.handle:focus-visible {
     font-size: var(--smFontSize);
     text-align: left;
     cursor: pointer;
-    transition: background var(--animationSpeed), border-color var(--animationSpeed);
+    transition: background var(--animationSpeed), border-color var(--animationSpeed), transform 150ms;
 }
 .app-search:hover,
 .app-search:focus-visible {
@@ -6102,11 +6102,30 @@ tr.handle:focus-visible {
     border-color: var(--surfaceAlt3Color);
     color: var(--surfaceTxtColor);
 }
+.app-search:active {
+    transform: scale(0.98);
+}
 .app-search > .txt {
     flex-grow: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Ask AI is a thumb's size on a phone, in the bar and in the menu. */
+.app-topbar .app-ask-top {
+    width: 44px;
+    height: 44px;
+}
+@media (max-width: 768px) {
+    .app-drawer .app-ask {
+        min-height: 44px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .app-search:active {
+        transform: none;
+    }
 }
 
 /*

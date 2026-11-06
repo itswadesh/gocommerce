@@ -1,0 +1,221 @@
+{
+  "paths": {
+    "/api/admin/x/ask-ai/status": {
+      "get": {
+        "tags": ["admin:ask-ai"],
+        "summary": "Whether Ask AI can answer",
+        "description": "Requires ask-ai.use. Answers ready, or ready false with the reason in plain words.",
+        "security": [{"adminToken": []}],
+        "responses": {
+          "200": {
+            "description": "Readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ready": {"type": "boolean"},
+                        "reason": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/api/admin/x/ask-ai/turn": {
+      "post": {
+        "tags": ["admin:ask-ai"],
+        "summary": "Ask one question",
+        "description": "Requires ask-ai.use and a person signed in to the panel. Sends the conversation so far, which the browser holds (at most 20 messages of at most 2,000 characters, the last the person's), and the panel screens the person can reach. One blocking model call through the AI gateway, spending the store's AI credit or its own key. The answer's links are only ones on the allowlist: those screens and the setup guide's. When the person asked for a change to the store's details and holds store.write, proposal holds it, with each field's current and proposed value; nothing is written until it is applied. Refused plainly: 409 ai_not_ready, ai_credit_exhausted, ai_budget_exhausted, ai_policy_blocked, ai_provider_failed or ai_no_answer, with the reason in plain words; 429 rate_limited.",
+        "security": [{"adminToken": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["messages"],
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {"type": "string", "enum": ["user", "assistant"]},
+                        "text": {"type": "string"}
+                      }
+                    }
+                  },
+                  "screens": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "href": {"type": "string"},
+                        "label": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "answer": {"type": "string"},
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {"type": "string"},
+                              "href": {"type": "string"}
+                            }
+                          }
+                        },
+                        "proposal": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "id": {"type": "integer"},
+                            "preview_hash": {"type": "string"},
+                            "changes": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "field": {"type": "string"},
+                                  "label": {"type": "string"},
+                                  "current": {"type": "string"},
+                                  "proposed": {"type": "string"}
+                                }
+                              }
+                            },
+                            "warnings": {"type": "array", "items": {"type": "string"}}
+                          }
+                        },
+                        "notice": {"type": "string"},
+                        "cost_micro_minor": {"type": "integer"},
+                        "currency": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"$ref": "#/components/responses/Validation"}
+        }
+      }
+    },
+    "/api/admin/x/ask-ai/proposals/{id}/apply": {
+      "post": {
+        "tags": ["admin:ask-ai"],
+        "summary": "Apply a proposal",
+        "description": "Requires store.write and a person signed in to the panel; ai.approve is not needed, since these are fields store.write already edits. Saves through the store profile service as that person, labelled Ask AI on the audit trail. Send the preview_hash of the proposal as reviewed: 409 with the fresh preview in the error's details when a value changed since. 409 ask_ai_not_applied when the save was refused, with the reason; a demo store refuses this way.",
+        "security": [{"adminToken": []}],
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["preview_hash"],
+                "properties": {"preview_hash": {"type": "string"}}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the store now holds for each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {"type": "string"},
+                        "changes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "field": {"type": "string"},
+                              "label": {"type": "string"},
+                              "proposed": {"type": "string"}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    },
+    "/api/admin/x/ask-ai/proposals/{id}/dismiss": {
+      "post": {
+        "tags": ["admin:ask-ai"],
+        "summary": "Dismiss a proposal",
+        "description": "Requires store.write and a person signed in to the panel. Closes the proposal without changing anything.",
+        "security": [{"adminToken": []}],
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {
+          "200": {
+            "description": "Dismissed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {"status": {"type": "string"}}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  }
+}
