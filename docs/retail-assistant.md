@@ -92,7 +92,7 @@ Confirmation messages are off until the owner ticks **Send** beside a phone. Wit
 24-hour window. After that they need a template:
 
 1. In WhatsApp Manager, create a **Utility** template with one variable in its body,
-   such as `Update from your shop assistant: {{1}}`, in English (`en`) and Hindi
+   such as `Update from your shop assistant: {{1}} Reply STOP to end these messages.`, in English (`en`) and Hindi
    (`hi`), and wait for Meta to approve both. Choosing the category and getting it
    approved is yours: Meta may change or reject it.
 2. Set `RETAIL_ASSISTANT_TEMPLATE` to its name.

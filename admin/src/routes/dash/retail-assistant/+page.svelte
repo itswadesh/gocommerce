@@ -23,6 +23,11 @@
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Select from "$lib/components/Select.svelte";
 
+    const PHONE_LANGUAGES = [
+        { value: "en", label: "English" },
+        { value: "hi", label: "हिंदी" },
+    ];
+
     const FILTERS = [
         { value: "needs_review", label: "Needs review" },
         { value: "", label: "Everything" },
@@ -362,10 +367,7 @@
                                             <span class="label" class:success={link.verified_at}>{link.verified_at ? t("Linked") : t("Waiting for the code")}</span>
                                         </td>
                                         <td class="min-width" data-name="Language">
-                                            <select aria-label={t("Language for +{phone}", { phone: link.phone })} value={link.language} disabled={busy} onchange={(e) => setLanguage(link, e.currentTarget.value)}>
-                                                <option value="en">English</option>
-                                                <option value="hi">हिंदी</option>
-                                            </select>
+                                            <Select ariaLabel={t("Language for +{phone}", { phone: link.phone })} value={link.language} disabled={busy} options={PHONE_LANGUAGES} onchange={(language) => setLanguage(link, language)} />
                                         </td>
                                         <td class="min-width" data-name="Confirmations">
                                             {#if link.opted_out}
