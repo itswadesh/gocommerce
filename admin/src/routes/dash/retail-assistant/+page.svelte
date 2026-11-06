@@ -334,7 +334,7 @@
                 {#if linking}
                     <h2 class="tw:mb-2 tw:text-lg tw:font-semibold">{t("Phones that can send documents")}</h2>
                     <p class="tw:mb-3 tw:text-sm tw:text-muted-foreground">
-                        {t("A phone counts once it sends its code to {number}. Files from any other phone are not kept.", { number: status.display_number || t("the store's WhatsApp number") })}
+                        {t("If you sign in with a phone, just message {number} from it. Add any other phone below and have it send its code. Files from any other phone are not kept.", { number: status.display_number || t("the store's WhatsApp number") })}
                     </p>
                     <form class="retail-add tw:mb-3 tw:flex tw:flex-wrap tw:items-end tw:gap-2" onsubmit={addPhone}>
                         <div class="field tw:m-0">

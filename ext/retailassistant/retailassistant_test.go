@@ -373,19 +373,19 @@ func TestALinkCodeOnlyWorksFromTheNumberItWasIssuedFor(t *testing.T) {
 	}
 }
 
-// One phone in two stores: nothing is posted until it says which.
-func TestAPhoneInTwoStoresChoosesBeforeAnythingIsKept(t *testing.T) {
+// One phone in two stores: the oldest, until it says otherwise.
+func TestAPhoneInTwoStoresUsesTheOldestUntilItChooses(t *testing.T) {
 	h := setup(t)
 	h.link("", senderA)
 	h.link(h.second, senderA)
 
 	h.deliver(h.file("two1", senderA, "m-t", "t.csv", csvInvoice("T-1", 100)))
-	if h.count("", "retailassistant_documents")+h.count(h.second, "retailassistant_documents") != 0 {
-		t.Fatal("a document was posted into a store by guesswork")
+	if h.count("", "retailassistant_documents") != 1 || h.count(h.second, "retailassistant_documents") != 0 {
+		t.Fatal("the document did not go to the oldest store")
 	}
 	h.deliver(text("two2", senderA, "STORE "+h.second))
 	h.deliver(h.file("two3", senderA, "m-t", "t.csv", csvInvoice("T-1", 100)))
-	if h.count("", "retailassistant_documents") != 0 || h.count(h.second, "retailassistant_documents") != 1 {
+	if h.count("", "retailassistant_documents") != 1 || h.count(h.second, "retailassistant_documents") != 1 {
 		t.Fatal("the document did not go to the chosen store")
 	}
 }
