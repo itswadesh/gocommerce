@@ -1,0 +1,1 @@
+import{r}from"../chunks/DQgSVOCy.js";import{b as o}from"../chunks/DV-Orq3N.js";function t({url:e}){r(308,`${o}/dash/themes/banners${e.search}`)}const n=Object.freeze(Object.defineProperty({__proto__:null,load:t},Symbol.toStringTag,{value:"Module"}));export{n as universal};

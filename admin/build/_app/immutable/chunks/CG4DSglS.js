@@ -1,0 +1,1 @@
+import{D as s,ao as n}from"./BFsIO96K.js";function b(d,i,o,f,a){var r=()=>{f(o[d])};o.addEventListener(i,r),a?s(()=>{o[d]=a()}):r(),(o===document.body||o===window||o===document)&&n(()=>{o.removeEventListener(i,r)})}export{b};
