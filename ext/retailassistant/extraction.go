@@ -78,6 +78,9 @@ type Line struct {
 type Source struct {
 	ExtractionMethod string            `json:"extraction_method"`
 	Provenance       map[string]string `json:"provenance,omitempty"`
+	// Confidence and Notes are a model's own word on its reading, for the reviewer.
+	Confidence *int     `json:"confidence,omitempty"`
+	Notes      []string `json:"notes,omitempty"`
 }
 
 // Extract reads what the standard library can read honestly: CSV, XLSX and DOCX
