@@ -14,21 +14,12 @@
       }
     },
     "/x/newsletter/unsubscribe": {
-      "get": {
-        "tags": ["newsletter"],
-        "summary": "Unsubscribe by the link's token",
-        "parameters": [{"name": "token", "in": "query", "required": true, "schema": {"type": "string"}}],
-        "responses": {
-          "200": {"description": "Unsubscribed — the same answer for a link clicked twice or a token nobody has.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
-          "400": {"$ref": "#/components/responses/Validation"}
-        }
-      },
       "post": {
         "tags": ["newsletter"],
         "summary": "Unsubscribe by the link's token",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"token": {"type": "string"}}}}}},
         "responses": {
-          "200": {"description": "Unsubscribed.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
+          "200": {"description": "Unsubscribed: the same answer for a link used twice or a token nobody has.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"status": {"type": "string"}}}}}}}},
           "400": {"$ref": "#/components/responses/Validation"}
         }
       }
@@ -62,7 +53,7 @@
     "/api/admin/x/newsletter/subscriptions.csv": {
       "get": {
         "tags": ["admin:newsletter"], "summary": "The list as CSV, for the tool that sends the mail", "security": [{"adminToken": []}],
-        "description": "email, name, source, status, subscribed_at, unsubscribed_at — the subscribed addresses unless `status` says otherwise. Needs data.export.",
+        "description": "email, name, source, status, subscribed_at, unsubscribed_at, unsubscribe_url — the subscribed addresses unless `status` says otherwise. Needs data.export.",
         "parameters": [{"name": "status", "in": "query", "schema": {"type": "string", "enum": ["subscribed", "unsubscribed"], "default": "subscribed"}}],
         "responses": {
           "200": {"description": "A CSV file.", "content": {"text/csv": {"schema": {"type": "string"}}}},
