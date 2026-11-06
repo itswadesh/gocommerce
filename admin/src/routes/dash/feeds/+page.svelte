@@ -28,6 +28,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
     import { base } from "$app/paths";
     import { myStores } from "$lib/stores.svelte.js";
@@ -45,6 +46,10 @@
     let saving = $state(false);
     let checking = $state(false);
     let form = $state({});
+    // The form as resetForm built it, so neither its defaults nor the address
+    // it prefills count as an edit.
+    let savedForm = $state("");
+    const dirty = $derived(!!plugin && JSON.stringify(form) !== savedForm);
     let tab = $state("google");
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
@@ -86,6 +91,7 @@
         }
         if (needsURL && !filled(draft.storefront_url)) draft.storefront_url = shopURL;
         form = draft;
+        savedForm = JSON.stringify(draft);
     }
 
     async function check() {
@@ -132,10 +138,10 @@
         }
     }
 
-    // Enter in a field saves, like the Save button.
+    // A one-field form still submits on Enter.
     function submit(e) {
         e.preventDefault();
-        if (writable && !saving) save();
+        if (writable && dirty && !saving) save();
     }
 
     async function save() {
@@ -309,6 +315,8 @@
 
 <div class="page page-feeds shopify-skin">
     <div class="page-content">
+        <SaveBar dirty={dirty && writable} {saving} onsave={save} ondiscard={resetForm} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item txt-sm txt-hint">Content</div>
@@ -562,28 +570,16 @@
                             and it fills in here, or type the address the shop is on.
                         </p>
                     {:else if needsURL && !filled(plugin.settings?.storefront_url) && form.storefront_url === shopURL}
-                        <p class="txt-hint txt-sm m-t-sm">Filled in from the store's domain. Save to use it.</p>
-                    {/if}
-                    {#if writable}
-                        <div class="feed-form-actions">
-                            <button
-                                type="submit"
-                                form="feed-settings"
-                                class="btn sm"
-                                class:loading={saving}
-                                disabled={saving}
-                            >
-                                <span class="txt">Save</span>
-                            </button>
-                            <button
-                                type="button"
-                                class="btn sm transparent secondary"
-                                disabled={saving}
-                                onclick={resetForm}
-                            >
-                                <span class="txt">Discard</span>
-                            </button>
-                        </div>
+                        <p class="txt-hint txt-sm m-t-sm">Filled in from the store's domain.{dirty ? " Save to use it." : ""}</p>
+                        <!-- The prefill is a suggestion, not an edit, so it raises
+                             no bar; this is how it gets taken as it stands. -->
+                        {#if writable && !dirty}
+                            <div class="feed-form-actions">
+                                <button type="button" class="btn sm" class:loading={saving} disabled={saving} onclick={save}>
+                                    <span class="txt">Use this address</span>
+                                </button>
+                            </div>
+                        {/if}
                     {/if}
                 </div>
             </details>

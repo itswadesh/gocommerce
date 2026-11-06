@@ -33,9 +33,9 @@
     } from "$lib/format.js";
     import { QUOTE_STATUSES, dateInputValue, endOfDay, quoteStatusClass, quoteStatusLabel } from "$lib/b2b.js";
     import Confirm from "$lib/components/Confirm.svelte";
-    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import VariantSearch from "$lib/components/VariantSearch.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -184,6 +184,8 @@
     }
 
     async function save() {
+        // The bar has no disabled state, so an edit that cannot go says why.
+        if (dirty && !valid) return toast.error(expiryError || "Check the quantities and prices marked in red.");
         if (!canSave) return;
         saving = true;
         try {
@@ -258,13 +260,18 @@
 
 <svelte:head><title>{titled(quote?.number ?? "Quote")}</title></svelte:head>
 
-<DirtyGuard dirty={dirty && editable} />
-
 {#if !readable}
     <NoAccess right="quotes.read" what="quotes" />
 {:else}
     <div class="page page-quote b2b-page shopify-skin">
         <div class="page-content tw:bg-background tw:text-foreground">
+            <SaveBar
+                dirty={dirty && editable}
+                saving={saving || sending}
+                onsave={save}
+                ondiscard={() => adopt(quote)}
+            />
+
             <header class="page-header">
                 <nav class="breadcrumbs">
                     <a class="breadcrumb-item tw:text-sm" href="{base}/dash/b2b/quotes">Quotes</a>
@@ -275,9 +282,6 @@
                 <div class="flex-fill"></div>
                 {#if quote && (editable || declinable)}
                     <div class="page-header-primary-btns">
-                        {#if dirty && editable}
-                            <span class="label b2b-notice b2b-unsaved">Unsaved changes</span>
-                        {/if}
                         {#if declinable}
                             <button
                                 type="button"
@@ -291,17 +295,6 @@
                             </button>
                         {/if}
                         {#if editable}
-                            <button
-                                type="button"
-                                class="btn secondary"
-                                class:loading={saving}
-                                aria-label="Save"
-                                disabled={!canSave}
-                                onclick={save}
-                            >
-                                <i class="ri-save-3-line" aria-hidden="true"></i>
-                                <span class="txt">Save</span>
-                            </button>
                             <button
                                 type="button"
                                 class="btn"

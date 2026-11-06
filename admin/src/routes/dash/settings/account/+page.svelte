@@ -20,7 +20,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import CodeBoxes from "$lib/components/CodeBoxes.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
-    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
@@ -66,7 +66,7 @@
         !!form.current_password ||
             !!form.password ||
             !!form.confirm ||
-            (!!me && form.email.trim() !== me.email),
+            (!!me && (form.email ?? "").trim() !== (me.email ?? "")),
     );
 
     $effect(() => {
@@ -94,6 +94,11 @@
         } finally {
             loading = false;
         }
+    }
+
+    function discard() {
+        form = { current_password: "", email: me?.email ?? "", password: "", confirm: "" };
+        errors = {};
     }
 
     async function save(event) {
@@ -236,14 +241,11 @@
 
 <svelte:head><title>{titled("Your account")}</title></svelte:head>
 
-<DirtyGuard
-    dirty={typed}
-    message="You have typed into this form and not saved it. Leave and lose it?"
-/>
-
 <div class="page page-account shopify-skin">
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
+        <SaveBar dirty={typed && hasPassword} {saving} onsave={save} ondiscard={discard} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
@@ -423,14 +425,6 @@
                     </div>
                 {/if}
 
-                <button
-                    type="submit"
-                    class="btn m-t-base"
-                    class:loading={saving}
-                    disabled={saving}
-                >
-                    <span class="txt">Save changes</span>
-                </button>
             </form>
             {/if}
 

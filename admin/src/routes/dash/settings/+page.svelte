@@ -258,6 +258,27 @@
         draft.languages = draft.languages.filter((l) => l !== tag);
     }
 
+    /* The sign-in card keeps its own call; both report their own failure. */
+    let signIn = $state();
+    let signInDirty = $state(false);
+    let savingAll = $state(false);
+
+    async function saveAll() {
+        if (savingAll) return;
+        savingAll = true;
+        try {
+            if (dirty && editable) await saveProfile();
+            if (signInDirty) await signIn?.save();
+        } finally {
+            savingAll = false;
+        }
+    }
+
+    function discardAll() {
+        draft = { ...profile };
+        signIn?.discard();
+    }
+
     async function saveProfile() {
         if (saving || !dirty) return;
         saving = true;
@@ -380,7 +401,7 @@
 <div class="page page-settings shopify-skin">
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
-        <SaveBar dirty={dirty && editable} {saving} onsave={saveProfile} ondiscard={() => (draft = { ...profile })} />
+        <SaveBar dirty={(dirty && editable) || signInDirty} saving={saving || savingAll} onsave={saveAll} ondiscard={discardAll} />
 
         <header class="page-header">
             <nav class="breadcrumbs">
@@ -624,7 +645,7 @@
                 <h2 class="section-title">Customers and checkout</h2>
                 <FeatureSwitch pluginKey="identity" settings={false} onchange={() => signInVersion++} />
                 {#key signInVersion}
-                    <CustomerSignInCard {channels} />
+                    <CustomerSignInCard bind:this={signIn} bind:dirty={signInDirty} {channels} />
                 {/key}
                 <FeatureSwitch pluginKey="guest-checkout" />
                 <FeatureSwitch pluginKey="store-close" />

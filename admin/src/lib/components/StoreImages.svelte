@@ -4,7 +4,7 @@
      * pictures from the media library, held on the store profile by id.
      *
      * Each one saves the moment it is chosen, uploaded or removed, rather than
-     * waiting for the details form's button: a picture is one decision, and
+     * waiting for the details form's Save: a picture is one decision, and
      * the preview above it already shows what the storefront will. The save
      * sends the profile as last read plus the one picture, the others as
      * null ("keep"), so a half-typed

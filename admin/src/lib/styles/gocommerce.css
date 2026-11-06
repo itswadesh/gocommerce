@@ -8286,11 +8286,6 @@ kbd + kbd {
     animation: slideTop var(--animationSpeed) ease-out;
 }
 
-/* Beside the header's buttons, at its own height rather than theirs. */
-.shopify-skin .b2b-unsaved {
-    align-self: center;
-}
-
 /* A heading with its own control beside it: the orders filter, the fill
    button over the quote's lines. */
 .shopify-skin .b2b-section-head {

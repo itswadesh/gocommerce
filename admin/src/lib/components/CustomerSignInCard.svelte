@@ -15,7 +15,11 @@
     import { api, can } from "$lib/api.js";
     import { toast } from "$lib/toast.svelte.js";
 
-    let { channels = [] } = $props();
+    /*
+     * The settings screen has one save bar, so the card reports its change and
+     * the screen presses `save` and `discard` here.
+     */
+    let { channels = [], dirty = $bindable(false) } = $props();
 
     const KEY = "identity";
     const editable = $derived(can("plugins.write"));
@@ -31,6 +35,14 @@
     const usesPhone = (v) => v === "phone_otp" || v === "email_or_phone";
 
     $effect(() => {
+        dirty = !!plugin?.enabled && editable && method !== saved;
+    });
+
+    export function discard() {
+        method = saved;
+    }
+
+    $effect(() => {
         load();
     });
 
@@ -44,7 +56,7 @@
         }
     }
 
-    async function save() {
+    export async function save() {
         if (saving || method === saved) return;
         saving = true;
         try {
@@ -57,7 +69,7 @@
                       : "Customers now sign in with email and password",
             );
         } catch (err) {
-            toast.error(err);
+            toast.error(`Customer sign-in was not saved: ${err?.message ?? err}`);
         } finally {
             saving = false;
         }
@@ -142,11 +154,7 @@
                         Set one up under <a href="{base}/dash/notifications/sms">Notifications › SMS</a>.
                     </div>
                 {/if}
-                {#if editable}
-                    <button type="submit" class="btn sm" disabled={saving || method === saved}>
-                        <span class="txt">{saving ? "Saving…" : "Save sign-in"}</span>
-                    </button>
-                {:else}
+                {#if !editable}
                     <div class="field-help">Changing this needs plugins.write.</div>
                 {/if}
             </form>
