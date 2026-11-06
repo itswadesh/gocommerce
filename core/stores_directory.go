@@ -78,8 +78,10 @@ func (a *App) handleStoreDirectory(w http.ResponseWriter, r *http.Request) {
 	Respond(w, http.StatusOK, list)
 }
 
-// storeDirectory lists every store newest first, suspended ones included: the
-// list is read to see who has just joined.
+// storeDirectory lists every store, suspended ones included, the most recently
+// active first: the list is read to see who is using the product. A store that
+// has done nothing goes after those, newest first, so a new one is still easy
+// to find.
 //
 // ponytail: one round of statements per store, because row security only shows
 // a statement the store it is bound to. Fine for hundreds of stores; thousands
@@ -131,6 +133,17 @@ func (a *App) storeDirectory(ctx context.Context) ([]DirectoryStore, error) {
 		}
 		out = append(out, row)
 	}
+	slices.SortStableFunc(out, func(x, y DirectoryStore) int {
+		switch {
+		case x.LastActivityAt == nil && y.LastActivityAt == nil:
+			return 0
+		case x.LastActivityAt == nil:
+			return 1
+		case y.LastActivityAt == nil:
+			return -1
+		}
+		return y.LastActivityAt.Compare(*x.LastActivityAt)
+	})
 	return out, nil
 }
 
