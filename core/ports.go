@@ -29,6 +29,18 @@ type PaymentProvider interface {
 	Initiate(ctx context.Context, order *Order, opts PayOptions) (PaymentIntent, error)
 }
 
+// PaymentResumer is an optional capability, for a gateway whose answer to
+// Initiate goes stale. A checkout retried under its Idempotency-Key, on an order
+// still unpaid, asks it for what to open now instead of replaying the first
+// answer: the shopper who closed the gateway's window pays again on the same
+// order. It should reuse the gateway's own order wherever that can still be paid,
+// because a gateway stops a second payment on one order but not across two.
+//
+// Leaving Reference empty keeps the order's payment_reference as it is.
+type PaymentResumer interface {
+	ResumePayment(ctx context.Context, order *Order, prior PaymentIntent, opts PayOptions) (PaymentIntent, error)
+}
+
 // WebhookProvider is an optional capability. A provider that implements it is
 // served at POST /api/checkout/{code}/webhook with the raw request body, so a
 // gateway gets a documented callback URL without mounting any routes itself.
