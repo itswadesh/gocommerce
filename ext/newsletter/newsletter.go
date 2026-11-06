@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ type Subscription struct {
 	Status         string     `json:"status"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UnsubscribedAt *time.Time `json:"unsubscribed_at,omitempty"`
+
+	// token opens this address's unsubscribe link. The export carries it inside
+	// that link and no JSON answer carries it at all.
+	token string
 }
 
 // SubscribeInput is what the storefront posts.
@@ -112,7 +117,6 @@ func (m *Module) Register(app *gocommerce.App) error {
 	})
 	app.HandleFunc("POST /x/newsletter/subscribe", m.handleSubscribe)
 	app.HandleFunc("POST /x/newsletter/unsubscribe", m.handleUnsubscribe)
-	app.HandleFunc("GET /x/newsletter/unsubscribe", m.handleUnsubscribe)
 
 	// The list is who the store may write to — the customers' right to read,
 	// data.export to walk out with, store.operate to remove.
@@ -199,18 +203,18 @@ func (m *Module) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusCreated, map[string]string{"status": sub.Status})
 }
 
+// handleUnsubscribe is POST alone, sent by the storefront page the link opens.
+// Mail scanners fetch every link in a message, so a GET here would take people
+// off a list they never asked to leave (D231).
 func (m *Module) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
-	tok := r.URL.Query().Get("token")
-	if r.Method == http.MethodPost {
-		var in struct {
-			Token string `json:"token"`
-		}
-		if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
-			gocommerce.RespondError(w, r, err)
-			return
-		}
-		tok = in.Token
+	var in struct {
+		Token string `json:"token"`
 	}
+	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	tok := in.Token
 	if strings.TrimSpace(tok) == "" {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("the unsubscribe link is missing its token"))
 		return
@@ -257,7 +261,7 @@ func (m *Module) list(ctx context.Context, search, status string, limit, offset 
 	}
 	args = append(args, limit, offset)
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT id, email, name, source, status, created_at, unsubscribed_at
+		SELECT id, email, name, source, status, created_at, unsubscribed_at, token
 		FROM newsletter_subscriptions WHERE `+clause+
 		fmt.Sprintf(` ORDER BY id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
@@ -267,7 +271,7 @@ func (m *Module) list(ctx context.Context, search, status string, limit, offset 
 	out := []*Subscription{}
 	for rows.Next() {
 		var s Subscription
-		if err := rows.Scan(&s.ID, &s.Email, &s.Name, &s.Source, &s.Status, &s.CreatedAt, &s.UnsubscribedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Email, &s.Name, &s.Source, &s.Status, &s.CreatedAt, &s.UnsubscribedAt, &s.token); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, &s)
@@ -298,7 +302,8 @@ func (m *Module) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleExport is the list as a mailing tool wants it: every subscribed
-// address, one per row, with the name and the date consent was given.
+// address, one per row, with the name, the date consent was given, and the link
+// that takes that one address off the list, for the tool to put in each email.
 func (m *Module) handleExport(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	if status == "" {
@@ -307,7 +312,8 @@ func (m *Module) handleExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="newsletter-%s.csv"`, time.Now().UTC().Format("2006-01-02")))
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"email", "name", "source", "status", "subscribed_at", "unsubscribed_at"})
+	_ = cw.Write([]string{"email", "name", "source", "status", "subscribed_at", "unsubscribed_at", "unsubscribe_url"})
+	shop := m.app.StorefrontURL(r.Context())
 	for offset := 0; ; offset += 500 {
 		rows, _, err := m.list(r.Context(), "", status, 500, offset)
 		if err != nil || len(rows) == 0 {
@@ -318,7 +324,14 @@ func (m *Module) handleExport(w http.ResponseWriter, r *http.Request) {
 			if s.UnsubscribedAt != nil {
 				left = s.UnsubscribedAt.UTC().Format(time.RFC3339)
 			}
-			_ = cw.Write([]string{m.app.MaskEmail(r.Context(), s.Email), s.Name, s.Source, s.Status, s.CreatedAt.UTC().Format(time.RFC3339), left})
+			email := m.app.MaskEmail(r.Context(), s.Email)
+			// A masked row is a demo's, and its link would still work on the real
+			// address. With no storefront address there is nothing to link to.
+			link := ""
+			if shop != "" && email == s.Email {
+				link = shop + "/newsletter/unsubscribe?token=" + url.QueryEscape(s.token)
+			}
+			_ = cw.Write([]string{email, s.Name, s.Source, s.Status, s.CreatedAt.UTC().Format(time.RFC3339), left, link})
 		}
 		if len(rows) < 500 {
 			break
