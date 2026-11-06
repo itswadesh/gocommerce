@@ -1,7 +1,8 @@
 <script>
     /**
-     * The unsaved-changes bar: a dark pill fixed across the top of the window,
-     * over the app header, while a form has edits that have not been saved.
+     * The unsaved-changes bar: a dark pill fixed to the window, at the foot on a
+     * desktop and the top on a phone, while a form has edits that have not been
+     * saved.
      *
      * It is chrome, not an alert — it says what the state of the page is, not
      * that something went wrong — so it takes the primary near-black rather
