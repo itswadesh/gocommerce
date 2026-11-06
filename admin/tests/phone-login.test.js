@@ -16,14 +16,14 @@ const account = read("../src/routes/dash/settings/account/+page.svelte");
 
 test("a phone is offered only where the install says a code can be sent", () => {
     assert.match(login, /canPhone = !!s\.phone_login/);
-    assert.match(login, /\{#if installed && canPhone\}/);
+    assert.match(login, /textsCode = \$derived\(canPhone && looksLikePhone\(identity\)\)/);
     assert.match(signup, /canPhone = !!s\.phone_signup/);
-    assert.match(signup, /\{#if canPhone\}/);
+    assert.match(signup, /textsCode = \$derived\(canPhone && looksLikePhone\(email\)\)/);
     assert.ok(account.includes("canPhone = !!(await auth.state()).phone_login"));
 });
 
 test("where sign-up is shut, the screen does not say a code was sent", () => {
-    assert.match(form, /If \{phone\.trim\(\)\} has an account here/);
+    assert.match(form, /If \{shown\} has an account here/);
     assert.match(login, /open=\{phoneOpen\}/);
 });
 
@@ -43,14 +43,29 @@ test("the number can travel on to another screen", () => {
     assert.equal(phoneFragment(""), "");
 });
 
-test("a link fills the form and never sends a code by itself", () => {
-    assert.match(login, /if \(linkedPhone && installed && canPhone\) usePhone = true/);
+test("a link fills the box and only a press sends a code", () => {
     // One read of the fragment each: a second would find it already cleared.
     assert.equal(login.split("takePhoneFromFragment()").length, 2);
     assert.equal(signup.split("takePhoneFromFragment()").length, 2);
     assert.match(login, /let identity = \$state\(readablePhone\(linkedPhone\)\)/);
     assert.match(signup, /let email = \$state\(readablePhone\(linkedPhone\)\)/);
-    assert.match(signup, /if \(linkedPhone && canPhone\) usePhone = true/);
-    assert.doesNotMatch(form, /\$effect\([^)]*\{[^}]*ask\(\)/);
-    assert.match(form, /autofocus=\{!number\}/);
+    for (const screen of [login, signup]) {
+        assert.doesNotMatch(screen, /linkedPhone[^\n]*step = "code"/);
+        assert.match(screen, /if \(step === "who"\) \{\s*step = textsCode \? "code" : "password";/);
+    }
+});
+
+test("one box first: the password stays hidden until an email has been given", () => {
+    for (const screen of [login, signup]) {
+        const gate = screen.indexOf('{#if step === "password"}\n            <div in:rise>');
+        assert.ok(gate > 0, "the password sits behind the password step");
+        assert.ok(screen.search(/assword<\/label>/) > gate);
+        assert.doesNotMatch(screen, /Text me a code instead|Use a password instead/);
+    }
+    assert.match(login, /\{step === "who" \? \(textsCode \? "Send code" : "Continue"\)/);
+    assert.match(signup, /step === "who" && textsCode \? "Send code" : "Continue"/);
+});
+
+test("the installer still asks for an email and a password together", () => {
+    assert.match(login, /if \(!installed\) step = "password"/);
 });

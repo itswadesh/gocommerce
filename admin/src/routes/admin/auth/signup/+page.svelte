@@ -11,11 +11,12 @@
      * an open sign-up cannot refuse one without saying why. The way on from
      * there is signing in, or a reset link for the same address.
      *
-     * A phone is the other way to make the account, where a code can be texted
-     * to a new person (auth-state's phone_signup). It asks for no password, and
-     * a number that already has an account simply signs in.
+     * One box first, for an email or a phone. A phone goes straight to a texted
+     * code where one can be sent to a new person (auth-state's phone_signup), and
+     * a number that already has an account simply signs in. An email goes on to
+     * choose its password, which stays out of sight until then.
      */
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/api.js";
@@ -26,6 +27,7 @@
     import AuthShell from "$lib/components/AuthShell.svelte";
     import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
     import { phoneFragment, readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
+    import { looksLikePhone, toIdentity } from "$lib/identity.js";
     import { titled } from "$lib/brand.svelte.js";
 
     const LOGIN = `${base}/admin/auth/login`;
@@ -48,7 +50,9 @@
     let taken = $state("");
     let attempt = $state(0);
     let canPhone = $state(false);
-    let usePhone = $state(false);
+    // "who" is the one box; "password" and "code" are where it leads.
+    let step = $state("who");
+    const textsCode = $derived(canPhone && looksLikePhone(email));
     // Where sign-up is shut, the way on is signing in, and the number goes along.
     let loginHref = $state(LOGIN);
 
@@ -57,8 +61,6 @@
         auth.state()
             .then((s) => {
                 canPhone = !!s.phone_signup;
-                // The box keeps the number either way.
-                if (linkedPhone && canPhone) usePhone = true;
                 if (linkedPhone && !s.signup) loginHref = LOGIN + phoneFragment(linkedPhone);
                 state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed";
             })
@@ -77,10 +79,15 @@
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
-        submitting = true;
         problem = "";
         problemField = "";
         taken = "";
+        if (step === "who") {
+            step = textsCode ? "code" : "password";
+            if (step === "password") tick().then(() => document.getElementById("signup_pass")?.focus());
+            return;
+        }
+        submitting = true;
         try {
             await auth.signup(email, password);
             await onward();
@@ -147,14 +154,14 @@
             <p class="auth-step">Step 1 of 2</p>
             <h1 class="auth-title">Create your store</h1>
             <p class="auth-lede">
-                {usePhone ? "Start with the phone you'll sign in with." : "Start with the email or phone and the password you'll sign in with."}
+                Start with the email or phone you'll sign in with.
                 You'll name your store next.
             </p>
         </header>
 
-        {#if usePhone}
+        {#if step === "code"}
             <div in:rise>
-                <PhoneCodeForm onauthenticated={onward} open label="Continue" number={canPhone ? linkedPhone : ""} />
+                <PhoneCodeForm onauthenticated={onward} open label="Continue" number={toIdentity(email)} onback={() => (step = "who")} />
             </div>
         {:else}
         <form class="auth-form" onsubmit={submit}>
@@ -171,6 +178,7 @@
                     autocomplete="username"
                     autocapitalize="off"
                     spellcheck="false"
+                    readonly={step === "password"}
                     aria-invalid={emailRefused}
                     aria-describedby={emailRefused ? "signup_refusal signup_email_help" : "signup_email_help"}
                     bind:value={email}
@@ -180,13 +188,22 @@
                     }}
                 />
             </div>
-            <div class="field-help" id="signup_email_help">Outside India, start a phone number with its country code.</div>
+            {#if step === "password"}
+                <div class="auth-field-foot auth-phone-foot" id="signup_email_help">
+                    <button type="button" class="auth-link auth-inline-btn" onclick={() => { step = "who"; password = ""; problem = problemField = taken = ""; }}>
+                        Use something else
+                    </button>
+                </div>
+            {:else}
+                <div class="field-help" id="signup_email_help">Outside India, start a phone number with its country code.</div>
+            {/if}
             </div>
 
-            <div>
+            {#if step === "password"}
+            <div in:rise>
                 <div class="fields">
                     <div class="field" class:error={passwordRefused}>
-                        <label for="signup_pass">Password</label>
+                        <label for="signup_pass">Choose a password</label>
                         <input
                             id="signup_pass"
                             required
@@ -216,6 +233,7 @@
                 </div>
                 <div class="field-help" id="signup_pass_help">At least 8 characters.</div>
             </div>
+            {/if}
 
             {#key attempt}
                 {#if taken}
@@ -230,18 +248,10 @@
             {/key}
 
             <button type="submit" class="btn lg block next" class:loading={submitting} disabled={submitting}>
-                <span class="txt">Continue</span>
+                <span class="txt">{step === "who" && textsCode ? "Send code" : "Continue"}</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
-        {/if}
-
-        {#if canPhone}
-            <p class="auth-alt">
-                <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = !usePhone)}>
-                    {usePhone ? "Use a password instead" : "Text me a code instead"}
-                </button>
-            </p>
         {/if}
 
         <p class="auth-alt">
