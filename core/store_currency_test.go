@@ -56,12 +56,90 @@ func TestAStoreChoosesItsCurrencyBeforeItsFirstOrder(t *testing.T) {
 	}
 }
 
-// Once a store has an order its currency is fixed: changing it would change
-// what that order's amounts mean.
-func TestTheCurrencyIsFixedOnceTheStoreHasAnOrder(t *testing.T) {
+// An unpaid order waiting to go out leaves the currency open (D212), and keeps
+// the currency its shopper was shown. Paying it then fixes the store's.
+func TestAnUnpaidOrderLeavesTheCurrencyOpen(t *testing.T) {
 	app := newTestApp(t)
 	ctx := context.Background()
-	placeOrder(t, app, "CUR-ORDER")
+	order := placeOrder(t, app, "CUR-UNPAID")
+	was := order.Currency
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CurrencyLocked {
+		t.Fatal("a store whose only order is unpaid reports its currency fixed")
+	}
+	p.Currency = "EUR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("change with an unpaid order: %v", err)
+	}
+	if app.Currency(ctx) != "EUR" {
+		t.Fatalf("currency = %q, want EUR", app.Currency(ctx))
+	}
+	again, err := app.Order().Get(ctx, order.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Currency != was {
+		t.Fatalf("the unpaid order moved from %s to %s", was, again.Currency)
+	}
+	if _, err := app.Pay().MarkPaid(ctx, order.ID, "CUR-UNPAID-REF"); err != nil {
+		t.Fatalf("pay the order placed before the change: %v", err)
+	}
+	if p, _ = app.Profile().Get(ctx); !p.CurrencyLocked {
+		t.Fatal("a store with a paid order reports its currency unlocked")
+	}
+}
+
+// Cash on delivery can be collected before anybody marks the order paid, so an
+// order sent out fixes the currency unpaid.
+func TestAnOrderSentOutFixesTheCurrency(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	order := placeOrder(t, app, "CUR-SENT")
+	if _, err := app.db.ExecContext(ctx, `UPDATE orders SET status = 'shipped' WHERE id = $1`, order.ID); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := app.Profile().Get(ctx); !p.CurrencyLocked {
+		t.Fatal("a store with a shipped order reports its currency unlocked")
+	}
+}
+
+// A store opened in the wrong currency can still be put right with the sample
+// shop in it, though most sample orders read as paid, and they move with it.
+func TestSampleOrdersFollowTheCurrency(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	if _, err := app.AddSampleShop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.CurrencyLocked {
+		t.Fatal("sample orders fixed the currency")
+	}
+	p.Currency = "EUR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("change with the sample shop: %v", err)
+	}
+	var other int
+	if err := app.db.QueryRowContext(ctx, `SELECT count(*) FROM orders WHERE sample AND currency <> 'EUR'`).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	if other != 0 {
+		t.Fatalf("%d sample orders kept the old currency", other)
+	}
+}
+
+// Once an order is paid the store's currency is fixed: changing it would change
+// what that order's amounts mean.
+func TestTheCurrencyIsFixedOnceAnOrderIsPaid(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	paidOrder(t, app, "CUR-ORDER", 2500, 3)
 	p, err := app.Profile().Get(ctx)
 	if err != nil {
 		t.Fatal(err)

@@ -413,7 +413,7 @@ const (
 
 // apply does the change, through the service the panel and the agent tools use:
 // the rules are the service's, and there is no second copy of them here to
-// drift (D210). The context names the person, so the order's history and the
+// drift (D215). The context names the person, so the order's history and the
 // stock ledger say Telegram rather than "system".
 func (m *Module) apply(ctx context.Context, user int64, c change) (string, error) {
 	ctx = gocommerce.WithActorLabel(ctx, "Telegram user "+strconv.FormatInt(user, 10))

@@ -18,6 +18,7 @@
     import { rightLabel, rightsSummary } from "$lib/rights.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import CodeBoxes from "$lib/components/CodeBoxes.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -342,17 +343,7 @@
                         {#if emailStep === "code"}
                             <div class="field required m-t-sm" class:error={!!emailError}>
                                 <label for="acc-add-email-code">Code we emailed you</label>
-                                <input
-                                    id="acc-add-email-code"
-                                    type="text"
-                                    inputmode="numeric"
-                                    pattern="[0-9]*"
-                                    maxlength="6"
-                                    required
-                                    autocomplete="one-time-code"
-                                    bind:value={emailForm.code}
-                                    oninput={() => (emailError = "")}
-                                />
+                                <CodeBoxes id="acc-add-email-code" bind:value={emailForm.code} oninput={() => (emailError = "")} />
                             </div>
                         {/if}
                         {#if emailError}
@@ -483,16 +474,7 @@
                         <div class="fields m-t-sm">
                             <div class="field required">
                                 <label for="acc-phone-code">Code we texted you</label>
-                                <input
-                                    id="acc-phone-code"
-                                    type="text"
-                                    inputmode="numeric"
-                                    pattern="[0-9]*"
-                                    maxlength="6"
-                                    required
-                                    autocomplete="one-time-code"
-                                    bind:value={phoneForm.code}
-                                />
+                                <CodeBoxes id="acc-phone-code" bind:value={phoneForm.code} />
                             </div>
                             {#if hasPassword}
                                 <div class="delimiter"></div>

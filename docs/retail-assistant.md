@@ -21,7 +21,8 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout.
+Not built at the counter: working offline, printing a receipt, batch and expiry, and
+machines such as the NGX SP92TB, whose maker documents no API or export.
 
 ## Setting it up
 
@@ -91,7 +92,7 @@ Confirmation messages are off until the owner ticks **Send** beside a phone. Wit
 24-hour window. After that they need a template:
 
 1. In WhatsApp Manager, create a **Utility** template with one variable in its body,
-   such as `Update from your shop assistant: {{1}}`, in English (`en`) and Hindi
+   such as `Update from your shop assistant: {{1}} Reply STOP to end these messages.`, in English (`en`) and Hindi
    (`hi`), and wait for Meta to approve both. Choosing the category and getting it
    approved is yours: Meta may change or reject it.
 2. Set `RETAIL_ASSISTANT_TEMPLATE` to its name.
@@ -103,7 +104,13 @@ and is not retried.
 of everything sent to it, or the owner can set it beside the phone. Before a phone is
 linked, replies come in both. **The Hindi is a machine translation that no native
 speaker has reviewed; have one read `ext/retailassistant/messages.go` before showing it
-to shopkeepers.** What a person sees in the panel is still English.
+to shopkeepers.**
+
+The retail assistant's screens have an **English / हिंदी** switch, remembered in each
+browser. **That Hindi is a machine translation too, in `admin/src/lib/retail-hindi.js`.**
+The sidebar, the rest of the panel, and messages the engine writes, such as a refused
+amount or what is wrong with a bill, stay in English. The screens' Hindi has not been
+read by a native speaker.
 
 **Stopping.** A phone can reply `STOP`, or `बंद`, to end confirmations in every store
 it is linked to, including any already queued. It can still send bills. An owner cannot
@@ -219,6 +226,31 @@ the 24-hour window it needs the template, and each one may cost a WhatsApp messa
 
 Asking questions in plain language on WhatsApp is not built.
 
+## The shop counter
+
+**Orders › Shop counter** is a fast checkout for a phone or tablet. A Bluetooth or USB
+barcode scanner types like a keyboard, so the box stays ready: scan, and the item is on
+the bill. The same item again is one more.
+
+- A sale is an ordinary order, made through the engine's own order path, so it takes
+  stock once, under the same locks as any order. It shows in Orders and Reports. Return
+  it there, and tick restock to put it back on the shelf.
+- The total comes from the engine. Nothing is charged for delivery, and no email is sent.
+- **Choosing UPI is not proof of money.** The sale is paid only if the cashier ticks that
+  they saw it arrive, and otherwise it is recorded as not paid yet. Credit is the same.
+  Mark it paid on the order when the money comes.
+- A cashier's discount is capped by **Most discount at the counter** in the settings, and
+  is 0 until the owner sets it.
+- An unknown barcode asks which product it is, and is saved on that product if the person
+  may change the catalogue.
+- A scanner has not been tried on a real phone. Check one at the shop before relying on it.
+
+Set **Counter's state** and **Counter's country code** in the settings, since tax on a
+counter sale is worked out from where the counter is.
+
+Staff can use the counter through the `retailassistant.counter` right, and see nothing of
+what the shop owes its suppliers.
+
 ## Wholesale quotes
 
 A wholesaler can turn a manufacturer's bill or price list into a quote for one retailer
@@ -329,4 +361,4 @@ Then:
 - AI reading against a real model. Its prompt and answer shape have only met a stand-in.
 - Real supplier documents. The reader's labels and columns are a first guess at how Indian bills are laid out, and only real documents will show how far off that is.
 - Meta's real template approval and sending. The request follows Meta's documentation.
-- The Hindi wording with a native speaker, and the panel in Hindi, which is not built.
+- The Hindi wording, on WhatsApp and in the panel, with a native speaker.

@@ -4,6 +4,11 @@
  * engine and are never worked out here.
  */
 
+import { translate } from "./retail-hindi.js";
+
+/** English, for a caller with no language to hand. */
+const plain = (text, vars) => translate("en", text, vars);
+
 export const STATUS = {
     received: { label: "Received", cls: "" },
     parsing: { label: "Reading", cls: "" },
@@ -36,21 +41,21 @@ export const PRICING_RULES = [
 ];
 
 /** The two rules are different prices, so the screen says what the chosen one does. */
-export function ruleExample(mode, percent) {
+export function ruleExample(mode, percent, t = plain) {
     if (!Number.isFinite(percent) || percent < 0) return "";
-    if (mode === "margin" && percent >= 100) return "A gross margin must be under 100%.";
+    if (mode === "margin" && percent >= 100) return t("A gross margin must be under 100%.");
     const price = mode === "margin" ? 100 / (1 - percent / 100) : 100 * (1 + percent / 100);
-    return `Something you pay ₹100 for sells at ₹${price.toFixed(2)}, before tax.`;
+    return t("Something you pay ₹100 for sells at ₹{price}, before tax.", { price: price.toFixed(2) });
 }
 
 /** A figure that does not add up is the one thing a reviewer may wave through. */
 export const isMismatch = (message) => message.includes("add up");
 
 /** What else is on a supplier's account, beside what is owed. */
-export function moneyNote(row, format) {
+export function moneyNote(row, format, t = plain) {
     const notes = [];
-    if (row.advance?.amount_minor) notes.push(`${format(row.advance)} paid in advance`);
-    if (row.unverified?.amount_minor) notes.push(`${format(row.unverified)} not verified yet`);
+    if (row.advance?.amount_minor) notes.push(t("{advance} paid in advance", { advance: format(row.advance) }));
+    if (row.unverified?.amount_minor) notes.push(t("{amount} not verified yet", { amount: format(row.unverified) }));
     return notes.join(" · ");
 }
 
@@ -61,6 +66,19 @@ export function moneyNote(row, format) {
 export function wholeQuantity(printed) {
     const m = /^\s*(\d+)(?:\.0+)?\s*$/.exec(printed ?? "");
     return m && Number(m[1]) > 0 ? m[1] : "";
+}
+
+/** A scan: the same item again is one more of it, and the newest stays on top. */
+export function basketAdd(basket, item) {
+    const found = basket.find((l) => l.variant_id === item.variant_id);
+    if (!found) return [{ ...item, quantity: 1 }, ...basket];
+    return [{ ...found, quantity: found.quantity + 1 }, ...basket.filter((l) => l !== found)];
+}
+
+/** A quantity set by hand. Down to nothing takes the line off. */
+export function basketSet(basket, variantId, quantity) {
+    if (quantity <= 0) return basket.filter((l) => l.variant_id !== variantId);
+    return basket.map((l) => (l.variant_id === variantId ? { ...l, quantity } : l));
 }
 
 /** A name for one press of a money button, so a retry records one thing. */

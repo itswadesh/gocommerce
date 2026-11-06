@@ -19,7 +19,7 @@ import (
 )
 
 // Two-way control: the owner runs the store from the same Telegram chat the
-// alerts arrive in, by command and by button (D210).
+// alerts arrive in, by command and by button (D215).
 //
 // It is off until the owner switches it on here, and a store that never does
 // sends and receives exactly what it did before. Switched on, a row in

@@ -12,16 +12,18 @@ import (
 // D14 made the settlement currency a start-up setting, one per install, and
 // D83 then put many stores in one install — so a shop in India sold in the
 // install's dollars. Now a store chooses its own, at creation or on Store
-// settings, until its first order: from then on its orders are amounts in that
-// currency, and changing it would change what they mean. A store that never
-// chooses sells in Config.Currency, as before.
+// settings, until an order is paid or sent out: from then on money or goods have
+// moved at that currency, and changing it would change what they meant. A store
+// that never chooses sells in Config.Currency, as before.
 //
-// Before the first order a change relabels what the store has priced so far —
-// its products and its open carts — rather than leaving a catalogue in one
+// Until then a change relabels what the store has priced so far — its products,
+// its open carts and its sample orders — rather than leaving a catalogue in one
 // currency and a store in another. Amounts are not converted: the store is
 // being set up, and a price typed as 2500 meant 2500 in the currency the owner
-// had in mind. Rows a module owns (a B2B quote, a recovery record) keep the
-// currency they were made in, as every order does (D14).
+// had in mind. A real order that is still unpaid keeps the currency it was
+// placed in, because that is what its shopper was shown and a gateway may be
+// charging it; so do rows a module owns (a B2B quote, a recovery record), as
+// every order does (D14).
 
 // migration0061StoreCurrency gives a store its own currency. NULL is the
 // install's.
@@ -63,15 +65,17 @@ func (a *App) currencyOf(st *Store) string {
 	return a.cfg.Currency
 }
 
-// hasOrders is whether the store ctx is bound to has an order whose amounts a
-// new currency would change, which is what fixes its currency. An order
-// cancelled before any money moved has none; a paid one keeps the old
-// currency in its payment and refund.
+// hasOrders is whether the store ctx is bound to has an order that fixes its
+// currency: one that was paid, whose payment and refund are in the old currency,
+// or one sent out, since cash on delivery may have been collected before anybody
+// marks it paid. An unpaid order waiting to go out does not (D212), and nor does
+// a sample order, which nobody placed.
 func (a *App) hasOrders(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) (bool, error) {
 	var any bool
-	err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE status <> 'cancelled' OR payment_status IN ('paid', 'refunded'))`).Scan(&any)
+	err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM orders WHERE NOT sample AND
+		(payment_status IN ('paid', 'refunded') OR status NOT IN ('pending', 'confirmed', 'cancelled')))`).Scan(&any)
 	return any, err
 }
 
@@ -87,13 +91,15 @@ func normalizeCurrency(code string) (string, error) {
 }
 
 // setCurrency moves the store ctx is bound to onto code, inside tx, and
-// relabels what it has priced so far. The caller has checked that the store has
-// no order.
+// relabels what it has priced so far. The caller has checked hasOrders.
 func (a *App) setCurrency(ctx context.Context, tx *sql.Tx, code string) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE stores SET currency = $1 WHERE id = $2`, code, a.storeOf(ctx)); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE products SET currency = $1 WHERE currency <> $1`, code); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE orders SET currency = $1 WHERE sample AND currency <> $1`, code); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE carts SET currency = $1 WHERE status = 'open' AND currency <> $1`, code)

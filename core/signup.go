@@ -196,6 +196,20 @@ func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ClientLimit allows n events per client address in any span of per, for a
+// module's public route that costs money. In-process, as windowLimit is.
+type ClientLimit struct{ limit *windowLimit }
+
+// NewClientLimit makes a ClientLimit.
+func NewClientLimit(n int, per time.Duration) *ClientLimit {
+	return &ClientLimit{limit: newWindowLimit(n, per)}
+}
+
+// Take records an event for clientIP, or says how long until one is allowed.
+func (c *ClientLimit) Take(clientIP string) (time.Duration, bool) {
+	return c.limit.take(limitKey(clientIP), time.Now())
+}
+
 // limitKey is the client a limit counts: the address itself for IPv4, and its
 // /64 for IPv6, which is what one subscriber is handed and can walk at will.
 func limitKey(clientIP string) string {

@@ -69,7 +69,7 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// logger does not count — a code written to a log file is no use to
 		// somebody who cannot sign in to read it — and a Forgot-password button
 		// that 202s into silence is worse than no button at all.
-		"password_reset": a.notifier.delivers(r.Context(), ChannelEmail),
+		"password_reset": a.notifier.delivers(a.superusers.identityMailScope(r.Context()), ChannelEmail),
 		// Whether the sign-in screen may offer to make an account: the
 		// install's choice, where it can be kept safely (signupOpen).
 		"signup": a.signupOpen(r.Context()),

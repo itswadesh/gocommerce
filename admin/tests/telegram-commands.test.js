@@ -1,5 +1,5 @@
 /*
- * Two-way control on Setup Telegram (D210): a switch of its own, with a state
+ * Two-way control on Setup Telegram (D215): a switch of its own, with a state
  * for loading, success and failure, and Find my chat out of the way while the
  * webhook owns the bot. node:test cannot import a .svelte file, so these read
  * the source, as builtin-features.test.js does.

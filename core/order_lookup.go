@@ -117,7 +117,7 @@ func (s *Orders) RequestLookupCode(ctx context.Context, number, contact string) 
 		}
 		// A new code replaces any still open, so only the latest one works.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE order_lookup_codes SET expires_at = now() WHERE order_id = $1 AND expires_at > now()`, id); err != nil {
+			`UPDATE order_lookup_codes SET expires_at = '-infinity' WHERE order_id = $1 AND expires_at > now()`, id); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `
@@ -182,12 +182,14 @@ func (s *Orders) VerifyLookupCode(ctx context.Context, number, code string) (*Or
 	}
 	// The try is charged and the code matched in one statement, as a password
 	// reset code is (tryResetCode): a burst of guesses queues on the row lock
-	// and the sixth finds the tries spent. A right code is spent with it.
+	// and the sixth finds the tries spent. A right code is spent with it, to
+	// -infinity and not now(): now() is when a transaction began, so a request
+	// that began earlier and queued on the row would still find it open.
 	var opened bool
 	err = s.app.db.QueryRowContext(ctx, `
 		WITH tried AS (
 			UPDATE order_lookup_codes SET attempts = attempts + 1,
-			       expires_at = CASE WHEN code_hash = $2 THEN now() ELSE expires_at END
+			       expires_at = CASE WHEN code_hash = $2 THEN '-infinity' ELSE expires_at END
 			WHERE order_id = $1 AND expires_at > now() AND attempts < $3
 			RETURNING code_hash)
 		SELECT true FROM tried WHERE code_hash = $2`,

@@ -20,7 +20,7 @@
      * decision and its own right (alerts.commands): the alerts go on as they
      * were until somebody presses it. While it is on, the bot's messages go to
      * the store's webhook and Telegram will not list its chats, so Find my chat
-     * says that rather than failing (D210).
+     * says that rather than failing (D215).
      */
     import { base } from "$app/paths";
     import { can, telegram } from "$lib/api.js";

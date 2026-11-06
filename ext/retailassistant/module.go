@@ -47,6 +47,8 @@ const (
 	rightRead  gocommerce.Right = "retailassistant.read"
 	rightWrite gocommerce.Right = "retailassistant.write"
 	rightLinks gocommerce.Right = "retailassistant.links"
+	// A cashier sells, and sees nothing of what the shop owes its suppliers.
+	rightCounter gocommerce.Right = "retailassistant.counter"
 )
 
 // Config is the install's one WhatsApp number. It is the platform's rather than
@@ -362,6 +364,24 @@ CREATE TABLE retailassistant_wholesale_quotes (
     created_at      timestamptz NOT NULL DEFAULT now()
 );`},
 		gocommerce.ScopeMigration("0011_wholesale_store_scope", "retailassistant_wholesale_quotes"),
+		{ID: "0014_counter_sales", SQL: `
+-- How a counter sale was paid, and the key that makes a double press one sale. The
+-- sale itself is an order in core.
+CREATE TABLE retailassistant_counter_sales (
+    id              bigserial PRIMARY KEY,
+    idempotency_key text NOT NULL,
+    order_id        bigint,
+    mode            text NOT NULL CHECK (mode IN ('cash', 'upi', 'credit')),
+    reference       text NOT NULL DEFAULT '',
+    money_seen      boolean NOT NULL DEFAULT false,
+    discount_bps    integer NOT NULL DEFAULT 0,
+    created_by      text NOT NULL DEFAULT '',
+    created_at      timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0015_counter_store_scope", "retailassistant_counter_sales"),
+		{ID: "0016_counter_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_counter_key ON retailassistant_counter_sales (store_id, idempotency_key);`},
+		gocommerce.WithholdFromReports("0017_withhold_counter", "retailassistant_counter_sales.idempotency_key"),
 		{ID: "0012_wholesale_keys", SQL: `
 CREATE UNIQUE INDEX retailassistant_wholesale_key ON retailassistant_wholesale_quotes (store_id, idempotency_key) WHERE idempotency_key IS NOT NULL;`},
 		gocommerce.WithholdFromReports("0013_withhold_wholesale",
@@ -414,6 +434,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Scope:   "Which phones may send documents into this store",
 		Default: nil,
 	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: rightCounter, Label: "Sell at the shop counter",
+		Scope:   "Scanning items and recording a sale, within the discount the owner allows",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterPayment(counterPayment{})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Retail assistant", Icon: "ri-whatsapp-line", Category: "operations", DefaultEnabled: false,
 		Home:        "/dash/retail-assistant",
@@ -423,6 +449,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 				Help: "Counted from when a document was reviewed. Your supplier accounts stay as they are; only the original files go. Leave empty to keep files. Check with your accountant how long you must keep bills before setting this."},
 			{Key: "morning_summary", Label: "Send a morning summary", Kind: "bool", Default: false,
 				Help: "Around 8 in the morning, India time, each phone that takes confirmations gets what you owe and what is waiting. It may cost a WhatsApp template message a day."},
+			{Key: "counter_discount_limit", Label: "Most discount at the counter (%)", Kind: "number", Default: 0,
+				Help: "The biggest discount a cashier can give on a sale. At 0 no discount can be given."},
+			{Key: "counter_country", Label: "Counter's country code", Kind: "text", Default: "IN",
+				Help: "Where counter sales happen, such as IN. Tax on them is worked out from this."},
+			{Key: "counter_state", Label: "Counter's state", Kind: "text",
+				Help: "Where counter sales happen, written as in your tax rates, such as OD. Tax on them is worked out from this."},
 			{Key: "ai_reading", Label: "Read PDFs and photos with AI", Kind: "bool", Default: false,
 				Help: "Sends each PDF and photo to the AI provider set up in the AI gateway, and fills in the review form from what it reads. You still compare every figure with the file before approving. It uses your AI credit."},
 		},
@@ -440,8 +472,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write := func(pattern string, h http.HandlerFunc) {
 		app.HandleAdminFunc(pattern, m.on(h), rightWrite)
 	}
-	// Not behind the switch: it is how the screen learns the switch's state.
-	app.HandleAdminFunc("GET "+adminBase+"/status", m.handleStatus, rightRead)
+	// Not behind the switch: it is how the screen learns the switch's state. A
+	// cashier's screen asks too, and what it says holds no figures.
+	app.HandleAdminFunc("GET "+adminBase+"/status", m.handleStatus, rightRead, rightCounter)
 
 	app.HandleAdminFunc("GET "+adminBase+"/phone-links", m.on(m.handleListLinks), rightLinks)
 	app.HandleAdminFunc("POST "+adminBase+"/phone-links", m.on(m.handleCreateLink), rightLinks)
@@ -473,6 +506,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/allocations/{id}/reverse", m.handleReverseAllocation)
 	write("POST "+adminBase+"/invoices/{id}/reverse", m.handleReverseInvoice)
 	read("GET "+adminBase+"/invoices/{id}/lines", m.handleInvoiceLines)
+	counter := func(pattern string, h http.HandlerFunc) {
+		app.HandleAdminFunc(pattern, m.on(h), rightCounter)
+	}
+	counter("GET "+adminBase+"/counter/lookup", m.handleLookup)
+	counter("POST "+adminBase+"/counter/barcodes", m.handleLinkBarcode)
+	counter("POST "+adminBase+"/counter/preview", m.handleSalePreview)
+	counter("POST "+adminBase+"/counter/sales", m.handleSale)
 	read("GET "+adminBase+"/insights", m.handleInsights)
 	write("POST "+adminBase+"/wholesale/preview", m.handleWholesalePreview)
 	write("POST "+adminBase+"/wholesale/quotes", m.handleWholesaleQuote)
