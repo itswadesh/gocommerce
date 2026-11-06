@@ -213,8 +213,15 @@ Sign-up, password-reset links and the stores' own addresses are listed too:
 |---|---|
 | `GOCOMMERCE_PANEL_URL` | Where the panel is reached, e.g. `https://shop.example.com`. A password-reset email links there; without it the email carries only a code. |
 | `GOCOMMERCE_SIGNUP` | `1` lets anybody make an account on the sign-in screen and open a store. It stays shut until the install has email of its own: `RESEND_API_KEY` or `SENDGRID_API_KEY` here, not a store's own email settings. |
+| `GOCOMMERCE_SMS_CODES_PER_DAY` | The codes texted in any 24 hours: sign-in codes, codes to add a number and password resets to operators in total, and sign-in codes to each store's shoppers in total, so strangers cannot run up an SMS bill. Past it, people are told to use a password or an email, and the engine logs an error. Unset or unreadable, 500. |
+| `GOCOMMERCE_SMS_COUNTRIES` | The calling codes an operator's sign-in code may be texted to, comma-separated, such as `91,1`. Other countries are refused before anything is stored or sent, and those people use an email and password. Unset or unreadable, `91`. A shopper's rule is separate: India free, other countries on Pro. |
+| `MSG91_AUTH_KEY` and `SMS_OTP_TEMPLATE_ID` with `-msg91`, or the `TWILIO_*` variables with `-twilio` | SMS of the install's own. With either, operators can sign in with a phone, and sign up with one where `GOCOMMERCE_SIGNUP` is on: the sign-in code uses the same DLT template as a shopper's, and goes out on these rather than on a store's own settings. MSG91 alone reaches Indian numbers only. |
 | `PLATFORM_TELEGRAM_BOT_TOKEN`, `PLATFORM_TELEGRAM_CHAT_ID` | With `-telegram`, the install owner's own bot and chat. Each time anybody opens a store, under any brand, the chat is told the store's name, its address and its owner's email. Separate from a store's own Telegram alerts, which stay under Notifications › Setup Telegram. |
+| `PLATFORM_STORE_WEBHOOK_URL`, `PLATFORM_STORE_WEBHOOK_BASE_DOMAIN` | With `-telegram`, an automation such as a Zap, posted to as JSON each time somebody opens a store: `store_name`, `business_name`, `domain`, `user_first_name`, `user_last_name`, `user_email`, `user_phone`, `address` and `country`. The names are always empty, since the engine holds no person's name, and the business and address usually are this early. The URL is as good as a password. The base domain limits it to that brand's stores, and empty means every brand's. |
+| `GOCOMMERCE_PLATFORM_EMAIL_FROM` | The sender of the email the All stores page sends a store's owner to verify their address. The install's email provider must accept it, so its domain has to be verified there. `ANTHROPIC_API_KEY` writes the first version, and `AI_PLATFORM_SMALL_MODEL` picks the model; without the key the page asks you to write it. |
+| `GOCOMMERCE_PLATFORM_OWNER_PHONE` | The one person who gets the panel's All stores page: every store on the install with its owners' phones and emails and its product and order counts. The account must have this number, proved by a sign-in code. Empty, nobody gets the page. |
 | `GOCOMMERCE_BASE_DOMAIN` | Gives every store an address at `<slug>.<base domain>` without adding a domain, e.g. `shops.example.com`. The panel shows it, and a domain under it cannot be added as a store's own. Point a wildcard DNS record at whatever serves the storefront. |
+| `GOCOMMERCE_BRAND_NAME` | What an install with no `GOCOMMERCE_BRANDS` calls itself in the panel and its emails, in place of GoCommerce. It names no address, so no value of it can stop the engine starting. |
 | `GOCOMMERCE_BRANDS` | Several brands on one install, each a name on its own admin domain with its own stores. A JSON array; see [Several brands](#several-brands). Unset, the install is one brand made of the two settings above. |
 | `GOCOMMERCE_SECRETS_KEY`, `GOCOMMERCE_SECRETS_KEY_PREVIOUS` | Seal the payment and provider keys, API key copies and webhook signing secrets the database holds. Empty by default, which stores them readable as before. See [Secrets at rest](#secrets-at-rest) before setting it. |
 
@@ -285,8 +292,12 @@ search does not.
 
 ### AI on the platform's key
 
-The engine runs with `-ai-gateway` (and the modules built on it). Every model
-call goes through the gateway, which records it and charges it (D107, D151).
+The engine runs with `-ai-gateway` (and the modules built on it, `-ask-ai` among
+them). Every model call goes through the gateway, which records it and charges
+it (D107, D151). Ask AI's button appears for a store only once the gateway can
+make calls for it; Plugins › AI gateway › "Share store facts" (on unless a store
+switches it off) says whether it may see the store's trading name, country,
+currency, timezone and setup steps. It never sees contact details.
 
 - **The key.** Set `ANTHROPIC_API_KEY` in the host's environment tab (Dokploy:
   the compose service's Environment) and redeploy. It is the platform's own
@@ -733,6 +744,52 @@ variable named and its value never printed. The key is read from the
 environment only, never from a flag, because a flag is visible to anyone who can
 list the machine's processes.
 
+## Running a store from Telegram
+
+`ext/telegram-alerts` can take orders as well as send them (D216). It is off
+until the store's owner switches it on, separately from the alerts, and a store
+that never does sends and receives what it always did.
+
+To switch it on: make a bot with @BotFather, paste its token under
+Notifications › Setup Telegram, press Start in your private chat with the bot,
+choose that chat with Find my chat, switch the alerts on, then press **Switch
+two-way control on**. The install needs a public HTTPS panel address
+(`GOCOMMERCE_PANEL_URL`, or the brand's), because that is where Telegram sends updates:
+`POST /x/telegram-alerts/webhook?store=<id>`. A reverse proxy must pass
+`/x/` on that host and must not strip the `X-Telegram-Bot-Api-Secret-Token`
+header.
+
+| In the chat | What it does | Safeguard |
+|---|---|---|
+| `/sales`, `/orders`, `/order GC-001042`, `/lowstock`, `/health` | Reads | None needed |
+| Mark paid, Ship under a new order's alert | One tap; Ship records a manual shipment with no tracking number and books no carrier | Safe to repeat: the order's own rules refuse or do nothing |
+| Cancel under a new order's alert | Asks first | Confirm |
+| `/stock SKU 12`, `/stock SKU +5`, `/price SKU 1299.50`, `/ship GC-001042 TRACKING`, `/delivered GC-001042` | Repeats the change and asks | Confirm |
+
+Refunds stay in the panel. On a store with several locations `/stock` changes
+the default location, and says so before it asks.
+
+What holds it together, for whoever is reading a log at 3am:
+
+- **The bot and Find my chat take turns.** Telegram refuses `getUpdates` on a bot
+  with a webhook, so Find my chat is unavailable while two-way control is on. To
+  change chat, switch it off, find the chat, switch it on.
+- **Changing the bot or chat in the settings pauses it**, and the screen says so.
+  A new token for the same bot does not. Switching the alerts off pauses it too.
+- **A bot already wired to another service is refused** rather than cut off.
+- **A switch-off that could not reach Telegram still stops the store obeying.**
+  The webhook left behind gets 401s, and the next Find my chat removes it.
+- **Only one private chat is obeyed.** Anything else, a group included, is
+  dropped with no reply and no row written.
+- **Every change** is in `GET /api/admin/x/telegram-alerts/commands/audit` with
+  the Telegram user id, and in the order's history as `Telegram user <id>`.
+  A row saying `started` is one the process did not live to finish: check the
+  order.
+
+Limits: 30 updates a minute per store, past which they are dropped silently; one
+change waiting per store, and a new question replaces it; a Confirm lasts five
+minutes.
+
 ## Health checks
 
 | Endpoint | Meaning | Use for |
@@ -801,8 +858,8 @@ can be retried on its own.
 any Go service: latency, error rate, connection-pool saturation.
 
 **One request, every record it left.** Each request gets a trace id, returned
-in the `X-Trace-Id` response header and printed on its `request` log line
-beside the `store` it was for. A caller may send its own in the same header —
+in the `X-Trace-Id` response header and, on a route under `/api/`, printed on its
+`request` log line beside the `store` it was for. Other routes write no such line. A caller may send its own in the same header —
 8 to 64 letters, digits, `-` or `_`; anything else is replaced — so a
 storefront's support ticket can quote the id the shopper's browser saw. Any
 failure the request logs carries the same `trace_id`. A caller's id is a

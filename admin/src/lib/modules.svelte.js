@@ -57,6 +57,9 @@ const PROBES = {
     // The products page's "Create from photos", for the same reason.
     "photo-products": { path: "/api/admin/x/photo-products/status", right: "catalog.write" },
     "catalog-ai": { path: "/api/admin/x/catalog-ai/status", right: "catalog.write" },
+    // The button on every screen, and in a binary without the module nobody
+    // holds the right, so the probe is not even made.
+    "ask-ai": { path: "/api/admin/x/ask-ai/status", right: "ask-ai.use" },
     ads: { path: "/api/admin/x/ads/settings", right: "ads.read" },
     navigation: { path: "/api/admin/x/navigation/menus", right: "catalog.read" },
     reviews: { path: "/api/admin/x/reviews?limit=1", right: "catalog.read" },
@@ -65,6 +68,9 @@ const PROBES = {
     // say the module is missing rather than that the role lacks a right.
     contact: { path: "/api/admin/x/contact/messages?limit=1", right: ["contact.read", "customers.read"] },
     newsletter: { path: "/api/admin/x/newsletter/subscriptions?limit=1", right: "customers.read" },
+    // store.operate beside the module's own right, for cart-recovery's reason:
+    // in a binary without the module nobody holds retailassistant.read.
+    retailassistant: { path: "/api/admin/x/retailassistant/status", right: ["retailassistant.read", "store.operate"] },
     faq: { path: "/api/admin/x/faq", right: "catalog.read" },
     banners: { path: "/api/admin/x/banners", right: "banners.read" },
     layouts: { path: "/api/admin/x/layouts/sections", right: "layouts.read" },

@@ -265,6 +265,8 @@ func (m *Module) registerPlugin(app *gocommerce.App) {
 				Help: "The text of customers' messages."},
 			{Key: "share_documents", Label: "Share documents", Kind: "bool", Default: platform,
 				Help: "PDFs and images, sent to the provider as files."},
+			{Key: "share_store_facts", Label: "Share store facts", Kind: "bool", Default: true,
+				Help: "The store's trading name, country, currency and timezone, and which setup steps are done, so Ask AI can answer about this store. Never its contact details or address."},
 		},
 	})
 }
@@ -426,6 +428,7 @@ func (m *Module) settings(ctx context.Context) (*settings, error) {
 			ContactDetails: flag("share_contact_details"),
 			MessageBodies:  flag("share_message_bodies"),
 			Documents:      flag("share_documents"),
+			StoreFacts:     flag("share_store_facts"),
 		},
 	}
 	if s.provider == "" {

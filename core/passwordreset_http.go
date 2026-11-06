@@ -82,7 +82,7 @@ func (a *App) handleConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
 	}
 	// The log is where operator-account facts go: this flow writes no outbox
 	// event, for the reason passwordreset.go gives.
-	a.log.Info("superuser password reset", "email", su.Email)
+	a.log.Info("superuser password reset", "who", su.who())
 	// 200 and not 201: unlike accepting an invitation, nothing was created.
 	Respond(w, http.StatusOK, authResponse{
 		Token:     sess.Token,

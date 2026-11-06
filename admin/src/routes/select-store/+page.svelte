@@ -13,10 +13,12 @@
     import { createStore, enterStore, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { safeNext } from "$lib/paths.js";
+    import { takeStoreName } from "$lib/store-name.js";
     import { toast } from "$lib/toast.svelte.js";
-    import { CURRENCIES } from "$lib/currencies.js";
-    import { COUNTRIES } from "$lib/countries.js";
+    import { currencyOptions } from "$lib/currencies.js";
+    import { COUNTRIES, currencyOf, timezoneOf, timezoneOptions } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
+    import ZoneClock from "$lib/components/ZoneClock.svelte";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -43,7 +45,7 @@
         }
     });
 
-    let name = $state("");
+    let name = $state(takeStoreName());
     let slug = $state("");
     let slugTouched = $state(false);
 
@@ -73,12 +75,17 @@
         name = suggestion.name;
         slugTouched = false;
     }
-    // What the store sells in; empty is the install's. It can be changed on
-    // Store settings until the first order.
-    let currency = $state("");
     // Where the store is: its country on Store settings, and what its default
     // shipping zone covers. A guess from the browser's region to start with.
     let country = $state(browserCountry());
+    // What the store sells in: what the country spends until somebody chooses,
+    // and the install's when there is neither. It can be changed on Store
+    // settings until an order is paid or sent out.
+    let pickedCurrency = $state("");
+    const currency = $derived(pickedCurrency || currencyOf(country));
+    // What "today" means on its invoices and reports, the same way.
+    let pickedTimezone = $state("");
+    const timezone = $derived(pickedTimezone || timezoneOf(country));
     // Off unless asked: a sample nobody wanted is something to clean up (D94, D96).
     let sampleContent = $state(false);
 
@@ -131,7 +138,7 @@
             // An address is sent only when somebody typed one. One worked out
             // from the name is the engine's to work out, so a taken one gets a
             // number rather than a refusal.
-            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, sampleContent);
+            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, timezone, sampleContent);
             // The store opened either way; this says only that its samples did not all arrive.
             if (entry.sample_content?.error) toast.warning(entry.sample_content.error);
             await reloadStoreData();
@@ -236,10 +243,22 @@
             <div class="col-12">
                 <div class="field">
                     <label for="store_currency">Currency</label>
-                    <Select id="store_currency" bind:value={currency} options={CURRENCIES} placeholder="The install's default" />
+                    <Select id="store_currency" bind:value={() => currency, (code) => (pickedCurrency = code)} options={currencyOptions(currency)} placeholder="The install's default" />
                 </div>
                 <div class="link-hint m-t-5">
-                    <small>What the store sells in. You can change it until the first order.</small>
+                    <small>What the store sells in. You can change it until an order is paid or sent out.</small>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_timezone">Timezone</label>
+                    <Select id="store_timezone" bind:value={() => timezone, (zone) => (pickedTimezone = zone)} options={timezoneOptions(timezone)} placeholder="UTC" />
+                </div>
+                <div class="link-hint m-t-5">
+                    <small><ZoneClock zone={timezone} /></small>
+                </div>
+                <div class="link-hint m-t-5">
+                    <small>What "today" means on an invoice and in a report. You can change it on Store settings.</small>
                 </div>
             </div>
             <div class="col-12">
@@ -254,7 +273,7 @@
                     <label for="store_samples">Start with a sample shop</label>
                 </div>
                 <div class="link-hint" id="store_samples_hint">
-                    <small>A small fashion shop: eleven garments, from kurtas to a lehenga, each with photos in every colour, with categories, discounts and a month of orders around them, plus reviews, pages and menu links where the store has those. Nobody is emailed. Erase it all from Products before you open.</small>
+                    <small>A small fashion shop: twenty-four garments, from kurtas to a sherwani, each with photos in every colour, with categories, discounts and a month of orders around them, plus reviews, pages and menu links where the store has those. Nobody is emailed. Erase it all from Products before you open.</small>
                 </div>
             </div>
             <div class="col-12">

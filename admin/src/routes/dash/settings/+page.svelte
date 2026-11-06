@@ -28,17 +28,20 @@
     import { forgetStore } from "$lib/store-scope.js";
     import { goto } from "$app/navigation";
 
+    import StoreDeleteDialog from "$lib/components/StoreDeleteDialog.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import CustomerSignInCard from "$lib/components/CustomerSignInCard.svelte";
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import StoreImages from "$lib/components/StoreImages.svelte";
     import Select from "$lib/components/Select.svelte";
-    import { countryOptions } from "$lib/countries.js";
+    import SaveBar from "$lib/components/SaveBar.svelte";
+    import ZoneClock from "$lib/components/ZoneClock.svelte";
+    import { countryOptions, timezoneOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
     import { languageName, languageOptions } from "$lib/languages.js";
     import { rise, flipDuration } from "$lib/motion.js";
     import { flip } from "svelte/animate";
-    import { brand, titled } from "$lib/brand.svelte.js";
+    import { titled } from "$lib/brand.svelte.js";
 
     /*
      * Deleting the store. Offered to its owner only, never on a demo store,
@@ -50,22 +53,15 @@
     const mayDelete = $derived(
         !!here && here.role === "owner" && !here.demo && myStores.list.length > 1,
     );
-    let confirmSlug = $state("");
-    let deleting = $state(false);
-    async function deleteStore() {
-        if (!here || deleting || confirmSlug.trim() !== here.slug) return;
-        deleting = true;
-        try {
-            await storesAPI.remove(here.id, confirmSlug.trim());
-            toast.success(`${here.name} was deleted`);
-            forgetStore();
-            forgetStores();
-            await goto(`${base}/select-store`, { replaceState: true });
-        } catch (err) {
-            toast.error(err);
-        } finally {
-            deleting = false;
-        }
+    let deleteOpen = $state(false);
+    // An error goes back to the dialog, which shows it beside the button.
+    async function deleteStore(typed) {
+        const { id, name } = here;
+        await storesAPI.remove(id, typed);
+        toast.success(`${name} was deleted`);
+        forgetStore();
+        forgetStores();
+        await goto(`${base}/select-store`, { replaceState: true });
     }
 
     const store = $derived(settings.all);
@@ -104,8 +100,8 @@
             kind: "select",
             hint: "What \"today\" means on an invoice and in a report. Empty is UTC.",
         },
-        // The store's own currency (D85): chosen until its first order, then
-        // fixed, because changing it would change what every order means.
+        // The store's own currency (D85): chosen until an order is paid or sent
+        // out, then fixed, because changing it would change what that order means.
         { key: "currency", label: "Currency", kind: "select" },
     ];
 
@@ -146,7 +142,9 @@
     }
 
     function optionsFor(key) {
-        if (key === "timezone") return zones;
+        // A zone saved from another browser, which may spell it differently,
+        // stays a choice rather than showing blank.
+        if (key === "timezone") return zones.length ? timezoneOptions(draft?.timezone) : [];
         if (key === "state") return draft?.country === "IN" ? stateOptions(draft?.state) : [];
         if (key === "country") return countryOptions(draft?.country);
         if (key === "currency") return currencyOptions(draft?.currency);
@@ -252,6 +250,27 @@
     }
     function dropLanguage(tag) {
         draft.languages = draft.languages.filter((l) => l !== tag);
+    }
+
+    /* The sign-in card keeps its own call; both report their own failure. */
+    let signIn = $state();
+    let signInDirty = $state(false);
+    let savingAll = $state(false);
+
+    async function saveAll() {
+        if (savingAll) return;
+        savingAll = true;
+        try {
+            if (dirty && editable) await saveProfile();
+            if (signInDirty) await signIn?.save();
+        } finally {
+            savingAll = false;
+        }
+    }
+
+    function discardAll() {
+        draft = { ...profile };
+        signIn?.discard();
     }
 
     async function saveProfile() {
@@ -376,6 +395,8 @@
 <div class="page page-settings shopify-skin">
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
+        <SaveBar dirty={(dirty && editable) || signInDirty} saving={saving || savingAll} onsave={saveAll} ondiscard={discardAll} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
@@ -432,10 +453,11 @@
                                         {#if f.key === "currency"}
                                             <div class="field-help">
                                                 {profile?.currency_locked
-                                                    ? "Fixed: this store has orders that were paid or not cancelled, and changing it would change what their amounts mean."
-                                                    : "What the store sells in. Fixed once it takes its first order; changing it now relabels the prices already entered, without converting them."}
+                                                    ? "Fixed: this store has orders that were paid or sent out, and changing it would change what their amounts mean."
+                                                    : "What the store sells in. Fixed once an order is paid or sent out. Changing it now relabels the prices already entered, without converting them; orders already placed keep their currency."}
                                             </div>
                                         {:else if f.hint}<div class="field-help">{f.hint}</div>{/if}
+                                        {#if f.key === "timezone"}<div class="field-help"><ZoneClock zone={draft.timezone} /></div>{/if}
                                     </div>
                                 </div>
                             {/each}
@@ -595,18 +617,14 @@
                                     {/if}
                                 </div>
                             </div>
-                            <div class="col-12">
-                                {#if editable}
-                                    <button type="submit" class="btn sm" disabled={saving || !dirty}>
-                                        <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
-                                    </button>
-                                {:else}
+                            {#if !editable}
+                                <div class="col-12">
                                     <div class="field-help">
                                         These are the shop's own details, and changing them needs
                                         store.write.
                                     </div>
-                                {/if}
-                            </div>
+                                </div>
+                            {/if}
                         </form>
                     </section>
                     <!-- Saved as each is picked; the form above keeps its edits. -->
@@ -621,7 +639,7 @@
                 <h2 class="section-title">Customers and checkout</h2>
                 <FeatureSwitch pluginKey="identity" settings={false} onchange={() => signInVersion++} />
                 {#key signInVersion}
-                    <CustomerSignInCard {channels} />
+                    <CustomerSignInCard bind:this={signIn} bind:dirty={signInDirty} {channels} />
                 {/key}
                 <FeatureSwitch pluginKey="guest-checkout" />
                 <FeatureSwitch pluginKey="store-close" />
@@ -863,38 +881,19 @@
                         </summary>
                         <div class="map-fold-body store-delete">
                             <p class="field-help m-b-sm">
-                                Deletes {here.name} and everything in it — products, orders, customers,
-                                settings — for good. Nobody can undo it. Your other stores are not touched.
+                                Deletes {here.name} and everything in it for good. You will see exactly what
+                                goes before anything happens.
                             </p>
-                            <div class="field">
-                                <label for="delete-confirm">Type <code>{here.slug}</code> to confirm</label>
-                                <input
-                                    id="delete-confirm"
-                                    type="text"
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                    bind:value={confirmSlug}
-                                />
-                            </div>
-                            <button
-                                type="button"
-                                class="btn danger m-t-sm"
-                                class:loading={deleting}
-                                disabled={deleting || confirmSlug.trim() !== here.slug}
-                                onclick={deleteStore}
-                            >
+                            <button type="button" class="btn danger" onclick={() => (deleteOpen = true)}>
                                 <i class="ri-delete-bin-line" aria-hidden="true"></i>
                                 <span class="txt">Delete this store</span>
                             </button>
                         </div>
                     </details>
+                    <StoreDeleteDialog bind:open={deleteOpen} store={here} ondelete={deleteStore} />
                 {/if}
             {/if}
         </div>
-
-        <footer class="page-footer tw:text-xs tw:text-muted-foreground">
-            <span class="txt">{brand.name || "Version"} {store?.version ?? ""}</span>
-        </footer>
     </div>
 </div>
 

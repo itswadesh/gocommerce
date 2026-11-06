@@ -15,7 +15,7 @@ import { forgetStore, getStore, openStore, setStore } from "$lib/store-scope.js"
  * asking, then "ok" (in a store), "choose" (several, none remembered), "none"
  * (no store at all) or "error" (the engine could not be reached).
  */
-const s = $state({ list: [], loaded: false, current: getStore(), state: "unknown" });
+const s = $state({ list: [], loaded: false, current: getStore(), state: "unknown", platformOwner: false });
 
 /*
  * Bumped by forgetStores. An answer that arrives after a sign-out belongs to
@@ -38,6 +38,10 @@ export const myStores = {
     get state() {
         return s.state;
     },
+    /** Whether this person may open the list of every store (D215). */
+    get platformOwner() {
+        return s.platformOwner;
+    },
     /** The store this tab is in, as listed, or null before the list arrives. */
     get current() {
         return s.list.find((st) => st.id === s.current || st.slug === s.current) ?? null;
@@ -48,9 +52,15 @@ export async function loadStores() {
     const mine = generation;
     // A store opened before stores had names (store #1 of an upgraded
     // install) is called by its slug rather than drawn as a blank row.
-    const list = (await storesAPI.mine()).map((st) => ({ ...st, name: st.name || st.slug }));
+    const [stores, platformOwner] = await Promise.all([
+        storesAPI.mine(),
+        // Only decides whether a link shows, so it must not stop the panel opening.
+        storesAPI.directoryAllowed().catch(() => false),
+    ]);
+    const list = stores.map((st) => ({ ...st, name: st.name || st.slug }));
     stillCurrent(mine);
     s.list = list;
+    s.platformOwner = platformOwner;
     s.loaded = true;
     return s.list;
 }
@@ -61,6 +71,7 @@ export function forgetStores() {
     s.list = [];
     s.loaded = false;
     s.state = "unknown";
+    s.platformOwner = false;
 }
 
 /** markStores lets the shell record "pending", "error" and a retry's "unknown". */
@@ -135,8 +146,8 @@ export async function enterStore(id) {
 }
 
 /** createStore opens a store with this person as owner and moves into it. */
-export async function createStore(name, slug, currency = "", country = "", sampleContent = false) {
-    const entry = await storesAPI.create(name, slug, currency, country, sampleContent);
+export async function createStore(name, slug, currency = "", country = "", timezone = "", sampleContent = false) {
+    const entry = await storesAPI.create(name, slug, currency, country, timezone, sampleContent);
     applyEntry(entry);
     await loadStores();
     return entry;

@@ -23,6 +23,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Pager from "$lib/components/Pager.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     /* The starting page size, not the only one: `limit` is a listState key, so
@@ -148,6 +149,13 @@
 {:else}
     <div class="page page-invoices shopify-skin">
         <div class="page-content full-height tw:bg-background tw:text-foreground">
+            <SaveBar
+                dirty={unsaved && can("invoices.configure")}
+                {saving}
+                onsave={saveLedgers}
+                ondiscard={() => (ledgers = JSON.parse(savedLedgers))}
+            />
+
             <header class="page-header">
                 <nav class="breadcrumbs">
                 <div class="tw:text-2xl tw:font-semibold tw:tracking-tight">Invoices</div>
@@ -212,7 +220,7 @@
                                     Import the ledgers first, then the vouchers: in TallyPrime, Alt+O, Masters,
                                     then Alt+O, Transactions. Importing a voucher again replaces it when
                                     Tally's import is set to overwrite a voucher with the same GUID.
-                                    {#if unsaved}<strong>Save the ledger names below to use them in the files.</strong>{/if}
+                                    {#if unsaved}<strong>Save the ledger names to use them in the files.</strong>{/if}
                                 </div>
                                 <div class="inline-flex gap-sm">
                                     {#each ["ledgers", "vouchers"] as part, i (part)}
@@ -268,15 +276,11 @@
                                         </label>
                                     </div>
                                 </div>
-                                <div class="col-12">
-                                    {#if can("invoices.configure")}
-                                        <button type="submit" class="btn sm" disabled={saving}>
-                                            <span class="txt">{saving ? "Saving…" : "Save ledger names"}</span>
-                                        </button>
-                                    {:else}
+                                {#if !can("invoices.configure")}
+                                    <div class="col-12">
                                         <div class="field-help">Changing these needs invoices.configure.</div>
-                                    {/if}
-                                </div>
+                                    </div>
+                                {/if}
                             </form>
                         </details>
                     </section>

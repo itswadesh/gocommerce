@@ -28,6 +28,11 @@ func (a *App) mountTeamRoutes() {
 	a.HandleAdminFunc("GET /api/admin/me", a.handleGetMe)
 	a.HandleAdminFunc("PATCH /api/admin/me", a.handleUpdateMe)
 	a.HandleAdminFunc("POST /api/admin/me/revoke-sessions", a.handleRevokeMySessions)
+	a.HandleAdminFunc("POST /api/admin/me/phone/code", a.handleRequestMyPhoneCode)
+	a.HandleAdminFunc("PUT /api/admin/me/phone", a.handleSetMyPhone)
+	a.HandleAdminFunc("DELETE /api/admin/me/phone", a.handleRemoveMyPhone)
+	a.HandleAdminFunc("POST /api/admin/me/email/code", a.handleRequestMyEmailCode)
+	a.HandleAdminFunc("PUT /api/admin/me/email", a.handleSetMyEmail)
 
 	// Ending somebody else's sessions is an act of team management, and the one
 	// thing an owner wants before removing an account or reducing a role.
@@ -48,6 +53,8 @@ func (a *App) handleListInvitations(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email string `json:"email"`
+		// Phone invites by number instead: no link, no email (D205).
+		Phone string `json:"phone"`
 		Role  string `json:"role"`
 		// SendEmail defaults to true: the link goes out by the store's email
 		// provider. False is "give me the link to copy", which also cancels
@@ -65,6 +72,17 @@ func (a *App) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
 	var invitedBy *int64
 	if su := SuperuserFrom(r.Context()); su != nil {
 		invitedBy = &su.ID
+	}
+
+	if in.Phone != "" {
+		inv, err := a.invitations.InvitePhone(r.Context(), in.Phone, in.Role, invitedBy)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		a.maskInvitations(r.Context(), []*Invitation{inv})
+		Respond(w, http.StatusCreated, inv)
+		return
 	}
 
 	inv, err := a.invitations.Invite(r.Context(), in.Email, in.Role, invitedBy)
@@ -165,6 +183,40 @@ func (a *App) handleAcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handleMyInvitations(w http.ResponseWriter, r *http.Request) {
+	su := personCaller(w, r)
+	if su == nil {
+		return
+	}
+	list, err := a.invitations.ForPerson(r.Context(), su)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusOK, list)
+}
+
+func (a *App) handleAnswerInvitation(w http.ResponseWriter, r *http.Request) {
+	su := personCaller(w, r)
+	if su == nil {
+		return
+	}
+	var in struct {
+		StoreID string `json:"store_id"`
+		ID      int64  `json:"id"`
+		Accept  bool   `json:"accept"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if err := a.invitations.AnswerPhone(r.Context(), su, in.StoreID, in.ID, in.Accept); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *App) handleGetMe(w http.ResponseWriter, r *http.Request) {
 	su := SuperuserFrom(r.Context())
 	if su == nil {
@@ -183,6 +235,8 @@ func (a *App) handleGetMe(w http.ResponseWriter, r *http.Request) {
 		"superuser":      su,
 		"sessions":       sessions,
 		"newest_session": newest,
+		// A person who signed up with a phone has none to confirm a change with.
+		"has_password": su.passwordHash != "",
 	})
 }
 

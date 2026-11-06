@@ -96,6 +96,7 @@ const (
 
 	// What a 202 says about this store's ability to send anything at all.
 	DeliveryEmail = "email"
+	DeliverySMS   = "sms"
 	DeliveryNone  = "none"
 )
 
@@ -145,7 +146,7 @@ type ResetProof struct {
 // refusal here is a typo said as one, and costs no try: nothing has been
 // looked up.
 func (p ResetProof) parse() (ResetProof, error) {
-	email := normalizeEmail(p.Email)
+	email := normalizeIdentity(p.Email)
 	// Mail clients and phones paste a code with spaces in the middle.
 	code := strings.Join(strings.Fields(p.Code), "")
 	switch {
@@ -177,7 +178,8 @@ func isResetCode(code string) bool {
 
 // accepted is the one answer a reset request gets, whoever asked.
 func (s *Superusers) accepted(delivery string, b Brand) ResetRequest {
-	return ResetRequest{Accepted: true, Delivery: delivery, Link: b.PanelURL != ""}
+	// A text carries the code alone: a link in one is what a phisher sends.
+	return ResetRequest{Accepted: true, Delivery: delivery, Link: b.PanelURL != "" && delivery != DeliverySMS}
 }
 
 // ResetTarget is everything a lookup will say about a link: when it dies.
@@ -197,14 +199,22 @@ type ResetTarget struct {
 // returns, so a real address does not pay a vendor's round trip that an unknown
 // one skips — the timing would say what the body will not.
 func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (ResetRequest, error) {
-	email = normalizeEmail(email)
-	if email == "" {
-		return ResetRequest{}, Validationf("email is required")
-	}
-	// A property of the string that was typed, not of the account behind it, so
-	// answering it is not an oracle.
-	if _, err := mail.ParseAddress(email); err != nil {
-		return ResetRequest{}, Validationf("%q is not a valid email address", email)
+	// Properties of the string that was typed, not of the account behind it, so
+	// answering them is not an oracle.
+	if looksLikePhone(email) {
+		phone, err := NormalizePhone(email)
+		if err != nil {
+			return ResetRequest{}, err
+		}
+		email = phone
+	} else {
+		email = normalizeEmail(email)
+		if email == "" {
+			return ResetRequest{}, Validationf("email is required")
+		}
+		if _, err := mail.ParseAddress(email); err != nil {
+			return ResetRequest{}, Validationf("%q is not a valid email address", email)
+		}
 	}
 
 	if retryAfter, ok := s.resets.blocked(email, clientIP); ok {
@@ -218,30 +228,49 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 	// A link nobody can be sent is an hour of live credential bought for
 	// nothing. The branch is on configuration, which is the same for every
 	// caller, so it enumerates nothing.
-	if !s.app.notifier.delivers(ctx, ChannelEmail) {
+	delivery := s.resetDelivery(ctx, email)
+	if delivery == DeliveryNone {
 		return s.accepted(DeliveryNone, s.app.Brand(ctx)), nil
 	}
 
 	var id int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id FROM superusers WHERE email = $1`, email).Scan(&id)
+		`SELECT id FROM superusers WHERE email = $1 OR phone = $1`, email).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Nothing written, nothing sent, same answer.
-		return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
+		return s.accepted(delivery, s.app.Brand(ctx)), nil
 	}
 	if err != nil {
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
 
-	token, code, err := s.issueReset(ctx, id, true)
+	token, code, err := s.issueReset(ctx, id, email, true)
 	if errors.Is(err, errResetCapped) {
-		return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
+		return s.accepted(delivery, s.app.Brand(ctx)), nil
 	}
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code, s.app.personMailBrand(ctx, id))
-	return s.accepted(DeliveryEmail, s.app.Brand(ctx)), nil
+	s.deliverReset(ctx, email, token, code, s.app.personMailBrand(ctx, id))
+	return s.accepted(delivery, s.app.Brand(ctx)), nil
+}
+
+// resetDelivery says how a reset for this email or phone would go out. Asked of
+// the channel and the address's shape, never of an account, so it says nothing
+// about who has one. SMS is asked per event because MSG91 texts only what it has
+// a DLT template for.
+func (s *Superusers) resetDelivery(ctx context.Context, to string) string {
+	scope := s.identityMailScope(ctx)
+	if strings.Contains(to, "@") {
+		if s.app.notifier.delivers(scope, ChannelEmail) {
+			return DeliveryEmail
+		}
+		return DeliveryNone
+	}
+	if s.app.notifier.carries(scope, Notification{Event: EventSuperuserPasswordReset, Channel: ChannelSMS, To: to}) {
+		return DeliverySMS
+	}
+	return DeliveryNone
 }
 
 // RequestResetFor mails a link and code to an operator the caller named by id:
@@ -259,27 +288,31 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	// Only this store's staff: one store's team screen has no business mailing
 	// links to people who work only elsewhere.
 	err := s.db.QueryRowContext(ctx,
-		`SELECT email FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&email)
+		`SELECT coalesce(email, '') FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ResetRequest{}, NotFoundf("superuser %d not found", id)
 	}
 	if err != nil {
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
+	if email == "" {
+		return ResetRequest{}, Conflictf("this person signs in with their phone and has no email to send a link to")
+	}
 
 	// The teammate is mailed as the store's: its brand names the email and
 	// its panel is where the link leads (D114).
 	brand := s.app.StoreBrand(ctx)
-	if !s.app.notifier.delivers(ctx, ChannelEmail) {
+	delivery := s.resetDelivery(ctx, email)
+	if delivery == DeliveryNone {
 		return s.accepted(DeliveryNone, brand), nil
 	}
 
-	token, code, err := s.issueReset(ctx, id, false)
+	token, code, err := s.issueReset(ctx, id, email, false)
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code, brand)
-	return s.accepted(DeliveryEmail, brand), nil
+	s.deliverReset(ctx, email, token, code, brand)
+	return s.accepted(delivery, brand), nil
 }
 
 // LookupReset says whether a link is still alive, so the reset screen can show
@@ -314,6 +347,12 @@ func (s *Superusers) LookupReset(ctx context.Context, token, clientIP string) (*
 // every other link and code that operator holds dropped, and a fresh session
 // handed back. A code is first turned into the token of the row it opens, so
 // from there both kinds take the same path.
+//
+// A reset also ends the account's other way in, because nothing proves who put
+// it there and a stranger's must not survive the real owner coming back (D213).
+// By email: the phone goes, and its owner adds it again with a code. By text: the
+// number is proved by this, and an email on it goes if the number was not proved
+// until now, as the first sign-in code does (claimPhoneAccount).
 //
 // It is one transaction, and the password is validated and hashed before that
 // transaction opens. Both matter. A two-transaction shape — claim the token,
@@ -393,8 +432,13 @@ func (s *Superusers) ConfirmReset(ctx context.Context, proof ResetProof, passwor
 
 		// scanSuperuser rather than the resolving scan: this is inside a
 		// transaction, and that one would take a second pool connection.
+		other := `phone = NULL, phone_proved_at = NULL, email_proved = email`
+		if proof.Code != "" && !isEmailAddress(proof.Email) {
+			other = `email = CASE WHEN phone_proved_at IS NULL THEN NULL ELSE email END,
+				phone_proved_at = coalesce(phone_proved_at, now())`
+		}
 		row := tx.QueryRowContext(ctx, `
-			UPDATE superusers SET password_hash = $2, updated_at = now()
+			UPDATE superusers SET password_hash = $2, updated_at = now(), `+other+`
 			WHERE id = $1 RETURNING `+superuserColumns, superuserID, hash)
 		if su, err = scanSuperuser(row); err != nil {
 			return Internalf(err, "update superuser")
@@ -443,7 +487,7 @@ func (s *Superusers) tryResetCode(ctx context.Context, email, code string) (stri
 	// nothing, so it gets a wrong code's answer by a wrong code's path.
 	var id int64
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id FROM superusers WHERE email = $1`, email).Scan(&id)
+		`SELECT id FROM superusers WHERE email = $1 OR phone = $1`, email).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", Internalf(err, "look up superuser")
 	}
@@ -455,7 +499,7 @@ func (s *Superusers) tryResetCode(ctx context.Context, email, code string) (stri
 			  AND expires_at > now() AND attempts < $3
 			RETURNING token_hash, code_hash)
 		SELECT token_hash FROM tried WHERE code_hash = $2`,
-		id, resetCodeHash(id, code), resetCodeAttempts).Scan(&tokenHash)
+		id, sentCodeHash(id, email, code), resetCodeAttempts).Scan(&tokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -467,8 +511,9 @@ func (s *Superusers) tryResetCode(ctx context.Context, email, code string) (stri
 
 // issueReset writes one row and returns the only copies of its token and code
 // that will ever exist. capped is the public route's: an operator already at
-// either cap gets no row, and errResetCapped.
-func (s *Superusers) issueReset(ctx context.Context, superuserID int64, capped bool) (token, code string, err error) {
+// either cap gets no row, and errResetCapped. A text the public route sends also
+// counts toward the install's day of texted codes.
+func (s *Superusers) issueReset(ctx context.Context, superuserID int64, to string, capped bool) (token, code string, err error) {
 	if token, err = newSessionToken(); err != nil {
 		return "", "", Internalf(err, "generate password reset token")
 	}
@@ -494,11 +539,28 @@ func (s *Superusers) issueReset(ctx context.Context, superuserID int64, capped b
 			if live >= resetCodesLive || today >= resetCodesDaily {
 				return errResetCapped
 			}
+			if !isEmailAddress(to) {
+				if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('superuser_login_codes'), hashtext('install'))`); err != nil {
+					return Internalf(err, "lock sign-in codes")
+				}
+				if full, err := s.smsDayIsFull(ctx, tx); err != nil {
+					return err
+				} else if full {
+					return errResetCapped
+				}
+				// A row only to be counted: spent from the start, and holding no
+				// number, so it charges no phone's own limits.
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO superuser_login_codes (identity, code_hash, client_hash, expires_at, consumed_at)
+					VALUES ('password-reset', '', '', now(), now())`); err != nil {
+					return Internalf(err, "count texted reset")
+				}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO superuser_password_resets (token_hash, code_hash, superuser_id, expires_at)
 			VALUES ($1, $2, $3, $4)`,
-			hashToken(token), resetCodeHash(superuserID, code), superuserID,
+			hashToken(token), sentCodeHash(superuserID, to, code), superuserID,
 			time.Now().Add(passwordResetTTL)); err != nil {
 			return Internalf(err, "store password reset")
 		}
@@ -528,6 +590,16 @@ func newResetCode() (string, error) {
 // same six digits: a code is only ever looked up with the address it went to.
 func resetCodeHash(superuserID int64, code string) string {
 	return hashToken(fmt.Sprintf("%d:%s", superuserID, code))
+}
+
+// sentCodeHash keys a code to where it was sent as well, so a code that went to
+// the account's email cannot be spent naming its phone: that would prove a number
+// nobody had a text on (ConfirmReset).
+func sentCodeHash(superuserID int64, to, code string) string {
+	if isEmailAddress(to) {
+		return resetCodeHash(superuserID, code)
+	}
+	return resetCodeHash(superuserID, "sms:"+code)
 }
 
 // resetURL is where the link points: the panel URL of a configured brand, and
@@ -564,8 +636,8 @@ func resetURL(b Brand, token string) string {
 //
 // A failure is logged and never returned. The row is written and the operator
 // can ask again; what must not happen is a 500 that says the address exists.
-func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token, code string, brand Brand) {
-	sendCtx := s.identityMailScope(reqCtx, id)
+func (s *Superusers) deliverReset(reqCtx context.Context, email, token, code string, brand Brand) {
+	sendCtx := s.identityMailScope(reqCtx)
 	data := map[string]string{
 		// Deliberately not customer_email or customer_name: the recipient is an
 		// operator, and reusing the order vocabulary would let an order
@@ -573,14 +645,20 @@ func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token
 		"operator_email": email,
 		// Still the link's token, as it always was: a store may have saved its
 		// own copy of this template, and that copy must keep meaning the same.
-		"reset_token":        token,
-		"reset_code":         code,
+		"reset_token": token,
+		"reset_code":  code,
+		// What an SMS provider's OTP template fills its number from.
+		"code":               code,
 		"expires_in_minutes": strconv.Itoa(int(passwordResetTTL / time.Minute)),
 		// What the email calls the product, and whose panel the link opens.
 		"brand_name": brand.Name,
 	}
+	channel := ChannelEmail
+	if !strings.Contains(email, "@") {
+		channel = ChannelSMS
+	}
 	// The absence of reset_url is meaningful, and a template branches on it.
-	if link := resetURL(brand, token); link != "" {
+	if link := resetURL(brand, token); link != "" && channel == ChannelEmail {
 		data["reset_url"] = link
 	}
 
@@ -592,11 +670,11 @@ func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token
 		defer cancel()
 		if err := s.app.notifier.send(ctx, Notification{
 			Event:    EventSuperuserPasswordReset,
-			Channel:  ChannelEmail,
+			Channel:  channel,
 			To:       email,
 			Language: s.app.cfg.DefaultLanguage,
 			Data:     data,
-			Secrets:  []string{"reset_token", "reset_code", "reset_url"},
+			Secrets:  []string{"reset_token", "reset_code", "code", "reset_url"},
 		}); err != nil {
 			// The token is never logged: the log is not a place a live
 			// credential belongs.
@@ -628,18 +706,24 @@ func (s *Superusers) waitForResetDelivery(max time.Duration) {
 // read.
 const installScope = "install"
 
-// identityMailScope is the store an email carrying a credential for person id
-// may go out under. A reset link is good for every store the person works in,
-// and a store's template and provider account are its owner's to edit and
-// read, so the store the request came through may carry it only when that is
-// the person's one store — its owner can already do anything there. Anyone
-// else's goes by the install's own channel.
-func (s *Superusers) identityMailScope(reqCtx context.Context, id int64) context.Context {
+// identityMailScope is the channel a code or link that opens an account may go
+// out on. A store's template and provider account are its staff's to edit and
+// read, whoever the person is, so it is always the install's own (D213).
+//
+// The one exception is an install that hosts nobody else: closed to sign-ups,
+// with one store. There the store's settings are the install's, and they are the
+// only ones a self-hosted shop that set its provider up in the panel has.
+//
+// ponytail: on that install, staff given the right to edit a provider can still
+// read the owner's code; a separate install-level provider screen would end it.
+func (s *Superusers) identityMailScope(reqCtx context.Context) context.Context {
 	detached := context.WithoutCancel(reqCtx)
-	here := s.app.storeOf(reqCtx)
-	ms, err := s.app.stores.MembershipsOf(reqCtx, id)
-	if err == nil && here != "" && len(ms) == 1 && ms[0].StoreID == here {
-		return WithStore(detached, here)
+	if !s.app.cfg.Signup {
+		var only string
+		if err := s.db.QueryRowContext(detached, `
+			SELECT min(id) FROM stores HAVING count(*) = 1`).Scan(&only); err == nil {
+			return WithStore(detached, only)
+		}
 	}
 	return WithStore(detached, installScope)
 }

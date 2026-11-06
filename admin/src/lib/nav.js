@@ -48,6 +48,7 @@
 import { can, canAny } from "$lib/session.svelte.js";
 import { hasModule } from "$lib/modules.svelte.js";
 import { moduleScreens } from "$lib/screens.svelte.js";
+import { myStores } from "$lib/stores.svelte.js";
 
 export const NAV = [
     {
@@ -57,6 +58,16 @@ export const NAV = [
         exact: true,
         accent: "indigo",
         keywords: "dashboard overview sales revenue analytics",
+    },
+    // The install's owner alone (D215): no right says it, because a role belongs
+    // to one store and this crosses all of them.
+    {
+        href: "/dash/all-stores",
+        label: "All stores",
+        icon: "ri-store-3-line",
+        platformOwner: true,
+        accent: "indigo",
+        keywords: "platform stores owners tenants directory merchants",
     },
     {
         href: "/dash/orders",
@@ -84,6 +95,14 @@ export const NAV = [
             // What each gateway took and what it is owed. Under Orders
             // because that is the money it counts, and an owner reconciling
             // a statement is already looking at orders.
+            // What the shop owes, beside what it is owed: bills from suppliers,
+            // forwarded on WhatsApp, and each supplier's account.
+            { href: "/dash/retail-assistant", label: "Supplier bills", right: "retailassistant.read", module: "retailassistant", keywords: "whatsapp purchase invoice bill documents review" },
+            { href: "/dash/retail-assistant/suppliers", label: "Suppliers", right: "retailassistant.read", module: "retailassistant", keywords: "payables outstanding vendor ledger credit note advance" },
+            { href: "/dash/retail-assistant/counter", label: "Shop counter", right: "retailassistant.counter", module: "retailassistant", keywords: "pos point of sale billing barcode scanner cash upi" },
+            { href: "/dash/retail-assistant/bank", label: "Bank statement", right: "retailassistant.read", module: "retailassistant", keywords: "reconcile reconciliation statement utr verify payment" },
+            { href: "/dash/retail-assistant/wholesale", label: "Wholesale quote", right: "quotes.write", module: "retailassistant", keywords: "manufacturer price list markup margin retailer" },
+            { href: "/dash/retail-assistant/insights", label: "Shop insights", right: "retailassistant.read", module: "retailassistant", keywords: "summary recommendations slow stock low stock owed" },
             { href: "/dash/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
             // A business customer's side of selling, where Shopify keeps its
             // own: a quote is an order being priced, an approval is an order
@@ -363,6 +382,14 @@ export const NAV = [
             { href: "/dash/data/import", label: "Import", right: "data.import", keywords: "csv shopify upload taxonomy products orders" },
         ],
     },
+    // No right: anybody in a store may need help.
+    {
+        href: "/dash/support",
+        label: "Support",
+        icon: "ri-customer-service-2-line",
+        accent: "emerald",
+        keywords: "help whatsapp contact chat",
+    },
 ];
 
 /**
@@ -382,13 +409,20 @@ export const NAV = [
  * is: the section is the way to the child.
  */
 export function visibleNav(items = NAV) {
-    const reachable = (item) =>
-        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     return withModuleScreens(items)
         .filter((item) => reachable(item) || (item.children ?? []).some(reachable))
         .map((item) =>
             item.children ? { ...item, children: item.children.filter(reachable) } : item,
         );
+}
+
+function reachable(item) {
+    return (
+        (!item.module || hasModule(item.module)) &&
+        (!item.right || can(item.right)) &&
+        (!item.anyRight || canAny(...item.anyRight)) &&
+        (!item.platformOwner || myStores.platformOwner)
+    );
 }
 
 /**
@@ -426,8 +460,6 @@ function withModuleScreens(items) {
  * A child borrows its section's icon and accent, since it has none of its own.
  */
 export function flatNav(items = NAV) {
-    const reachable = (item) =>
-        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     const out = [];
     for (const item of visibleNav(items)) {
         if (reachable(item)) out.push(item);

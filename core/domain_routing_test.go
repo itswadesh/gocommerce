@@ -1,8 +1,10 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -45,6 +47,39 @@ func traefikRoutes(t *testing.T, app *App) (routers map[string]traefikRouter, se
 		t.Fatalf("decode %s: %v", rec.Body, err)
 	}
 	return body.HTTP.Routers, body.HTTP.Services
+}
+
+func TestOnlyTheAPIWritesRequestLines(t *testing.T) {
+	app := newTestApp(t)
+	app.cfg.TraefikToken, app.cfg.TraefikUpstream = testTraefikToken, "http://gocommerce:8080"
+	var logged bytes.Buffer
+	app.log = slog.New(slog.NewTextHandler(&logged, nil))
+
+	if rec := do(t, app, http.MethodGet, TraefikConfigPath, withProxyToken); rec.Code != http.StatusOK {
+		t.Fatalf("poll = %d %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(logged.String(), "msg=request") {
+		t.Fatalf("a good poll was logged: %s", logged.String())
+	}
+
+	if rec := do(t, app, http.MethodGet, TraefikConfigPath); rec.Code < http.StatusBadRequest {
+		t.Fatalf("poll without the token = %d, want it refused", rec.Code)
+	}
+	if strings.Contains(logged.String(), "msg=request") {
+		t.Fatalf("a refused poll was logged: %s", logged.String())
+	}
+
+	// Only the API gets a line (D230).
+	do(t, app, http.MethodGet, "/health")
+	do(t, app, http.MethodGet, "/x/nothing-here")
+	do(t, app, http.MethodGet, "/some/page")
+	if strings.Contains(logged.String(), "msg=request") {
+		t.Fatalf("a route outside /api/ was logged: %s", logged.String())
+	}
+	do(t, app, http.MethodGet, "/api/health")
+	if !strings.Contains(logged.String(), "msg=request") {
+		t.Fatal("an API route lost its log line")
+	}
 }
 
 func TestTheProxyRouteIsAbsentUntilConfigured(t *testing.T) {

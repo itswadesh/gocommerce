@@ -23,6 +23,7 @@
      * real work, and that is what the bar shows. A bar animating through a
      * number the code invented would be worse than no bar.
      */
+    import { myStores } from "$lib/stores.svelte.js";
     import { can, request } from "$lib/api.js";
     import { activateNote, filled } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
@@ -30,6 +31,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     const PLUGIN = "sitemap";
@@ -44,6 +46,9 @@
     let working = $state(false);
     let saving = $state(false);
     let form = $state({});
+    // The form as resetForm built it, so its defaults are not an edit.
+    let savedForm = $state("");
+    const dirty = $derived(!!plugin && JSON.stringify(form) !== savedForm);
     // What has to be filled in before it can go on — said, not discovered by
     // pressing Activate and being refused.
     const note = $derived(plugin && !plugin.enabled ? activateNote(plugin) : "");
@@ -74,6 +79,12 @@
     );
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
+    // A search engine trusts a sitemap only for its own host, so the address to
+    // hand it is the shop's, which the bundled storefront serves (D232). Only the
+    // scan below reads through this panel's own origin.
+    const shop = $derived(myStores.current?.domain ? `https://${myStores.current.domain}` : "");
+    const indexURL = $derived(shop ? `${shop}/sitemap.xml` : origin + INDEX);
+    const fileURL = (path) => (shop || origin) + path;
     const percent = $derived(total === 0 ? 0 : Math.round((done / total) * 100));
 
     $effect(() => {
@@ -100,6 +111,7 @@
             draft[f.key] = f.kind === "bool" ? !!v : (v ?? f.default ?? "");
         }
         form = draft;
+        savedForm = JSON.stringify(draft);
     }
 
     function nameOf(path) {
@@ -213,10 +225,10 @@
         }
     }
 
-    // Enter in a field saves, like the Save button.
+    // A one-field form still submits on Enter.
     function submit(e) {
         e.preventDefault();
-        if (writable && !saving) save();
+        if (writable && dirty && !saving) save();
     }
 
     async function save() {
@@ -316,6 +328,8 @@
 
 <div class="page page-sitemap shopify-skin">
     <div class="page-content">
+        <SaveBar dirty={dirty && writable} {saving} onsave={save} ondiscard={resetForm} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item txt-sm txt-hint">Content</div>
@@ -434,14 +448,14 @@
                         </button>
                     </div>
                     <div class="map-index">
-                        <a class="txt-code map-index-url" href={origin + INDEX} target="_blank" rel="noreferrer"
-                            >{origin}{INDEX}</a
+                        <a class="txt-code map-index-url" href={indexURL} target="_blank" rel="noreferrer"
+                            >{indexURL}</a
                         >
-                        <button type="button" class="btn sm secondary" onclick={() => copy(origin + INDEX)}>
+                        <button type="button" class="btn sm secondary" onclick={() => copy(indexURL)}>
                             <i class="ri-file-copy-line" aria-hidden="true"></i>
                             <span class="txt">Copy</span>
                         </button>
-                        <a class="btn sm transparent secondary" href={origin + INDEX} target="_blank" rel="noreferrer">
+                        <a class="btn sm transparent secondary" href={indexURL} target="_blank" rel="noreferrer">
                             <i class="ri-external-link-line" aria-hidden="true"></i>
                             <span class="txt">Open</span>
                         </a>
@@ -503,13 +517,13 @@
                                 <div class="map-row" class:is-bad={!f.ok}>
                                     <div class="txt-bold">{f.name}</div>
                                     <div class="map-url">
-                                        <a href={origin + f.path} target="_blank" rel="noreferrer" class="txt-code"
+                                        <a href={fileURL(f.path)} target="_blank" rel="noreferrer" class="txt-code"
                                             >{f.path}</a
                                         >
                                         <button
                                             type="button"
                                             class="btn sm transparent secondary map-copy"
-                                            onclick={() => copy(origin + f.path)}
+                                            onclick={() => copy(fileURL(f.path))}
                                             aria-label="Copy {f.name} address"
                                         >
                                             <i class="ri-file-copy-line" aria-hidden="true"></i>
@@ -559,27 +573,6 @@
                     <form id="map-settings" class="feed-form" onsubmit={submit}>
                         <PluginFields fields={plugin.fields} unopened={plugin.unopened} bind:form idPrefix="map" />
                     </form>
-                    {#if writable}
-                        <div class="feed-form-actions">
-                            <button
-                                type="submit"
-                                form="map-settings"
-                                class="btn sm"
-                                class:loading={saving}
-                                disabled={saving}
-                            >
-                                <span class="txt">Save</span>
-                            </button>
-                            <button
-                                type="button"
-                                class="btn sm transparent secondary"
-                                disabled={saving}
-                                onclick={resetForm}
-                            >
-                                <span class="txt">Discard</span>
-                            </button>
-                        </div>
-                    {/if}
                 </div>
             </details>
 

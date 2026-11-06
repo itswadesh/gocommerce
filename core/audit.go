@@ -235,6 +235,9 @@ const (
 	// AuditStoreSetImages is the store's logo, dark logo or icon changed
 	// (D148): the face every storefront page shows.
 	AuditStoreSetImages = "store.set_images"
+	// AuditStoreSetDetails is the store's name, contact details, address, tax
+	// id, timezone, currency or tax-inclusive pricing changed.
+	AuditStoreSetDetails = "store.set_details"
 
 	AuditLocationCreate     = "location.create"
 	AuditLocationUpdate     = "location.update"
@@ -309,7 +312,7 @@ var AllAuditActions = []string{
 
 	AuditCustomerGroupTaxExemption,
 
-	AuditStoreSetBrand, AuditStoreSetImages,
+	AuditStoreSetBrand, AuditStoreSetImages, AuditStoreSetDetails,
 }
 
 // AuditChanges is what a row says actually moved.
@@ -526,12 +529,12 @@ func auditActor(ctx context.Context) (kind string, id *int64, email, role, label
 		if su.KeyID != 0 {
 			keyID := su.KeyID
 			if su.KeyKind == KeyKindAgent {
-				return ActorAgent, &keyID, su.Email, su.Role, label
+				return ActorAgent, &keyID, su.who(), su.Role, label
 			}
-			return ActorKey, &keyID, su.Email, su.Role, label
+			return ActorKey, &keyID, su.who(), su.Role, label
 		}
 		actorID := su.ID
-		return ActorOperator, &actorID, su.Email, su.Role, label
+		return ActorOperator, &actorID, su.who(), su.Role, label
 	}
 	if AdminTokenFrom(ctx) {
 		return ActorToken, nil, "", "", label

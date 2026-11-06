@@ -9,6 +9,7 @@ import (
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	ads "github.com/itswadesh/gocommerce/ext/ads"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	askai "github.com/itswadesh/gocommerce/ext/ask-ai"
 	b2b "github.com/itswadesh/gocommerce/ext/b2b"
 	banners "github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
@@ -61,6 +62,7 @@ import (
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
 	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
+	"github.com/itswadesh/gocommerce/ext/retailassistant"
 	reviews "github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	showcases "github.com/itswadesh/gocommerce/ext/showcases"
@@ -81,6 +83,7 @@ func everyModule() []gocommerce.Module {
 		gateway,
 		photoproducts.New(photoproducts.Config{Gateway: gateway}),
 		catalogai.New(catalogai.Config{Gateway: gateway}),
+		askai.New(askai.Config{Gateway: gateway}),
 		ads.New(ads.Config{Gateway: gateway}),
 		accounts,
 		b2b.New(b2b.Config{Accounts: accounts}),
@@ -90,6 +93,7 @@ func everyModule() []gocommerce.Module {
 		faq.New(faq.Config{}),
 		showcases.New(showcases.Config{}),
 		metalpricing.New(metalpricing.Config{}),
+		retailassistant.New(retailassistant.Config{}),
 		gokwik.New(gokwik.Config{}),
 		banners.New(banners.Config{}),
 		layouts.New(layouts.Config{}),
@@ -151,8 +155,11 @@ func TestEveryModuleTableIsScoped(t *testing.T) {
 		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = current_schema() AND c.relkind = 'r'
 		  AND c.relname NOT IN ('stores', 'store_domains', 'store_members', 'store_counters',
+		                        -- Which stores to look in for a phone at sign-in, before any
+		                        -- store is chosen. It holds no role and no grant (D205).
+		                        'store_phone_invitations',
 		                        'api_key_index', 'superusers', 'superuser_sessions',
-		                        'superuser_password_resets', 'gocommerce_migrations',
+		                        'superuser_password_resets', 'superuser_login_codes', 'superuser_email_verifications', 'gocommerce_migrations',
 		                        -- Which connection runs a report for which store (D84):
 		                        -- the record that scopes reports, so no one store's.
 		                        'report_runs',

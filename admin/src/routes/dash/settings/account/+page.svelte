@@ -9,14 +9,18 @@
      * invitations exist to end.
      *
      * The current password is asked for either way: a session left open on an
-     * unlocked laptop should not be enough to take the account over.
+     * unlocked laptop should not be enough to take the account over. The same
+     * goes for adding a phone to sign in with. A person who signed up with a
+     * phone has no password to ask for, so what proves a change for them is a
+     * code sent to the new address (D195).
      */
     import { auth, getRecord } from "$lib/api.js";
     import { rightLabel, rightsSummary } from "$lib/rights.js";
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
+    import CodeBoxes from "$lib/components/CodeBoxes.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
-    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     let loading = $state(true);
@@ -33,6 +37,22 @@
 
     let confirmOpen = $state(false);
 
+    // Adding a phone: the number, then the code texted to it. Offered only
+    // where a code can be sent (auth-state's phone_login).
+    let hasPassword = $state(true);
+    let canPhone = $state(false);
+    let phoneForm = $state({ number: "+91 ", code: "", password: "" });
+    let phoneStep = $state("idle");
+    let phoneBusy = $state(false);
+    let phoneError = $state("");
+    let removeOpen = $state(false);
+    // Somebody with no password puts an email on their account the same way.
+    let canEmail = $state(false);
+    let emailForm = $state({ address: "", code: "" });
+    let emailStep = $state("idle");
+    let emailBusy = $state(false);
+    let emailError = $state("");
+
     /*
      * Typed and unsaved. A password half-entered here is not a big loss on its
      * own, but a new email address typed into a form that then vanishes because
@@ -46,7 +66,7 @@
         !!form.current_password ||
             !!form.password ||
             !!form.confirm ||
-            (!!me && form.email.trim() !== me.email),
+            (!!me && (form.email ?? "").trim() !== (me.email ?? "")),
     );
 
     $effect(() => {
@@ -61,6 +81,10 @@
             sessions = result.sessions ?? 0;
             newestSession = result.newest_session ?? null;
             form.email = me.email;
+            hasPassword = result.has_password !== false;
+            const state = await auth.state();
+            canPhone = !!state.phone_login;
+            canEmail = !!state.password_reset;
         } catch (err) {
             if (err.status === 403) {
                 tokenOnly = true;
@@ -70,6 +94,11 @@
         } finally {
             loading = false;
         }
+    }
+
+    function discard() {
+        form = { current_password: "", email: me?.email ?? "", password: "", confirm: "" };
+        errors = {};
     }
 
     async function save(event) {
@@ -117,6 +146,85 @@
         }
     }
 
+    async function phoneAct(act, done) {
+        if (phoneBusy) return;
+        phoneBusy = true;
+        phoneError = "";
+        try {
+            await act();
+            done();
+        } catch (err) {
+            phoneError = err.message;
+        } finally {
+            phoneBusy = false;
+        }
+    }
+
+    async function submitEmail(event) {
+        event.preventDefault();
+        if (emailBusy) return;
+        emailBusy = true;
+        emailError = "";
+        try {
+            if (emailStep === "code") {
+                await auth.setMyEmail(emailForm.address, emailForm.code);
+                await auth.refresh();
+                toast.success("Email saved");
+                emailForm = { address: "", code: "" };
+                emailStep = "idle";
+                load();
+            } else {
+                await auth.requestMyEmailCode(emailForm.address);
+                emailStep = "code";
+            }
+        } catch (err) {
+            emailError = err.message;
+        } finally {
+            emailBusy = false;
+        }
+    }
+
+    function askPhoneCode(event) {
+        event?.preventDefault();
+        phoneAct(
+            () => auth.requestMyPhoneCode(phoneForm.number),
+            () => (phoneStep = "code"),
+        );
+    }
+
+    function savePhone(event) {
+        event.preventDefault();
+        phoneAct(
+            async () => {
+                await auth.setMyPhone(phoneForm.number, phoneForm.code, phoneForm.password);
+                await auth.refresh();
+            },
+            () => {
+                toast.success("You can now sign in with this phone");
+                removeOpen = false;
+                phoneForm = { number: "+91 ", code: "", password: "" };
+                phoneStep = "idle";
+                load();
+            },
+        );
+    }
+
+    function removePhone(event) {
+        event.preventDefault();
+        phoneAct(
+            async () => {
+                await auth.removeMyPhone(phoneForm.password);
+                await auth.refresh();
+            },
+            () => {
+                toast.success("Phone removed");
+                phoneForm.password = "";
+                removeOpen = false;
+                load();
+            },
+        );
+    }
+
     async function signOutEverywhere() {
         try {
             await auth.revokeMySessions();
@@ -133,14 +241,11 @@
 
 <svelte:head><title>{titled("Your account")}</title></svelte:head>
 
-<DirtyGuard
-    dirty={typed}
-    message="You have typed into this form and not saved it. Leave and lose it?"
-/>
-
 <div class="page page-account shopify-skin">
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
+        <SaveBar dirty={typed && hasPassword} {saving} onsave={save} ondiscard={discard} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
@@ -165,8 +270,15 @@
                 <div class="list-item">
                     <span class="txt-hint">Email</span>
                     <div class="flex-fill"></div>
-                    <span class="txt">{me.email}</span>
+                    <span class="txt">{me.email || "None"}</span>
                 </div>
+                {#if me.phone}
+                    <div class="list-item">
+                        <span class="txt-hint">Phone</span>
+                        <div class="flex-fill"></div>
+                        <span class="txt">{me.phone}</span>
+                    </div>
+                {/if}
                 <div class="list-item">
                     <span class="txt-hint">Role</span>
                     <div class="flex-fill"></div>
@@ -211,6 +323,45 @@
                 </div>
             </details>
 
+            {#if !hasPassword}
+                <div class="content txt-hint m-b-base">
+                    You sign in with a code texted to your phone, so you have no password to change.
+                </div>
+                {#if canEmail}
+                    <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">{me.email ? "Change your email" : "Add an email"}</h2>
+                    <form onsubmit={submitEmail} class="m-b-base">
+                        <div class="field required" class:error={!!emailError}>
+                            <label for="acc-add-email">Email</label>
+                            <input
+                                id="acc-add-email"
+                                type="email"
+                                required
+                                autocomplete="email"
+                                readonly={emailStep === "code"}
+                                bind:value={emailForm.address}
+                                oninput={() => (emailError = "")}
+                            />
+                        </div>
+                        {#if emailStep === "code"}
+                            <div class="field required m-t-sm" class:error={!!emailError}>
+                                <label for="acc-add-email-code">Code we emailed you</label>
+                                <CodeBoxes id="acc-add-email-code" bind:value={emailForm.code} oninput={() => (emailError = "")} />
+                            </div>
+                        {/if}
+                        {#if emailError}
+                            <div class="field-help error" role="alert">{emailError}</div>
+                        {:else}
+                            <div class="field-help">
+                                Your way back in if you lose this phone. To sign in with it, use Forgot password
+                                on the sign-in screen to choose a password.
+                            </div>
+                        {/if}
+                        <button type="submit" class="btn secondary m-t-base" class:loading={emailBusy} disabled={emailBusy}>
+                            <span class="txt">{emailStep === "code" ? "Save this email" : "Email me a code"}</span>
+                        </button>
+                    </form>
+                {/if}
+            {:else}
             <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Change your details</h2>
             <form onsubmit={save} class="m-b-base">
                 <div class="field required" class:error={!!errors.current}>
@@ -232,6 +383,12 @@
                     </div>
                 {/if}
 
+                {#if me?.phone}
+                    <div class="field m-t-base">
+                        <label for="acc-phone">Phone</label>
+                        <input id="acc-phone" type="tel" value={me.phone} readonly />
+                    </div>
+                {/if}
                 <div class="field m-t-base">
                     <label for="acc-email">Email</label>
                     <input id="acc-email" type="email" bind:value={form.email} />
@@ -268,15 +425,76 @@
                     </div>
                 {/if}
 
-                <button
-                    type="submit"
-                    class="btn m-t-base"
-                    class:loading={saving}
-                    disabled={saving}
-                >
-                    <span class="txt">Save changes</span>
-                </button>
             </form>
+            {/if}
+
+            {#if me.phone && me.email}
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Sign in with your phone</h2>
+                {#if removeOpen}
+                    <form onsubmit={removePhone} class="m-b-base">
+                        {#if hasPassword}
+                            <div class="field required" class:error={!!phoneError}>
+                                <label for="acc-phone-remove">Current password</label>
+                                <input id="acc-phone-remove" type="password" required autocomplete="current-password" bind:value={phoneForm.password} />
+                            </div>
+                        {/if}
+                        {#if phoneError}<div class="field-help error" role="alert">{phoneError}</div>{/if}
+                        <button type="submit" class="btn secondary m-t-base" class:loading={phoneBusy} disabled={phoneBusy}>
+                            <span class="txt">Remove {me.phone}</span>
+                        </button>
+                    </form>
+                {:else}
+                    <button type="button" class="btn secondary m-b-base" onclick={() => (removeOpen = true)}>
+                        <span class="txt">Remove this phone</span>
+                    </button>
+                {/if}
+            {/if}
+            {#if canPhone && (!me.phone || !hasPassword)}
+                <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">{me.phone ? "Change your number" : "Sign in with your phone"}</h2>
+                <form onsubmit={phoneStep === "code" ? savePhone : askPhoneCode} class="m-b-base">
+                    <div class="field required" class:error={!!phoneError}>
+                        <label for="acc-phone">Phone number</label>
+                        <input
+                            id="acc-phone"
+                            type="tel"
+                            inputmode="tel"
+                            required
+                            autocomplete="tel"
+                            readonly={phoneStep === "code"}
+                            bind:value={phoneForm.number}
+                        />
+                    </div>
+                    {#if phoneStep === "code"}
+                        <div class="fields m-t-sm">
+                            <div class="field required">
+                                <label for="acc-phone-code">Code we texted you</label>
+                                <CodeBoxes id="acc-phone-code" bind:value={phoneForm.code} />
+                            </div>
+                            {#if hasPassword}
+                                <div class="delimiter"></div>
+                                <div class="field required">
+                                    <label for="acc-phone-password">Current password</label>
+                                    <input
+                                        id="acc-phone-password"
+                                        type="password"
+                                        required
+                                        autocomplete="current-password"
+                                        bind:value={phoneForm.password}
+                                    />
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+                    {#if phoneError}
+                        <div class="field-help error" role="alert">{phoneError}</div>
+                    {:else}
+                        <div class="field-help">With its country code.{hasPassword ? " Your password keeps working too." : ""}</div>
+                    {/if}
+                    <button type="submit" class="btn secondary m-t-base" class:loading={phoneBusy} disabled={phoneBusy}>
+                        <span class="txt">{phoneStep === "code" ? (me.phone ? "Use this number" : "Add this phone") : "Text me a code"}</span>
+                    </button>
+                </form>
+            {/if}
 
             <h2 class="tw:mt-6 tw:mb-3 tw:text-sm tw:font-semibold">Lost a device?</h2>
             <div class="content txt-hint m-b-sm">
@@ -290,7 +508,7 @@
 
         <footer class="page-footer tw:text-xs tw:text-muted-foreground">
             <span class="txt">
-                {#if me}Signed in as {me.email}{/if}
+                {#if me}Signed in as {me.email || me.phone}{/if}
             </span>
         </footer>
     </div>

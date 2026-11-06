@@ -99,3 +99,56 @@ func TestTheLastStoreAndADemoStoreCannotBeDeleted(t *testing.T) {
 		t.Fatalf("deleting a demo store = %d: %s", code, body)
 	}
 }
+
+// The owner reads what goes before anything does, counted for this store alone,
+// and asking deletes nothing.
+func TestTheDeletePreviewCountsThisStoreAndDeletesNothing(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "closer@example.com", RoleOwner)
+	demoOrder(t, app, "KEEP-1", "keeper@example.com", "")
+
+	doomed := addTestStore(t, app, "doomed")
+	joinTestStore(t, app, doomed, "closer@example.com", RoleOwner)
+	in := WithStore(context.Background(), doomed)
+	for _, slug := range []string{"one", "two", "three"} {
+		if _, err := app.db.ExecContext(in, `INSERT INTO products (slug, title, currency) VALUES ($1, $1, 'INR')`, slug); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := app.db.ExecContext(in, `INSERT INTO store_domains (host, store_id) VALUES ('doomed.example.com', $1)`, doomed); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := do(t, app, http.MethodGet, "/api/stores/delete-preview?store_id="+doomed, bearer(tok))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview = %d: %s", rec.Code, rec.Body)
+	}
+	var got StoreDeletePreview
+	decodeData(t, rec, &got)
+	if got.Products != 3 || got.Orders != 0 || got.Customers != 0 || got.Domains != 1 || got.Team != 1 {
+		t.Fatalf("preview = %+v, want this store's 3 products, 1 domain and 1 person, and not the other store's order", got)
+	}
+	var still int
+	if err := app.db.QueryRowContext(in, `SELECT count(*) FROM products`).Scan(&still); err != nil || still != 3 {
+		t.Fatalf("after the preview: %d products, %v", still, err)
+	}
+}
+
+// It answers to the same rules as the delete.
+func TestTheDeletePreviewIsOnlyForWhoCanDelete(t *testing.T) {
+	app := newTestApp(t)
+	owner := signInAs(t, app, "owner@example.com", RoleOwner)
+	staff := addTestStore(t, app, "staffed")
+	joinTestStore(t, app, staff, "owner@example.com", RoleStaff)
+	other := addTestStore(t, app, "not-theirs")
+
+	if rec := do(t, app, http.MethodGet, "/api/stores/delete-preview?store_id="+staff, bearer(owner)); rec.Code != http.StatusForbidden {
+		t.Errorf("as staff = %d, want 403", rec.Code)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/stores/delete-preview?store_id="+other, bearer(owner)); rec.Code == http.StatusOK {
+		t.Errorf("somebody else's store = %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, app, http.MethodGet, "/api/stores/delete-preview?store_id="+other); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no credential = %d, want 401", rec.Code)
+	}
+}

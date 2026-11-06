@@ -458,6 +458,11 @@ func (a *App) logMW(next http.Handler) http.Handler {
 		if re := requestErrorsFrom(r.Context()); re != nil {
 			store = re.store
 		}
+		// Only the API gets a line (D230): Traefik's polls, assets and module routes
+		// would bury it. A server fault anywhere still logs its error from RespondError.
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			return
+		}
 		a.log.Info("request",
 			"method", r.Method, "path", r.URL.Path, "status", sw.status,
 			"bytes", sw.bytes, "duration", time.Since(start),

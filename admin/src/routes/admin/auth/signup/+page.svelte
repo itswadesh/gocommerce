@@ -10,8 +10,13 @@
      * An address that already has an account is told so (the engine's 409):
      * an open sign-up cannot refuse one without saying why. The way on from
      * there is signing in, or a reset link for the same address.
+     *
+     * One box first, for an email or a phone. A phone goes straight to a texted
+     * code where one can be sent to a new person (auth-state's phone_signup), and
+     * a number that already has an account simply signs in. An email goes on to
+     * choose its password, which stays out of sight until then.
      */
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
     import { base } from "$app/paths";
     import { goto } from "$app/navigation";
     import { auth } from "$lib/api.js";
@@ -20,6 +25,9 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
+    import { phoneFragment, readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
+    import { looksLikePhone, toIdentity } from "$lib/identity.js";
     import { titled } from "$lib/brand.svelte.js";
 
     const LOGIN = `${base}/admin/auth/login`;
@@ -27,7 +35,9 @@
     // What the install said: "loading", "open", "closed", "uninstalled", or
     // "unreachable" when it could not be asked.
     let state = $state("loading");
-    let email = $state("");
+    // A number typed on a landing page arrives in the fragment (phone-link.js).
+    const linkedPhone = takePhoneFromFragment();
+    let email = $state(readablePhone(linkedPhone));
     let password = $state("");
     let showPassword = $state(false);
     let submitting = $state(false);
@@ -39,29 +49,48 @@
     // in for exactly that address.
     let taken = $state("");
     let attempt = $state(0);
+    let canPhone = $state(false);
+    // "who" is the one box; "password" and "code" are where it leads.
+    let step = $state("who");
+    const textsCode = $derived(canPhone && looksLikePhone(email));
+    // Where sign-up is shut, the way on is signing in, and the number goes along.
+    let loginHref = $state(LOGIN);
 
     function probe() {
         state = "loading";
         auth.state()
-            .then((s) => (state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed"))
+            .then((s) => {
+                canPhone = !!s.phone_signup;
+                if (linkedPhone && !s.signup) loginHref = LOGIN + phoneFragment(linkedPhone);
+                state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed";
+            })
             .catch(() => (state = "unreachable"));
     }
     onMount(probe);
 
+    async function onward() {
+        // Whoever was signed in on this browser before, the store list the
+        // shell holds is theirs: have it settle again, as at sign-in.
+        forgetStores();
+        toast.success("Your account is ready");
+        await goto(`${base}/select-store?signup`, { replaceState: true });
+    }
+
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
-        submitting = true;
         problem = "";
         problemField = "";
         taken = "";
+        if (step === "who") {
+            step = textsCode ? "code" : "password";
+            if (step === "password") tick().then(() => document.getElementById("signup_pass")?.focus());
+            return;
+        }
+        submitting = true;
         try {
-            await auth.signup(email.trim(), password);
-            // Whoever was signed in on this browser before, the store list the
-            // shell holds is theirs: have it settle again, as at sign-in.
-            forgetStores();
-            toast.success("Your account is ready");
-            await goto(`${base}/select-store?signup`, { replaceState: true });
+            await auth.signup(email, password);
+            await onward();
         } catch (err) {
             attempt += 1;
             if (err.code === "email_taken") {
@@ -69,7 +98,7 @@
             } else {
                 problem = sentence(err.message) || "Could not make the account.";
                 // The engine's validation names the field it refused.
-                if (err.status === 400) problemField = /password/i.test(problem) ? "password" : /email|address/i.test(problem) ? "email" : "";
+                if (err.status === 400) problemField = /password/i.test(problem) ? "password" : /email|address|phone/i.test(problem) ? "email" : "";
             }
         } finally {
             submitting = false;
@@ -115,7 +144,7 @@
             </p>
         </header>
         <div class="auth-actions">
-            <a class="btn lg block next" href={LOGIN}>
+            <a class="btn lg block next" href={loginHref}>
                 <span class="txt">Go to sign in</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </a>
@@ -124,24 +153,34 @@
         <header class="auth-head">
             <p class="auth-step">Step 1 of 2</p>
             <h1 class="auth-title">Create your store</h1>
-            <p class="auth-lede">Start with the email and password you'll sign in with. You'll name your store next.</p>
+            <p class="auth-lede">
+                Start with the email or phone you'll sign in with.
+                You'll name your store next.
+            </p>
         </header>
 
+        {#if step === "code"}
+            <div in:rise>
+                <PhoneCodeForm onauthenticated={onward} open label="Continue" number={toIdentity(email)} onback={() => (step = "who")} />
+            </div>
+        {:else}
         <form class="auth-form" onsubmit={submit}>
+            <div>
             <div class="field" class:error={emailRefused}>
-                <label for="signup_email">Email</label>
+                <label for="signup_email">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="signup_email"
-                    type="email"
+                    type="text"
                     inputmode="email"
                     required
                     autofocus
-                    autocomplete="email"
+                    autocomplete="username"
                     autocapitalize="off"
                     spellcheck="false"
+                    readonly={step === "password"}
                     aria-invalid={emailRefused}
-                    aria-describedby={emailRefused ? "signup_refusal" : undefined}
+                    aria-describedby={emailRefused ? "signup_refusal signup_email_help" : "signup_email_help"}
                     bind:value={email}
                     oninput={() => {
                         taken = "";
@@ -149,11 +188,22 @@
                     }}
                 />
             </div>
+            {#if step === "password"}
+                <div class="auth-field-foot auth-phone-foot" id="signup_email_help">
+                    <button type="button" class="auth-link auth-inline-btn" onclick={() => { step = "who"; password = ""; problem = problemField = taken = ""; }}>
+                        Use something else
+                    </button>
+                </div>
+            {:else}
+                <div class="field-help" id="signup_email_help">Outside India, start a phone number with its country code.</div>
+            {/if}
+            </div>
 
-            <div>
+            {#if step === "password"}
+            <div in:rise>
                 <div class="fields">
                     <div class="field" class:error={passwordRefused}>
-                        <label for="signup_pass">Password</label>
+                        <label for="signup_pass">Choose a password</label>
                         <input
                             id="signup_pass"
                             required
@@ -183,6 +233,7 @@
                 </div>
                 <div class="field-help" id="signup_pass_help">At least 8 characters.</div>
             </div>
+            {/if}
 
             {#key attempt}
                 {#if taken}
@@ -197,10 +248,11 @@
             {/key}
 
             <button type="submit" class="btn lg block next" class:loading={submitting} disabled={submitting}>
-                <span class="txt">Continue</span>
+                <span class="txt">{step === "who" && textsCode ? "Send code" : "Continue"}</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
+        {/if}
 
         <p class="auth-alt">
             Already have an account? <a class="auth-link" href={LOGIN}>Sign in</a>

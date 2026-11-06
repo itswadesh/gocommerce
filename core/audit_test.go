@@ -1196,6 +1196,16 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("erase the sample shop: %v", err)
 	}
 
+	// A booked parcel called off, which stays on the order.
+	cancelling := confirmedOrder(t, app, orderSpec{"AUD-CANCEL", 1})
+	booked, err := app.Ship().Create(ctx, cancelling.ID, ProviderManual, ShipRequest{Tracking: "AUD-CANCEL-1"})
+	if err != nil {
+		t.Fatalf("ship to cancel: %v", err)
+	}
+	if _, err := app.Ship().Cancel(ctx, booked.Fulfillments[0].ID, "the courier never came"); err != nil {
+		t.Fatalf("cancel the parcel: %v", err)
+	}
+
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import
 	// in transfer.go, the options service, invitations and role sets. Each one
@@ -1212,6 +1222,7 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		AuditInvitationAccept:    "invitations.go — Accept",
 		AuditRoleSet:             "roles.go — Set",
 		AuditRoleReset:           "roles.go — Reset",
+		AuditStoreSetImages:      "store_profile.go — needs a media store this app has none of; TestAStoreShowsItsOwnLogo checks it",
 	}
 
 	seen := map[string]bool{}

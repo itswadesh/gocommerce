@@ -22,6 +22,7 @@ import (
 	"github.com/itswadesh/gocommerce/core"
 	ads "github.com/itswadesh/gocommerce/ext/ads"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	askai "github.com/itswadesh/gocommerce/ext/ask-ai"
 	"github.com/itswadesh/gocommerce/ext/b2b"
 	"github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
@@ -49,6 +50,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
+	"github.com/itswadesh/gocommerce/ext/mcp"
 	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	metalpricing "github.com/itswadesh/gocommerce/ext/metal-pricing"
 	"github.com/itswadesh/gocommerce/ext/navigation"
@@ -71,6 +73,7 @@ import (
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
 	photoproducts "github.com/itswadesh/gocommerce/ext/photo-products"
+	"github.com/itswadesh/gocommerce/ext/retailassistant"
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
 	"github.com/itswadesh/gocommerce/ext/showcases"
@@ -116,6 +119,8 @@ commands:
     gocommerce superuser create <email> <password>
     gocommerce superuser update <email> <password>
     gocommerce superuser list
+    gocommerce superuser disable|enable <email or phone>
+    gocommerce superuser phone <email or old phone> <new phone>
 
   taxonomy usage:
     gocommerce taxonomy import            Shopify's standard taxonomy (embedded),
@@ -177,9 +182,29 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  GOCOMMERCE_SMS_CODES_PER_DAY
+                    the codes texted in 24 hours, to operators in total
+                    and to each store's shoppers in total; unset, 500
+  GOCOMMERCE_SMS_COUNTRIES
+                    the calling codes an operator's sign-in code may be texted
+                    to, comma-separated, such as 91,1; unset or unreadable, 91
+  RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
+  RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,
+  RETAIL_ASSISTANT_DISPLAY_NUMBER
+                    with -retail-assistant, the install's one WhatsApp number
+                    (docs/retail-assistant.md)
   PLATFORM_TELEGRAM_BOT_TOKEN, PLATFORM_TELEGRAM_CHAT_ID
                     with -telegram, the install owner's bot and chat, told
                     whenever anybody opens a store
+  PLATFORM_STORE_WEBHOOK_URL, PLATFORM_STORE_WEBHOOK_BASE_DOMAIN
+                    with -telegram, an automation posted to as JSON whenever
+                    somebody opens a store, on that domain's brand if one is named
+  GOCOMMERCE_PLATFORM_OWNER_PHONE
+                    the one person who may read every store's owners and
+                    counts in the panel, once a code has proved the number
+  GOCOMMERCE_PLATFORM_EMAIL_FROM
+                    the sender of the email that person sends a store's owner
+                    to verify an address; ANTHROPIC_API_KEY writes its first version
   GOCOMMERCE_ALLOW_PRIVATE_URLS
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
@@ -252,6 +277,7 @@ environment:
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withMCP      = fs.Bool("mcp", false, "install the MCP module: the store as tools for an AI agent at /api/admin/x/mcp, each tool under the rights it needs")
 		withMetaCAPI = fs.Bool("meta-capi", false, "install the Meta Conversions API module idle: each store switches it on under Plugins with its access token, and its purchases reach Meta from the server as well as from the pixel")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
@@ -274,6 +300,7 @@ environment:
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
 		withGoKwik   = fs.Bool("gokwik", false, "install the GoKwik module: a store's cash-on-delivery orders in India scored for the risk of coming back undelivered, and the risky ones asked to pay online; each store gives it its own keys under Settings › Plugins")
+		withRetail   = fs.Bool("retail-assistant", false, "install the retail assistant: supplier bills forwarded on one shared WhatsApp number, reviewed, and kept as an account of what each supplier is owed; each store switches it on, and RETAIL_ASSISTANT_* set the number")
 		withMetal    = fs.Bool("metal-pricing", false, "install the metal pricing module: jewellery priced from the day's metal rate, weight, wastage, making charge and stones")
 		withBanners  = fs.Bool("banners", false, "install the banners module: pictures on the storefront's pages, slides across the top and grids of tiles under a heading, served at /x/banners")
 		withLayouts  = fs.Bool("layouts", false, "install the layouts module: the storefront's home, product and collection pages arranged from sections, drafted and published, now or at a set time, without a deployment, served at /x/layouts/{page}")
@@ -290,6 +317,7 @@ environment:
 		storeFlag  = fs.String("store", "", "the store (id or slug) superuser, doctor, taxonomy and attributes act on; default: the only store")
 		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withCatAI  = fs.Bool("catalog-ai", false, "install the catalog-ai module: \"Improve with AI\" on a product's page proposes a better title, description, highlights, tags, category, SEO copy and alt text, field by field, for the shop to apply and save (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
+		withAskAI  = fs.Bool("ask-ai", false, "install the ask-ai module: \"Ask AI\" in the panel answers setup questions from the store's setup guide and screens, and proposes changes to the store's details for a person to apply (brings -ai-gateway with it)")
 		withAds    = fs.Bool("ads", false, "install ads intelligence: a report of orders, sales, profit after product cost and ad spend by source, medium and campaign, spend entered by hand or imported from Google Ads and Meta Ads Manager, and an AI summary (brings -ai-gateway with it)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY when -ai-gateway is not installed, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
@@ -376,11 +404,21 @@ environment:
 		// Env only, like the demo account: where the panel is reached is a fact
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
-		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
-		Brands:   brands,
+		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
+		BrandName:          os.Getenv("GOCOMMERCE_BRAND_NAME"),
+		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
+		PlatformEmailFrom:  os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
+		Brands:             brands,
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
+		// A value that does not read is 0, the default: a typo in a spending
+		// limit is no reason to stop every store on the install.
+		SMSCodesPerDay: func() int {
+			n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("GOCOMMERCE_SMS_CODES_PER_DAY")))
+			return n
+		}(),
+		SMSCountries: gocommerce.ParseSMSCountries(os.Getenv("GOCOMMERCE_SMS_COUNTRIES")),
 		// Whether the addresses a store sets may reach the server's own
 		// network: the same kind of choice about who this install is for, read
 		// as a word for the same reason as the demo switch.
@@ -434,9 +472,11 @@ environment:
 			return v
 		}
 		var modules []gocommerce.Module
+		// B2B is handed to the retail assistant, further down.
+		var trade *b2b.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI || *withPhotos || *withCatAI || *withAds {
+		if *withAI || *withPhotos || *withCatAI || *withAds || *withAskAI {
 			// The platform's own Anthropic key and what its calls cost (D151):
 			// a store with no key of its own runs on it, paid from its AI
 			// credit. The Amazon importer, below, reads it only without a gateway.
@@ -457,6 +497,9 @@ environment:
 		if *withCatAI {
 			modules = append(modules, catalogai.New(catalogai.Config{Gateway: gateway}))
 		}
+		if *withAskAI {
+			modules = append(modules, askai.New(askai.Config{Gateway: gateway}))
+		}
 		if *withAds {
 			modules = append(modules, ads.New(ads.Config{Gateway: gateway}))
 		}
@@ -469,10 +512,11 @@ environment:
 			})
 			modules = append(modules, accounts)
 			if *withB2B {
-				modules = append(modules, b2b.New(b2b.Config{
+				trade = b2b.New(b2b.Config{
 					Accounts:  accounts,
 					InviteURL: env("GOCOMMERCE_B2B_INVITE_URL"),
-				}))
+				})
+				modules = append(modules, trade)
 			}
 		}
 		if *withWebhooks {
@@ -490,6 +534,9 @@ environment:
 			modules = append(modules, klaviyo.New(klaviyo.Config{
 				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
 			}))
+		}
+		if *withMCP {
+			modules = append(modules, mcp.New(mcp.Config{ServerName: "gocommerce"}))
 		}
 		if *withMetaCAPI {
 			modules = append(modules, metacapi.New(metacapi.Config{}))
@@ -569,8 +616,10 @@ environment:
 			// The two here are the install owner's own bot and chat, for news
 			// of a new store; a store's order alerts still use only its own.
 			modules = append(modules, telegramalerts.New(telegramalerts.Config{
-				PlatformBotToken: os.Getenv("PLATFORM_TELEGRAM_BOT_TOKEN"),
-				PlatformChatID:   os.Getenv("PLATFORM_TELEGRAM_CHAT_ID"),
+				PlatformWebhookURL:        os.Getenv("PLATFORM_STORE_WEBHOOK_URL"),
+				PlatformWebhookBaseDomain: os.Getenv("PLATFORM_STORE_WEBHOOK_BASE_DOMAIN"),
+				PlatformBotToken:          os.Getenv("PLATFORM_TELEGRAM_BOT_TOKEN"),
+				PlatformChatID:            os.Getenv("PLATFORM_TELEGRAM_CHAT_ID"),
 			}))
 		}
 		// Gateways and carriers install idle: nothing in Config, everything on
@@ -617,6 +666,25 @@ environment:
 		}
 		if *withGoKwik {
 			modules = append(modules, gokwik.New(gokwik.Config{}))
+		}
+		// The number is the install's, shared by every store, so it comes from
+		// the environment, unlike each store's own account for order messages.
+		if *withRetail {
+			modules = append(modules, retailassistant.New(retailassistant.Config{
+				AppSecret:        os.Getenv("RETAIL_ASSISTANT_APP_SECRET"),
+				VerifyToken:      os.Getenv("RETAIL_ASSISTANT_VERIFY_TOKEN"),
+				AccessToken:      os.Getenv("RETAIL_ASSISTANT_ACCESS_TOKEN"),
+				PhoneNumberID:    os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
+				DisplayNumber:    os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
+				QuietToStrangers: envTrue("RETAIL_ASSISTANT_QUIET_TO_STRANGERS"),
+				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
+				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
+				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
+				LoginTemplate:    os.Getenv("RETAIL_ASSISTANT_LOGIN_TEMPLATE"),
+				B2B:              trade,
+				Gateway:          gateway,
+				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
+			}))
 		}
 		if *withMetal {
 			modules = append(modules, metalpricing.New(metalpricing.Config{}))
@@ -1022,14 +1090,30 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 			return nil
 		}
 		for _, su := range list {
-			fmt.Printf("%d\t%s\t%s\n", su.ID, su.Email, su.CreatedAt.Format("2006-01-02 15:04"))
+			fmt.Printf("%d\t%s\t%s\n", su.ID, su.Contact(), su.CreatedAt.Format("2006-01-02 15:04"))
 		}
+		return nil
+	}
+
+	if len(args) == 2 && (args[0] == "disable" || args[0] == "enable") {
+		if err := sus.SetDisabled(ctx, args[1], args[0] == "disable"); err != nil {
+			return err
+		}
+		fmt.Printf("%sd %s\n", args[0], args[1])
+		return nil
+	}
+
+	if len(args) == 3 && args[0] == "phone" {
+		if err := sus.ChangePhone(ctx, args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Printf("%s now signs in with %s; their sessions were signed out\n", args[1], args[2])
 		return nil
 	}
 
 	if len(args) < 3 || (args[0] != "create" && args[0] != "update") {
 		return errors.New(
-			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list")
+			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list  |  gocommerce superuser disable|enable <email or phone>  |  gocommerce superuser phone <email or old phone> <new phone>")
 	}
 	action, email, password := args[0], args[1], args[2]
 	// The role is optional and defaults to owner, so a script that has always
@@ -1053,7 +1137,7 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		return err
 	}
 	for _, su := range list {
-		if strings.EqualFold(su.Email, strings.TrimSpace(email)) {
+		if strings.EqualFold(su.Email, strings.TrimSpace(email)) || (su.Phone != "" && su.Phone == strings.TrimSpace(email)) {
 			if _, err := sus.Update(ctx, su.ID, "", password); err != nil {
 				return err
 			}

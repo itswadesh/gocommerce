@@ -567,6 +567,12 @@ Accept within {{.expires_in_hours}} hours:
 If you were not expecting this, you can ignore it; nothing happens unless the link is opened.`,
 	},
 	{
+		Channel: ChannelSMS, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
+		Description: "To a member of the team with a phone and no email who asked to reset their panel password.",
+		Variables:   []string{"code", "expires_in_minutes", "brand_name"},
+		Body:        `{{.code}} is your {{with .brand_name}}{{.}} {{end}}code to choose a new password. It works for {{.expires_in_minutes}} minutes.`,
+	},
+	{
 		Channel: ChannelEmail, Event: EventSuperuserPasswordReset, Title: "Operator password reset",
 		Description: "To a member of the team who asked to reset their panel password.",
 		Variables:   []string{"operator_email", "reset_url", "reset_code", "reset_token", "expires_in_minutes", "brand_name"},
@@ -641,5 +647,25 @@ If you are reading it, the store's email provider is set up and order emails wil
 		Description: "To a shopper who asked to see their order on the storefront. The code works for ten minutes.",
 		Variables:   []string{"code", "order_number", "store_name", "expires_in_minutes"},
 		Body:        `{{.code}} is your code to see order {{.order_number}}. It works for {{.expires_in_minutes}} minutes.`,
+	},
+	{
+		Channel: ChannelEmail, Event: EventLoginCode, Title: "Email confirmation code",
+		Description: "To somebody adding this email to their panel account. The code works for ten minutes.",
+		Variables:   []string{"code", "store_name", "expires_in_minutes"},
+		Subject:     "{{.code}} is your {{with .store_name}}{{.}} {{end}}code",
+		Body: `Your code to add this email to your account is {{.code}}. It works once, for {{.expires_in_minutes}} minutes.
+
+If you did not ask for it, you can ignore this email.`,
+	},
+	{
+		Channel: ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
+		Description: "To a shopper signing in with their phone, or an operator signing in to the panel. The code works for ten minutes.",
+		Variables:   []string{"code", "store_name", "expires_in_minutes", "domain"},
+		// The wording of the DLT template MSG91 carries, so every SMS provider
+		// sends the same text. The last line, when the shopper is on the
+		// store's own site, is the one Chrome on Android reads to fill the
+		// code in (the Web OTP API).
+		Body: `<#> Hi, {{.code}} is your OTP to login to {{with .store_name}}{{.}}{{else}}your account{{end}}` +
+			`{{with .domain}}` + "\n\n" + `@{{.}} #{{$.code}}{{end}}`,
 	},
 }

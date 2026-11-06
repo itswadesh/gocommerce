@@ -7,15 +7,16 @@
 # The catalogue is core\sample\catalogue.json, the one a new store's sample shop
 # is made from (D159), so what a store gets is reviewable as data rather than
 # read out of code. It is priced in Indian rupees and written for an Indian
-# store: eleven products, three or four colours each, every colour in every
+# store: twenty-four products, one to four colours each, every colour in every
 # size, one variant per colour and size.
 #
 # The full-size photographs are not in the repository; the engine carries
 # smaller copies for the sample shop. They are free stock photographs
 # (scripts\fashion-images\CREDITS.md) of each product in its first colour, which
 # scripts\fashion-images\fetch-photos.mjs downloads into the git-ignored
-# scripts\fashion-images\out\. The other colours are edits of those, saved
-# beside them under their own colour's name (recolour.json lists them). This
+# scripts\fashion-images\out\, along with any other colour that was photographed
+# too. The other colours are edits of those, saved beside them under their own
+# colour's name (recolour.json lists them). This
 # uploads whatever is there: a colour whose files are not yet there gets no
 # pictures, and a later run attaches them once they exist.
 #
@@ -139,7 +140,7 @@ foreach ($c in $catalogue.collections) {
 Write-GCStep 'Products'
 
 # Found by tag rather than by reading the whole catalogue, which a store with
-# thousands of products would page through for eleven slugs.
+# thousands of products would page through for two dozen slugs.
 $existing = @{}
 foreach ($p in (Invoke-GC GET "/api/admin/products?tag=$($catalogue.tag)&limit=200" -Admin)) { $existing[$p.slug] = $p }
 

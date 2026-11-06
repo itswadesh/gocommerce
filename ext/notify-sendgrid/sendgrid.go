@@ -180,6 +180,12 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		// this is what keeps a direct call honest too.
 		return nil
 	}
+	if n.From != "" {
+		s.from = n.From
+	}
+	if n.Body != "" {
+		return m.send(ctx, s, n.To, n.Subject, n.Body)
+	}
 	tpl, ok, err := m.app.NotifyTemplates().GetIn(ctx, gocommerce.ChannelEmail, n.Event, n.Language)
 	if err != nil {
 		return err

@@ -284,6 +284,40 @@ func TestDiscountCodeIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// A code is letters and digits, at most 20 (D226). One made before the rule keeps
+// working and can be edited around, because the panel sends it on every save.
+func TestADiscountCodeIsShortLettersAndDigits(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	for _, bad := range []string{strings.Repeat("A", 21), "SAVE-10", "SAVE_10", "SAVE 10", "SAVE%", "छूट10"} {
+		_, err := app.Discounts().Create(ctx, DiscountInput{Code: bad, Title: "Bad", Kind: DiscountFixed, ValueMinor: 50})
+		var api *APIError
+		if !errors.As(err, &api) || api.Status != http.StatusBadRequest {
+			t.Errorf("create %q = %v, want 400", bad, err)
+		}
+	}
+	good, err := app.Discounts().Create(ctx, DiscountInput{Code: strings.Repeat("A", 20), Title: "Good", Kind: DiscountFixed, ValueMinor: 50})
+	if err != nil {
+		t.Fatalf("twenty letters: %v", err)
+	}
+	if _, err := app.Discounts().Create(ctx, DiscountInput{Title: "No code", Kind: DiscountFixed, ValueMinor: 50}); err != nil {
+		t.Fatalf("no code: %v", err)
+	}
+	bad := "NOT-OK"
+	if _, err := app.Discounts().Update(ctx, good.ID, DiscountPatch{Code: &bad}); err == nil {
+		t.Fatal("a change to a bad code was accepted")
+	}
+
+	// As a code from before the rule is: already stored, and saved back unchanged.
+	if _, err := app.db.ExecContext(ctx, `UPDATE discounts SET code = 'OLD-CODE' WHERE id = $1`, good.ID); err != nil {
+		t.Fatal(err)
+	}
+	old, title := "OLD-CODE", "Renamed"
+	if _, err := app.Discounts().Update(ctx, good.ID, DiscountPatch{Code: &old, Title: &title}); err != nil {
+		t.Fatalf("editing around an old code: %v", err)
+	}
+}
+
 // once_per_email is a deterrent and the test says so: the same address is
 // refused, a different one is not.
 func TestDiscountOncePerEmail(t *testing.T) {

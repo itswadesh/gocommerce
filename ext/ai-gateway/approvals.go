@@ -67,6 +67,16 @@ type Action struct {
 	Preview func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
 	// Execute does it, through core services, with the approver on ctx.
 	Execute func(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
+	// Label says where the action came from, in front of the approval's number
+	// on the audit trail: "Ask AI".
+	Label string
+	// OwnRightSuffices lets a person holding Right decide this action without
+	// ai.approve. It is for an action they could do by hand on the same screen
+	// and asked for themselves, where the queue's right would only stop them
+	// pressing Apply on their own request. It opens no queue route: those stay
+	// behind ai.approve, and the module that registers the action serves its
+	// own.
+	OwnRightSuffices bool
 }
 
 var actionKindRE = regexp.MustCompile(`^[a-z0-9]+([_-][a-z0-9]+)*(\.[a-z0-9]+([_-][a-z0-9]+)*)+$`)
@@ -322,14 +332,17 @@ func (m *Module) decide(ctx context.Context, id int64, approving bool) (*gocomme
 	// Checked here as well as on the routes: another module calling the Go
 	// API from a route of its own must not decide for somebody the store has
 	// not let decide proposals.
-	if !su.Has(RightApprove) {
+	a, err := m.Approval(ctx, id)
+	var act *Action
+	if err == nil {
+		act = m.action(a.Kind)
+	}
+	if !su.Has(RightApprove) && (act == nil || !act.OwnRightSuffices) {
 		return nil, nil, nil, gocommerce.Forbiddenf("your role (%s) does not carry %s, which deciding a proposal needs", su.Role, RightApprove)
 	}
-	a, err := m.Approval(ctx, id)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	act := m.action(a.Kind)
 	if act == nil && approving {
 		return nil, nil, nil, gocommerce.Conflictf("this build has no action called %q, so proposal %d cannot run; reject it instead", a.Kind, id)
 	}
@@ -392,7 +405,11 @@ func (m *Module) Approve(ctx context.Context, id int64, seen string) (*Approval,
 	// half-run approval is worse than a slow one.
 	run, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.executeTimeout)
 	defer cancel()
-	run = gocommerce.WithActorLabel(run, fmt.Sprintf("approval #%d", id))
+	label := fmt.Sprintf("approval #%d", id)
+	if act.Label != "" {
+		label = act.Label + ", " + label
+	}
+	run = gocommerce.WithActorLabel(run, label)
 	result, execErr := m.runAction(run, act, a.Args)
 
 	// The outcome is written on a context of its own. The action's may be

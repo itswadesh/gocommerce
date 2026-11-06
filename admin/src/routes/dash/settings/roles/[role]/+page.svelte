@@ -15,9 +15,10 @@
      * default, for its rights and for its words alike, which is what makes
      * both Reset and a blank field mean "back to the engine's own".
      *
-     * The name saves on its own button, apart from the rights. They are edited
-     * at different moments, and one Save for both would make a rename overwrite
-     * a colleague's grant made a second earlier.
+     * The name saves on its own call, apart from the rights, and the bar only
+     * makes the calls for what changed. They are edited at different moments,
+     * and one write for both would make a rename overwrite a colleague's grant
+     * made a second earlier.
      *
      * Every right is `resource.verb`, so the grid builds itself from what the
      * API sends and a right added to the engine needs no edit here.
@@ -27,7 +28,7 @@
     import { roles as rolesApi, auth, can, getRecord } from "$lib/api.js";
     import { learnRights, rightScope, rightsByResource, rightsBySection } from "$lib/rights.js";
     import { toast } from "$lib/toast.svelte.js";
-    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import { goto } from "$app/navigation";
@@ -129,7 +130,7 @@
             seedLabel(saved);
             toast.success(saved.title + " saved");
         } catch (err) {
-            toast.error(err);
+            toast.error(`The name was not saved: ${err?.message ?? err}`);
         } finally {
             renaming = false;
         }
@@ -221,10 +222,21 @@
             toast.success("Saved the " + label + " role");
             await refreshMeIfAffected();
         } catch (err) {
-            toast.error(err);
+            toast.error(`The rights were not saved: ${err?.message ?? err}`);
         } finally {
             busy = false;
         }
+    }
+
+    /* Only what changed goes, each on its own call; what failed stays dirty. */
+    async function saveChanged() {
+        if (labelDirty) await rename();
+        if (dirty) await save();
+    }
+
+    function discard() {
+        draft = [...(row?.rights ?? [])];
+        seedLabel(row);
     }
 
     async function reset() {
@@ -290,13 +302,15 @@
 {#if !allowed}
     <NoAccess right="roles.write" what="the roles" />
 {:else}
-    <DirtyGuard
-        {dirty}
-        message="This role has rights changed that have not been saved. Leave and lose them?"
-    />
-
     <div class="page page-role shopify-skin">
         <div class="page-content tw:bg-background tw:text-foreground">
+            <SaveBar
+                dirty={dirty || labelDirty}
+                saving={busy || renaming}
+                onsave={saveChanged}
+                ondiscard={discard}
+            />
+
             <header class="page-header">
                 <nav class="breadcrumbs">
                     <a
@@ -339,10 +353,6 @@
                                 <span class="txt">Reset to defaults</span>
                             </button>
                         {/if}
-                        <button type="button" class="btn" disabled={busy || !dirty} onclick={save}>
-                            <i class="ri-save-line" aria-hidden="true"></i>
-                            <span class="txt">{busy ? "Saving…" : "Save"}</span>
-                        </button>
                     {/if}
                 </div>
             </header>
@@ -387,19 +397,11 @@
                         bind:value={about}
                     ></textarea>
                 </div>
-                <div class="role-field-actions">
-                    <button
-                        type="button"
-                        class="btn sm"
-                        disabled={renaming || !labelDirty}
-                        onclick={rename}
-                    >
-                        <span class="txt">{renaming ? "Saving…" : "Save name"}</span>
-                    </button>
-                    {#if row?.title_customized}
+                {#if row?.title_customized}
+                    <div class="role-field-actions">
                         <span class="label">Renamed</span>
-                    {/if}
-                </div>
+                    </div>
+                {/if}
                 <div class="field-help role-field-help">
                     Only the name changes. Operators stay filed under
                     <code>{role}</code>, so renaming moves nobody. Leave a field empty to put the

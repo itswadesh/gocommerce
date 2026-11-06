@@ -258,6 +258,8 @@ func TestTheStoresPublicFaceIsItsNameAndContactsOnly(t *testing.T) {
 		// The country on its own, so a storefront can write the phone number
 		// in full; empty until the store chooses one.
 		"country": "",
+		// So a storefront knows whether a price it shows already has tax in it.
+		"prices_include_tax": false,
 	}
 	if len(body.Data) != len(want) {
 		t.Errorf("public fields = %v, want exactly %v", body.Data, want)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -579,6 +580,9 @@ func (s *Discounts) Create(ctx context.Context, in DiscountInput) (*Discount, er
 	if in.Title == "" {
 		return nil, Validationf("title is required")
 	}
+	if err := validateDiscountCode(strings.TrimSpace(in.Code)); err != nil {
+		return nil, err
+	}
 	targets := dedupeIDs(in.TargetIDs)
 	if in.AutoApply && strings.TrimSpace(in.Code) == "" {
 		return nil, errAutoApplyNeedsCode
@@ -881,7 +885,15 @@ func (s *Discounts) applyPatch(ctx context.Context, tx *sql.Tx, current *Discoun
 		after[col] = v
 	}
 	if patch.Code != nil {
-		add("code", nullString(strings.TrimSpace(*patch.Code)))
+		code := strings.TrimSpace(*patch.Code)
+		// Only a change: a code made before the rule keeps working, and the panel
+		// sends the code back on every edit.
+		if code != current.Code {
+			if err := validateDiscountCode(code); err != nil {
+				return err
+			}
+		}
+		add("code", nullString(code))
 	}
 	if patch.Title != nil {
 		title := strings.TrimSpace(*patch.Title)
@@ -1802,6 +1814,18 @@ func eligibleSubtotalForOrder(ctx context.Context, tx *sql.Tx, orderID, discount
 		}
 	}
 	return base, nil
+}
+
+var discountCodeRE = regexp.MustCompile(`^[A-Za-z0-9]{1,20}$`)
+
+// validateDiscountCode holds a code to what a shopper can read out and type on a
+// phone (D226). Empty is a discount with no code. Here rather than in the routes,
+// so the panel, the API and a module all meet the same rule.
+func validateDiscountCode(code string) error {
+	if code != "" && !discountCodeRE.MatchString(code) {
+		return Validationf("a discount code is letters and digits only, at most 20 of them")
+	}
+	return nil
 }
 
 // errAutoApplyNeedsCode refuses an automatic discount without a code: the

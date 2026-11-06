@@ -297,11 +297,28 @@ func (h *harness) uploadRaw(store, field string, file []byte) *httptest.Response
 	return h.do(http.MethodPost, "/x/customizer/uploads", store, contentType, body, "")
 }
 
+// answerWriter notes the status a route answered with. Unwrap keeps the
+// connection's deadlines reachable, as the engine's own writer does.
+type answerWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *answerWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *answerWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 func (h *harness) server(readTimeout, writeTimeout time.Duration) *httptest.Server {
 	inner := h.app.Handler()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Host = "example.com"
-		inner.ServeHTTP(w, r)
+		answer := &answerWriter{ResponseWriter: w, status: http.StatusOK}
+		inner.ServeHTTP(answer, r)
+		// The engine's own request line is only for /api/.
+		fmt.Fprintf(h.logs, "answered %s %s status=%d\n", r.Method, r.URL.Path, answer.status)
 	}))
 	srv.Config.ReadTimeout = readTimeout
 	srv.Config.WriteTimeout = writeTimeout
@@ -1287,7 +1304,7 @@ func TestAShopperWhoHangsUpWhileWaitingIsNoServerError(t *testing.T) {
 	}
 	_ = c.Close()
 
-	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	answered := regexp.MustCompile(`answered POST /x/customizer/uploads status=(\d+)`)
 	var got []string
 	for deadline := time.Now().Add(5 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		got = answered.FindStringSubmatch(h.logs.String())
@@ -1313,9 +1330,12 @@ func TestAnUploadThatFailsAfterItsShopperLeftKeepsItsCause(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	_ = c.Close()
 
-	answered := regexp.MustCompile(`msg=request method=POST path=/x/customizer/uploads status=(\d+)`)
+	answered := regexp.MustCompile(`answered POST /x/customizer/uploads status=(\d+)`)
 	var got []string
-	for deadline := time.Now().Add(10 * time.Second); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	// Long, because this is the worst image the upload limits let through: it
+	// decodes in about 8 seconds here, and CI's race detector makes that far
+	// longer. The loop stops as soon as the answer is logged.
+	for deadline := time.Now().Add(3 * time.Minute); got == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		got = answered.FindStringSubmatch(h.logs.String())
 	}
 	if got == nil || got[1] != "415" {

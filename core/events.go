@@ -95,6 +95,8 @@ type StoreCreatedEvent struct {
 	// OwnerEmail is empty for a store opened with no owner, from the command
 	// line.
 	OwnerEmail string `json:"owner_email,omitempty"`
+	// OwnerPhone is set instead for an owner who signed up with a phone.
+	OwnerPhone string `json:"owner_phone,omitempty"`
 }
 
 // EventInfo is one event of the taxonomy as a merchant reads it: what to

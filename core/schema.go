@@ -116,8 +116,111 @@ func coreMigrations() []Migration {
 		{ID: "0098_discount_auto_apply", SQL: migration0098DiscountAutoApply},
 		{ID: "0099_show_all_codes", SQL: migration0099ShowAllCodes},
 		{ID: "0100_discount_free_shipping", SQL: migration0100DiscountFreeShipping},
+		{ID: "0101_superuser_phone", SQL: migration0101SuperuserPhone},
+		{ID: "0102_operator_phone_login", SQL: migration0102OperatorPhoneLogin},
+		{ID: "0103_login_codes_identity", SQL: migration0103LoginCodesIdentity},
+		{ID: "0104_phone_invitations", SQL: migration0104PhoneInvitations},
+		{ID: "0105_superuser_email_proved", SQL: migration0105SuperuserEmailProved},
+		{ID: "0106_superuser_email_verifications", SQL: migration0106SuperuserEmailVerifications},
+		{ID: "0107_superuser_owner_email_sent", SQL: migration0107SuperuserOwnerEmailSent},
 	}
 }
+
+// M107 — the email last sent asking a person to verify their address, shown until
+// they do (D225). It holds the words with the link taken out. On the person, as
+// only the latest is shown and it names the address it went to.
+const migration0107SuperuserOwnerEmailSent = `
+ALTER TABLE superusers ADD COLUMN owner_email_sent jsonb;
+`
+
+// M106 — a link emailed to a store's owner, proving their address (D221). The
+// hash, as with a reset, so a read of this table opens nothing. The address the
+// link went to is kept, because it proves that address and no later one. No
+// store_id: a person belongs to no store, and a report's login is not granted a
+// table without one.
+const migration0106SuperuserEmailVerifications = `
+CREATE TABLE superuser_email_verifications (
+    token_hash   text        PRIMARY KEY,
+    superuser_id bigint      NOT NULL REFERENCES superusers (id) ON DELETE CASCADE,
+    email        text        NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    expires_at   timestamptz NOT NULL
+);
+`
+
+// M105 — which email a person has proved is theirs, so the install owner's list
+// can say so (D218). The address rather than a time, because an account's email
+// changes in more than one place and a time would have to be cleared in each:
+// an address that no longer matches has simply stopped being proved. Nothing is
+// backfilled, since nothing recorded who proved what before now.
+const migration0105SuperuserEmailProved = `
+ALTER TABLE superusers ADD COLUMN email_proved text;
+`
+
+// M104 — a team invitation can name a phone, with no link to send (D205). The
+// invitee signs in with no store chosen, and invitations are scoped to a store,
+// so store_phone_invitations says which stores to look in for a number. It holds
+// no role and no grant: what counts is the row each store keeps.
+const migration0104PhoneInvitations = `
+ALTER TABLE superuser_invitations ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE superuser_invitations ADD COLUMN phone text;
+ALTER TABLE superuser_invitations ADD CONSTRAINT superuser_invitations_one_address
+    CHECK (num_nonnulls(email, phone) = 1);
+CREATE UNIQUE INDEX superuser_invitations_open_phone
+    ON superuser_invitations (store_id, phone)
+    WHERE phone IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL;
+CREATE TABLE store_phone_invitations (
+    phone      text        NOT NULL,
+    store_id   text        NOT NULL REFERENCES stores (id) ON DELETE CASCADE,
+    expires_at timestamptz NOT NULL,
+    PRIMARY KEY (phone, store_id)
+);
+`
+
+// M103 — a code can now prove an email on an account as well as a phone (D195),
+// so what it is keyed by is no longer only a phone.
+const migration0103LoginCodesIdentity = `
+ALTER TABLE superuser_login_codes RENAME COLUMN phone TO identity;
+`
+
+// M102 — signing in with a code texted to a phone (D193). phone_proved_at says
+// a code proved the number. A number given at sign-up is not proved (D191), so
+// the first code to prove it takes the account from whoever typed it: their
+// password and sessions end. disabled_at shuts a person out of the whole install.
+//
+// A code's row is written for every request, whoever the number belongs to, so
+// neither the limits nor the answer can tell a known phone from an unknown one.
+// consumed_at rather than expires_at = now(): now() is when a statement's
+// transaction began, so a second guess queued on the row lock would still read
+// a code the first one spent as open. No store_id: a person belongs to no store,
+// and a report's login is not granted a table without one.
+const migration0102OperatorPhoneLogin = `
+ALTER TABLE superusers
+    ADD COLUMN phone_proved_at timestamptz,
+    ADD COLUMN disabled_at timestamptz;
+
+CREATE TABLE superuser_login_codes (
+    id          bigserial   PRIMARY KEY,
+    phone       text        NOT NULL,
+    code_hash   text        NOT NULL,
+    -- The limit compares a client's address; it has no need to read one.
+    client_hash text        NOT NULL,
+    attempts    integer     NOT NULL DEFAULT 0,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    expires_at  timestamptz NOT NULL,
+    consumed_at timestamptz
+);
+CREATE INDEX superuser_login_codes_phone_idx ON superuser_login_codes (phone, created_at);
+CREATE INDEX superuser_login_codes_client_idx ON superuser_login_codes (client_hash, created_at);
+`
+
+// M101 — a person signing up may give a phone instead of an email (D191). The
+// email stops being required, and every row still has one or the other.
+const migration0101SuperuserPhone = `
+ALTER TABLE superusers ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE superusers ADD COLUMN phone text UNIQUE;
+ALTER TABLE superusers ADD CONSTRAINT superusers_email_or_phone CHECK (email IS NOT NULL OR phone IS NOT NULL);
+`
 
 // M100 — a percentage or fixed discount that also sends the order free
 // (D187): "5% off and free delivery when you pay online" is one promotion, and

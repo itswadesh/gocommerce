@@ -32,10 +32,13 @@ func TestASentTextIsLogged(t *testing.T) {
 			line = l
 		}
 	}
-	for _, want := range []string{"event=identity.login_code", "template=tpl-signin", "to=919876543210", "id=queued"} {
+	for _, want := range []string{"event=identity.login_code", "template=tpl-signin", "to=", "id=queued"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("sent line %q lacks %s", line, want)
 		}
+	}
+	if strings.Contains(logged.String(), "919876543210") {
+		t.Fatal("the full number was written to the log")
 	}
 	if strings.Contains(logged.String(), "0420") {
 		t.Fatal("the sign-in code was written to the log")

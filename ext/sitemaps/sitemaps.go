@@ -60,15 +60,18 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Sitemap", Icon: "ri-compass-3-line", Category: "marketing",
-		Home:           "/dash/sitemap",
-		Description:    "A sitemap of every active product and collection — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
-		DefaultEnabled: m.cfg.StorefrontURL != "",
+		Home:        "/dash/sitemap",
+		Description: "A sitemap of every active product and collection — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
+		// On for every store: a sitemap only lists what is already public, and a
+		// store should not have to know it needs one before search engines find it
+		// (D232).
+		DefaultEnabled: true,
 		Docs:           "https://www.sitemaps.org/protocol.html",
 		Fields: []gocommerce.PluginField{
 			// No Help: it was a bare example URL, which sat under the real one an
 			// operator had already typed and read as a second, contradictory
 			// address. The label and the url kind say what the box takes.
-			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Required: m.cfg.StorefrontURL == "", Public: true},
+			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Public: true},
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}"},
 			{Key: "collection_path", Label: "Collection page path", Kind: "text", Default: "/collections/{slug}"},
 			{Key: "page_path", Label: "Content page path", Kind: "text", Default: "/pages/{slug}"},
@@ -111,7 +114,7 @@ func (m *Module) settings(ctx context.Context) (settings, error) {
 	}
 	return settings{
 		enabled:     enabled,
-		storefront:  strings.TrimRight(str("storefront_url", m.cfg.StorefrontURL), "/"),
+		storefront:  strings.TrimRight(str("storefront_url", m.cfg.StorefrontURL, m.app.StorefrontURL(ctx)), "/"),
 		products:    str("product_path", m.cfg.ProductPath, "/products/{slug}"),
 		collections: str("collection_path", m.cfg.CollectionPath, "/collections/{slug}"),
 		pages:       str("page_path", m.cfg.PagePath, "/pages/{slug}"),

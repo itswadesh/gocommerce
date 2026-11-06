@@ -4,6 +4,7 @@
  * with curl.
  */
 
+import { toIdentity } from "$lib/identity.js";
 import { storeHeaders } from "$lib/store-scope.js";
 import {
     beginSession,
@@ -206,7 +207,7 @@ export const auth = {
     async login(identity, password) {
         const result = await api.post(
             "/api/admin/auth-with-password",
-            { identity, password },
+            { identity: toIdentity(identity), password },
             { admin: false },
         );
         return beginSession(result);
@@ -244,17 +245,38 @@ export const auth = {
      * worked in is somebody else's business, and may since have been
      * suspended.
      */
-    async signup(email, password) {
-        const result = await api.post("/api/admin/signup", { email, password }, { admin: false, store: false });
+    async signup(identity, password) {
+        const result = await api.post("/api/admin/signup", { identity: toIdentity(identity), password }, { admin: false, store: false });
         return beginSession(result);
     },
+
+    /**
+     * requestPhoneCode asks for a code by SMS. The answer is the same for
+     * every number. Like signup, these name no store.
+     */
+    async requestPhoneCode(phone) {
+        return await api.post("/api/admin/auth-with-phone/code", { phone }, { admin: false, store: false });
+    },
+
+    /** loginWithPhone exchanges the code for a session, making an account where sign-up is open. */
+    async loginWithPhone(phone, code) {
+        const result = await api.post("/api/admin/auth-with-phone", { phone, code }, { admin: false, store: false });
+        return beginSession(result);
+    },
+
+    /** requestMyPhoneCode texts a code to a number the signed-in person wants to add. */
+    requestMyPhoneCode: (phone) => api.post("/api/admin/me/phone/code", { phone }),
+    setMyPhone: (phone, code, current_password) => api.put("/api/admin/me/phone", { phone, code, current_password }),
+    requestMyEmailCode: (email) => api.post("/api/admin/me/email/code", { email }),
+    setMyEmail: (email, code) => api.put("/api/admin/me/email", { email, code }),
+    removeMyPhone: (current_password) => api.delete("/api/admin/me/phone", { body: { current_password } }),
 
     /**
      * requestReset asks for a reset email. The answer is the same for every
      * address; what it says is how this install delivers (delivery, link).
      */
     async requestReset(email) {
-        return await api.post("/api/admin/password-reset", { identity: email }, { admin: false });
+        return await api.post("/api/admin/password-reset", { identity: toIdentity(email) }, { admin: false });
     },
 
     /** install creates the first operator on a fresh database and signs in. */
@@ -311,6 +333,8 @@ export const auth = {
     // way any earlier link for the address stops working.
     invite: (email, role, sendEmail = true) =>
         api.post("/api/admin/invitations", { email, role, send_email: sendEmail }),
+    // A number instead: no link and no email, they are asked when they sign in.
+    invitePhone: (phone, role) => api.post("/api/admin/invitations", { phone, role }),
     revokeInvitation: (id) => api.delete(`/api/admin/invitations/${id}`),
 
     // Ending sessions. Somebody else's is team management; your own is the
@@ -351,6 +375,29 @@ export const stores = {
     async mine() {
         return (await api.get("/api/stores/my")) ?? [];
     },
+    /** directory is every store on the install, for its owner alone (D215). */
+    async directory() {
+        return (await api.get("/api/stores/directory")) ?? [];
+    },
+    /** directoryAllowed says whether this person may open it. */
+    async directoryAllowed() {
+        return !!(await api.get("/api/stores/directory/allowed"))?.allowed;
+    },
+    /** ownerEmailDraft is the email asking an owner to verify, to read and change (D221). */
+    async ownerEmailDraft(target) {
+        return await api.post("/api/stores/directory/email-draft", target);
+    },
+    /** ownerEmailSend sends it, adding the link. */
+    async ownerEmailSend(message) {
+        return await api.post("/api/stores/directory/email-send", message);
+    },
+    /** invitations are the stores asking this person to join, by their phone. */
+    async invitations() {
+        return (await api.get("/api/stores/invitations")) ?? [];
+    },
+    async answerInvitation(storeID, id, accept) {
+        return await api.post("/api/stores/invitations/answer", { store_id: storeID, id, accept });
+    },
     /** suggest is a name for a new store, with an address nobody has. */
     async suggest() {
         return await api.get("/api/stores/suggest");
@@ -360,16 +407,21 @@ export const stores = {
         return await api.post("/api/stores/switch", { store_id: storeID });
     },
     /** create opens a store with the caller as its owner, and enters it. */
-    async create(name, slug, currency = "", country = "", sampleContent = false) {
+    async create(name, slug, currency = "", country = "", timezone = "", sampleContent = false) {
         return await api.post("/api/stores/create", {
             name,
             slug,
             currency,
             country,
+            timezone,
             sample_content: sampleContent,
         });
     },
     /** remove deletes a store for good; confirm is its slug, typed back. */
+    /** deletePreview counts what deleting a store would remove. */
+    async deletePreview(storeID) {
+        return await api.get("/api/stores/delete-preview" + query({ store_id: storeID }));
+    },
     async remove(storeID, confirm) {
         return await api.post("/api/stores/delete", { store_id: storeID, confirm });
     },
@@ -516,6 +568,9 @@ export const telegram = {
     test: () => api.post(`${TELEGRAM}/test`, {}),
     deliveries: (params) => api.get(`${TELEGRAM}/deliveries` + query(params)),
     retry: (id) => api.post(`${TELEGRAM}/deliveries/${id}/retry`, {}),
+    commands: () => api.get(`${TELEGRAM}/commands`),
+    setCommands: (on) => api.post(`${TELEGRAM}/commands`, { on }),
+    commandsAudit: (params) => api.get(`${TELEGRAM}/commands/audit` + query(params)),
 };
 
 /**
@@ -560,6 +615,55 @@ export const showcases = {
     remove: (id) => api.delete(`/api/admin/x/showcases/${id}`),
     check: (url) => api.post("/api/admin/x/showcases/check", { url }),
     makeCollection: (id, title) => api.post(`/api/admin/x/showcases/${id}/collection`, { title }),
+};
+
+/**
+* retailAssistant is ext/retailassistant (D192): documents from WhatsApp, the
+ * phones allowed to send them, and each supplier's account. The money routes
+ * take a key so a retried press records one thing.
+ */
+const RETAIL = "/api/admin/x/retailassistant";
+const keyed = (key) => (key ? { headers: { "Idempotency-Key": key } } : {});
+export const retailAssistant = {
+    status: () => api.get(`${RETAIL}/status`),
+    links: () => api.get(`${RETAIL}/phone-links`),
+    addLink: (body) => api.post(`${RETAIL}/phone-links`, body),
+    updateLink: (id, body) => api.patch(`${RETAIL}/phone-links/${id}`, body),
+    removeLink: (id) => api.delete(`${RETAIL}/phone-links/${id}`),
+    documents: (params) => api.get(`${RETAIL}/documents` + query(params)),
+    document: (id) => api.get(`${RETAIL}/documents/${id}`),
+    correct: (id, body) => api.post(`${RETAIL}/documents/${id}/correct`, body),
+    approve: (id, body) => api.post(`${RETAIL}/documents/${id}/approve`, body),
+    reject: (id, body) => api.post(`${RETAIL}/documents/${id}/reject`, body),
+    retry: (id) => api.post(`${RETAIL}/documents/${id}/retry`),
+    removeFile: (id) => api.post(`${RETAIL}/documents/${id}/remove-file`),
+    readWithAI: (id) => api.post(`${RETAIL}/documents/${id}/read`),
+    suppliers: () => api.get(`${RETAIL}/suppliers`),
+    payables: (params) => api.get(`${RETAIL}/payables` + query(params)),
+    payments: (params) => api.get(`${RETAIL}/payments` + query(params)),
+    credits: (params) => api.get(`${RETAIL}/credits` + query(params)),
+    addPayment: (body, key) => api.post(`${RETAIL}/payments`, body, keyed(key)),
+    verifyPayment: (id) => api.post(`${RETAIL}/payments/${id}/verify`),
+    allocatePayment: (id, body, key) => api.post(`${RETAIL}/payments/${id}/allocate`, body, keyed(key)),
+    reversePayment: (id) => api.post(`${RETAIL}/payments/${id}/reverse`),
+    addCredit: (body, key) => api.post(`${RETAIL}/credits`, body, keyed(key)),
+    allocateCredit: (id, body, key) => api.post(`${RETAIL}/credits/${id}/allocate`, body, keyed(key)),
+    reverseCredit: (id) => api.post(`${RETAIL}/credits/${id}/reverse`),
+    invoiceLines: (id) => api.get(`${RETAIL}/invoices/${id}/lines`),
+    receive: (id, body) => api.post(`${RETAIL}/invoices/${id}/receive`, body),
+    insights: () => api.get(`${RETAIL}/insights`),
+    counterLookup: (code) => api.get(`${RETAIL}/counter/lookup` + query({ code })),
+    counterLinkBarcode: (body) => api.post(`${RETAIL}/counter/barcodes`, body),
+    counterPreview: (body) => api.post(`${RETAIL}/counter/preview`, body),
+    counterSale: (body, key) => api.post(`${RETAIL}/counter/sales`, body, keyed(key)),
+    wholesalePreview: (body) => api.post(`${RETAIL}/wholesale/preview`, body),
+    wholesaleQuote: (body, key) => api.post(`${RETAIL}/wholesale/quotes`, body, keyed(key)),
+    bankLines: (params) => api.get(`${RETAIL}/bank-lines` + query(params)),
+    importStatement: (text) => api.post(`${RETAIL}/bank-statements`, text, { headers: { "Content-Type": "text/csv" } }),
+    matchLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/match`, body),
+    recordFromLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/record`, body),
+    ignoreLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/ignore`),
+    undoLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/undo`),
 };
 
 /**

@@ -270,7 +270,11 @@ func (a *App) brands() []Brand {
 		return a.cfg.Brands
 	}
 	base, _ := baseDomainName(a.cfg.BaseDomain)
-	return []Brand{{Name: DefaultBrandName, PanelURL: a.cfg.PanelURL, BaseDomain: base}}
+	name := strings.TrimSpace(a.cfg.BrandName)
+	if name == "" {
+		name = DefaultBrandName
+	}
+	return []Brand{{Name: name, PanelURL: a.cfg.PanelURL, BaseDomain: base}}
 }
 
 // underStoreDomain is the most specific brand domain host is under (or is),

@@ -13,12 +13,13 @@
     import { page } from "$app/state";
     import { goto } from "$app/navigation";
     import { tick, untrack } from "svelte";
-    import { auth, events, can, session, stores, errors as errorReports } from "$lib/api.js";
+    import { hasStoreName, rememberStoreName } from "$lib/store-name.js";
+    import { api, auth, events, can, session, stores, errors as errorReports } from "$lib/api.js";
     import { installErrorReporting } from "$lib/error-reporting.js";
-    import { clearProfile, clearSettings, profile } from "$lib/settings.svelte.js";
+    import { clearProfile, clearSettings, loadProfile, loadSettings, profile } from "$lib/settings.svelte.js";
     import { forgetModules, hasModule } from "$lib/modules.svelte.js";
     import { forgetScreens } from "$lib/screens.svelte.js";
-    import { applyEntry, ensureStore, forgetStores, isSuperseded, markStores, myStores } from "$lib/stores.svelte.js";
+    import { applyEntry, ensureStore, forgetStores, isSuperseded, loadStores, markStores, myStores } from "$lib/stores.svelte.js";
     import { reloadStoreData } from "$lib/store-data.js";
     import { storeNamedBy } from "$lib/store-scope.js";
     import { forgetSetup, loadSetup, setup } from "$lib/setup.svelte.js";
@@ -34,7 +35,9 @@
     import Login from "$lib/components/Login.svelte";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import CommandPalette from "$lib/components/CommandPalette.svelte";
+    import AskAI from "$lib/components/AskAI.svelte";
     import ShortcutHelp from "$lib/components/ShortcutHelp.svelte";
+    import TeamInvites from "$lib/components/TeamInvites.svelte";
 
     let { children } = $props();
 
@@ -177,7 +180,7 @@
 
     /** Two letters for the avatar, from the email — there is no name to use. */
     const initials = $derived(
-        (record?.email || "at")
+        (record?.email || record?.phone || "at")
             .replace(/@.*$/, "")
             .split(/[._-]/)
             .filter(Boolean)
@@ -186,7 +189,7 @@
             .join("")
             // A single-word address gives one letter, and a lone initial in a
             // 28px disc reads as a mistake; take two from the word instead.
-            .padEnd(2, (record?.email || "at")[1]?.toUpperCase() ?? "")
+            .padEnd(2, (record?.email || record?.phone || "at")[1]?.toUpperCase() ?? "")
             .slice(0, 2) || "AT",
     );
 
@@ -314,6 +317,43 @@
     });
 
     /*
+     * Ask AI's button, only where it can answer: the module is in this binary,
+     * this person may ask, and the store's AI is set up. A store that cannot is
+     * not told so on every screen; asking is what would have told it.
+     */
+    let askOpen = $state(false);
+    let askReady = $state(false);
+    let appliedEpoch = $state(0);
+    $effect(() => {
+        storeEpoch;
+        const can_ask = authenticated && myStores.state === "ok" && hasModule("ask-ai") && can("ask-ai.use");
+        if (!can_ask) {
+            askReady = false;
+            return;
+        }
+        let stale = false;
+        api.get("/api/admin/x/ask-ai/status")
+            .then((s) => {
+                if (!stale) askReady = !!s.ready;
+            })
+            .catch(() => {
+                if (!stale) askReady = false;
+            });
+        return () => {
+            stale = true;
+        };
+    });
+
+    /** What a change touches: the checklist, the store's name in the menu, and the settings form if it is open. */
+    function afterAskApplied() {
+        untrack(loadSetup);
+        loadProfile({ force: true });
+        loadSettings({ force: true });
+        loadStores().catch(() => {});
+        if (page.url.pathname.endsWith("/dash/settings")) appliedEpoch++;
+    }
+
+    /*
      * The health report, for the badge. Svelte runs the returned teardown when
      * `authenticated` goes false, which both stops the poll and clears the
      * verdict with the session — the report is module-scope state and would
@@ -414,11 +454,15 @@
             goto(`${base}${LOGIN}?next=${encodeURIComponent(here)}${page.url.hash}`, { replaceState: true });
         }
     });
+    // A store name typed on a marketing page outlives the redirects before the form.
+    if (globalThis.location) rememberStoreName(globalThis.location.search);
     $effect(() => {
         if (!ready || !authenticated || !onLogin) return;
         const state = myStores.state;
         const next = safeNext(page.url.searchParams.get("next"));
-        if (state === "ok") {
+        if (hasStoreName()) {
+            goto(`${base}${SELECT}?create`, { replaceState: true });
+        } else if (state === "ok") {
             goto(base + next, { replaceState: true });
         } else if (state === "choose" || state === "none") {
             goto(`${base}${SELECT}?next=${encodeURIComponent(next)}`, { replaceState: true });
@@ -700,6 +744,12 @@
         <span class="txt">Search the store</span>
         <kbd>{appleKeys ? "⌘" : "Ctrl"} K</kbd>
     </button>
+    {#if askReady}
+        <button type="button" class="app-search app-ask" onclick={() => (askOpen = true)}>
+            <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+            <span class="txt">Ask AI</span>
+        </button>
+    {/if}
 {/snippet}
 
 {#snippet navLinks()}
@@ -762,7 +812,7 @@
             <span class="app-avatar" aria-hidden="true">{initials}</span>
             <span class="app-account-who">
                 <span class="app-account-store txt-ellipsis" data-store-name>{myStores.current?.name ?? brand.name}</span>
-                <span class="app-account-name txt-ellipsis">{record?.email || "admin token"}</span>
+                <span class="app-account-name txt-ellipsis">{record?.email || record?.phone || "admin token"}</span>
                 <span class="app-account-role txt-ellipsis">{roleLabel}</span>
             </span>
             <i class="ri-arrow-up-s-line" aria-hidden="true"></i>
@@ -959,6 +1009,16 @@
                 >
                     <i class="ri-search-line" aria-hidden="true"></i>
                 </button>
+                {#if askReady}
+                    <button
+                        type="button"
+                        class="btn circle transparent secondary app-ask-top"
+                        aria-label="Ask AI"
+                        onclick={() => (askOpen = true)}
+                    >
+                        <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                    </button>
+                {/if}
                 <!-- On a phone the Settings item lives in a closed drawer, and a
                      badge nobody can see is the failure the badge exists to
                      prevent. -->
@@ -991,9 +1051,17 @@
 
             <!-- Keyed on the switch, so landing on the same address in another
                  store still mounts the screen afresh and asks for its rows. -->
-            {#key storeEpoch}
+            {#key `${storeEpoch}:${appliedEpoch}`}
                 {#if !parked}
                     {@render children?.()}
+                {/if}
+            {/key}
+
+            <!-- Keyed on the store, so a conversation never follows a person
+                 into another store. -->
+            {#key storeEpoch}
+                {#if askReady}
+                    <AskAI open={askOpen} onclose={() => (askOpen = false)} onapplied={afterAskApplied} />
                 {/if}
             {/key}
 
@@ -1037,5 +1105,9 @@
         {/snippet}
     </svelte:boundary>
 </main>
+
+{#if ready && authenticated && !isPublic}
+    <TeamInvites />
+{/if}
 
 <Toasts />

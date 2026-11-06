@@ -152,7 +152,7 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 		// without this line, and a store can run for months in the first state
 		// believing it is in the second.
 		m.log.Info("text not sent: Twilio is not configured",
-			"event", n.Event, "to", n.To, "channel", n.Channel)
+			"event", n.Event, "to", gocommerce.MaskPhone(n.To), "channel", n.Channel)
 		return nil
 	}
 
@@ -210,7 +210,7 @@ func (m *Module) send(ctx context.Context, s sender, n gocommerce.Notification, 
 			Status string `json:"status"`
 		}
 		_ = json.Unmarshal(detail, &out)
-		m.log.Info("text sent", "event", n.Event, "to", n.To, "sid", out.SID, "status", out.Status)
+		m.log.Info("text sent", "event", n.Event, "to", gocommerce.MaskPhone(n.To), "sid", out.SID, "status", out.Status)
 		return nil
 
 	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
@@ -224,11 +224,13 @@ func (m *Module) send(ctx context.Context, s sender, n gocommerce.Notification, 
 			MoreInfo string `json:"more_info"`
 		}
 		_ = json.Unmarshal(detail, &out)
+		// Twilio's reason can quote the number, and it reaches the log.
+		out.Message = gocommerce.MaskPhoneIn(out.Message, n.To)
 		// A refusal, not retried: a number Twilio will not accept will not
 		// be accepted on the twelfth attempt either. The engine records it as
 		// failed, with Twilio's reason.
 		m.log.Error("Twilio refused the message",
-			"event", n.Event, "to", n.To, "status", resp.Status,
+			"event", n.Event, "to", gocommerce.MaskPhone(n.To), "status", resp.Status,
 			"code", out.Code, "detail", out.Message, "more_info", out.MoreInfo)
 		return fmt.Errorf("twilio: %w: %s (%s)", gocommerce.ErrNotificationRefused, out.Message, resp.Status)
 	}

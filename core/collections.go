@@ -209,6 +209,50 @@ func (s *Collections) list(ctx context.Context, where string, limit, offset int)
 	return out, total, rows.Err()
 }
 
+// FillCovers gives a collection with no picture of its own the lead picture of
+// its first product on sale, so a storefront's page of collections is never a
+// row of blanks. The picture is only lent for this response, in metadata.image
+// where a storefront reads it: nothing is stored, so it follows the merchant's
+// order, and setting a picture of their own still wins.
+func (s *Collections) FillCovers(ctx context.Context, list ...*Collection) error {
+	byID := map[int64]*Collection{}
+	ids := []int64{}
+	for _, c := range list {
+		if image, _ := c.Metadata["image"].(string); image == "" {
+			byID[c.ID] = c
+			ids = append(ids, c.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT DISTINCT ON (pc.collection_id) pc.collection_id, m.url
+		FROM product_collections pc
+		JOIN products p ON p.id = pc.product_id AND p.status = 'active'
+		JOIN product_media pm ON pm.product_id = p.id
+		JOIN media m ON m.id = pm.media_id AND m.kind = 'image'
+		WHERE pc.collection_id = ANY($1::bigint[])
+		ORDER BY pc.collection_id, pc.member_position, pc.product_id, pm.position, pm.media_id`, int64Array(ids))
+	if err != nil {
+		return Internalf(err, "read collection covers")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var url string
+		if err := rows.Scan(&id, &url); err != nil {
+			return Internalf(err, "read collection cover")
+		}
+		c := byID[id]
+		if c.Metadata == nil {
+			c.Metadata = Metadata{}
+		}
+		c.Metadata["image"] = url
+	}
+	return rows.Err()
+}
+
 // Update applies a patch.
 func (s *Collections) Update(ctx context.Context, id int64, patch CollectionPatch) (*Collection, error) {
 	sets, args := []string{}, []any{}
@@ -623,6 +667,9 @@ func (a *App) handleListCollections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list, total, err := a.Collections().ListActive(r.Context(), limit, offset)
+	if err == nil {
+		err = a.Collections().FillCovers(r.Context(), list...)
+	}
 	if err != nil {
 		RespondError(w, r, err)
 		return
@@ -648,6 +695,9 @@ func (a *App) handleGetCollectionBySlug(w http.ResponseWriter, r *http.Request) 
 	}
 	collections := a.Collections()
 	c, err := collections.GetBySlug(r.Context(), r.PathValue("slug"))
+	if err == nil {
+		err = collections.FillCovers(r.Context(), c)
+	}
 	if err != nil {
 		RespondError(w, r, err)
 		return

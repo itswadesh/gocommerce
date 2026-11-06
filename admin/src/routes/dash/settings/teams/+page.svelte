@@ -24,6 +24,7 @@
     import Select from "$lib/components/Select.svelte";
     import Confirm from "$lib/components/Confirm.svelte";
     import { titled } from "$lib/brand.svelte.js";
+    import { looksLikePhone, toIdentity } from "$lib/identity.js";
 
     /*
      * team.read is the sidebar's gate on this screen; team.write is what every
@@ -52,6 +53,9 @@
      */
     let invite = $state({ method: "link", email: "", role: "staff", password: "" });
     let inviting = $state(false);
+    /* A number has no link and no password to choose: they are asked when they
+       sign in with it (D205). */
+    const byPhone = $derived(looksLikePhone(invite.email));
     /** The invitation a row action is working on, so its own row shows it. */
     let busyInvite = $state("");
     // The invitation just created, while the drawer that reports it is open:
@@ -199,7 +203,7 @@
         if (!rows.length) return;
         bulkBusy = true;
         try {
-            await runBulk(rows, fn, { describe, noun, label: (row) => row.email });
+            await runBulk(rows, fn, { describe, noun, label: (row) => row.email || row.phone });
         } finally {
             bulkBusy = false;
         }
@@ -261,24 +265,29 @@
         errors = {};
         const email = invite.email.trim().toLowerCase();
         if (!email) {
-            errors.invite = "An email is required.";
+            errors.invite = "An email or phone number is required.";
             return;
         }
-        if (superusers.some((su) => su.email.toLowerCase() === email)) {
-            errors.invite = `${email} is already on the team.`;
+        const phone = byPhone ? toIdentity(invite.email) : "";
+        if (superusers.some((su) => (phone ? su.phone === phone : su.email?.toLowerCase() === email))) {
+            errors.invite = `${phone || email} is already on the team.`;
             return;
         }
         if (!roleOptions.some((r) => r.value === invite.role)) {
             errors.invite = "Choose a role.";
             return;
         }
-        if (invite.method === "password" && invite.password.length < 8) {
+        if (!byPhone && invite.method === "password" && invite.password.length < 8) {
             errors.password = "A password of at least 8 characters is required.";
             return;
         }
         inviting = true;
         try {
-            if (invite.method === "password") {
+            if (byPhone) {
+                await auth.invitePhone(phone, invite.role);
+                toast.success(`${phone} will be asked to join when they sign in`);
+                closeInvite({ deliberate: true });
+            } else if (invite.method === "password") {
                 await auth.create(email, invite.password, invite.role);
                 toast.success(`${email} added to the team`);
                 closeInvite({ deliberate: true });
@@ -385,7 +394,7 @@
     async function revokeInvite(inv) {
         try {
             await auth.revokeInvitation(inv.id);
-            toast.success(`Invitation to ${inv.email} revoked`);
+            toast.success(`Invitation to ${inv.email || inv.phone} revoked`);
             await load();
         } catch (err) {
             toast.error(err);
@@ -421,8 +430,8 @@
             const n = result.revoked ?? 0;
             toast.success(
                 n === 0
-                    ? `${su.email} was not signed in anywhere`
-                    : `Signed ${su.email} out of ${n} ${n === 1 ? "device" : "devices"}`,
+                    ? `${su.email || su.phone} was not signed in anywhere`
+                    : `Signed ${su.email || su.phone} out of ${n} ${n === 1 ? "device" : "devices"}`,
             );
         } catch (err) {
             toast.error(err);
@@ -442,7 +451,7 @@
         su.role = role;
         try {
             await auth.setRole(su.id, role);
-            toast.success(`${su.email} is now ${roleName(role).toLowerCase()}`);
+            toast.success(`${su.email || su.phone} is now ${roleName(role).toLowerCase()}`);
             // Their own rights just changed: re-read the record so the nav and
             // the buttons match what the engine will now allow. The record is a
             // rune, so writing it is enough — this used to reload the document
@@ -469,7 +478,7 @@
         if (saving) return;
 
         errors = {};
-        if (!form.email.trim()) errors.email = "An email is required.";
+        if (!form.email.trim() && !editing?.phone) errors.email = "An email is required.";
         if (!editing && form.password.length < 8) {
             errors.password = "A password of at least 8 characters is required.";
         }
@@ -525,7 +534,7 @@
     async function doDelete() {
         try {
             await auth.remove(pendingDelete.id);
-            toast.success(`Removed ${pendingDelete.email}`);
+            toast.success(`Removed ${pendingDelete.email || pendingDelete.phone}`);
             await load();
         } catch (err) {
             toast.error(err);
@@ -638,13 +647,13 @@
                                         />
                                         <label
                                             for="select-superuser-{su.id}"
-                                            aria-label="Select {su.email}"
+                                            aria-label="Select {su.email || su.phone}"
                                         ></label>
                                     </div>
                                 </td>
                             {/if}
                             <td class="col-field-name-id" data-name="Email">
-                                <span class="txt-bold">{su.email}</span>
+                                <span class="txt-bold">{su.email || su.phone}</span>
                                 {#if me && su.id === me.id}
                                     <span class="label sm you">you</span>
                                 {/if}
@@ -663,7 +672,7 @@
                                     <div class="field">
                                         <Select
                                             id="role-{su.id}"
-                                            ariaLabel="Role for {su.email}"
+                                            ariaLabel="Role for {su.email || su.phone}"
                                             value={su.role}
                                             onchange={(role) => changeRole(su, role)}
                                             options={roleOptions}
@@ -717,7 +726,7 @@
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary"
-                                        aria-label="Sign {su.email} out everywhere"
+                                        aria-label="Sign {su.email || su.phone} out everywhere"
                                         title={su.sessions
                                             ? "Sign out everywhere"
                                             : "Not signed in anywhere"}
@@ -730,7 +739,7 @@
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary row-delete"
-                                        aria-label="Remove {su.email}"
+                                        aria-label="Remove {su.email || su.phone}"
                                         title="Remove"
                                         onclick={(e) => askDelete(su, e)}
                                     >
@@ -822,14 +831,14 @@
                                                         />
                                                         <label
                                                             for="select-invite-{inv.id}"
-                                                            aria-label="Select the invitation to {inv.email}"
+                                                            aria-label="Select the invitation to {inv.email || inv.phone}"
                                                         ></label>
                                                     </div>
                                                 {/if}
                                             </td>
                                         {/if}
                                         <td class="col-field-name-id" data-name="Email">
-                                            <span class="txt">{inv.email}</span>
+                                            <span class="txt">{inv.email || inv.phone}</span>
                                             {#if inv.invited_by}
                                                 <div class="txt-hint txt-sm">invited by {inv.invited_by}</div>
                                             {/if}
@@ -857,6 +866,7 @@
                                         <td class="col-meta min-width row-actions" data-name="Actions">
                                             {#if writable && open}
                                                 <div class="inline-flex gap-5">
+                                                    {#if inv.email}
                                                     <button
                                                         type="button"
                                                         class="btn circle sm transparent secondary"
@@ -878,11 +888,12 @@
                                                     >
                                                         <i class="ri-mail-send-line" aria-hidden="true"></i>
                                                     </button>
+                                                    {/if}
                                                     <button
                                                         type="button"
                                                         class="btn circle sm transparent secondary"
                                                         disabled={!!busyInvite}
-                                                        aria-label="Revoke the invitation to {inv.email}"
+                                                        aria-label="Revoke the invitation to {inv.email || inv.phone}"
                                                         title="Revoke"
                                                         onclick={() => revokeInvite(inv)}
                                                     >
@@ -983,7 +994,7 @@
 
 <Drawer
     open={editorOpen}
-    title={editing ? editing.email : "New superuser"}
+    title={editing ? editing.email || editing.phone : "New superuser"}
     size="sm"
     onclose={closeEditor}
 >
@@ -1089,30 +1100,39 @@
         </div>
     {:else}
         <form id="invite-form" onsubmit={submitInvite}>
-            <div class="field">
-                <label for="invite-method">Invite method</label>
-                <Select id="invite-method" bind:value={invite.method} options={INVITE_METHODS} />
-            </div>
-            <div class="field-help">
-                {invite.method === "link"
-                    ? "They get an email with a link and set their own password."
-                    : "You choose their first password and tell it to them."}
-            </div>
+            {#if !byPhone}
+                <div class="field">
+                    <label for="invite-method">Invite method</label>
+                    <Select id="invite-method" bind:value={invite.method} options={INVITE_METHODS} />
+                </div>
+                <div class="field-help">
+                    {invite.method === "link"
+                        ? "They get an email with a link and set their own password."
+                        : "You choose their first password and tell it to them."}
+                </div>
+            {/if}
 
             <div class="field required m-t-sm" class:error={!!errors.invite}>
-                <label for="invite-email">Email</label>
+                <label for="invite-email">Email or phone</label>
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
                     id="invite-email"
-                    type="email"
+                    type="text"
+                    autocapitalize="off"
                     autocomplete="off"
                     autofocus
-                    placeholder="name@example.com"
+                    placeholder="name@example.com or 98765 43210"
                     bind:value={invite.email}
                     oninput={() => (errors = {})}
                 />
             </div>
             {#if errors.invite}<div class="field-help error">{errors.invite}</div>{/if}
+            {#if byPhone}
+                <div class="field-help">
+                    No link to send. When they sign in with this number, they are asked to join
+                    this store.
+                </div>
+            {/if}
 
             <div class="field required m-t-sm">
                 <label for="invite-role">Role</label>
@@ -1120,7 +1140,7 @@
             </div>
             <div class="field-help">What they may do. It can be changed later from the list.</div>
 
-            {#if invite.method === "password"}
+            {#if invite.method === "password" && !byPhone}
                 <div class="field required m-t-sm" class:error={!!errors.password}>
                     <label for="invite-password">Password</label>
                     <input
@@ -1167,7 +1187,7 @@
                 class:loading={inviting}
                 disabled={inviting}
             >
-                <span class="txt">{invite.method === "link" ? "Send invitation" : "Add member"}</span>
+                <span class="txt">{byPhone ? "Add this number" : invite.method === "link" ? "Send invitation" : "Add member"}</span>
             </button>
         {/if}
     {/snippet}
@@ -1177,7 +1197,7 @@
     bind:open={confirmOpen}
     title="Remove this superuser?"
     message={pendingDelete
-        ? `${pendingDelete.email} will lose access to this panel immediately, and every session they hold ends with them.`
+        ? `${pendingDelete.email || pendingDelete.phone} will lose access to this panel immediately, and every session they hold ends with them.`
         : ""}
     confirmLabel="Remove"
     danger

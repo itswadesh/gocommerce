@@ -1,5 +1,78 @@
 {
   "paths": {
+    "/x/telegram-alerts/webhook": {
+      "post": {
+        "tags": ["telegram-alerts"],
+        "summary": "Receive an update from Telegram",
+        "description": "Telegram's call, not a client's. Proved by the secret in `X-Telegram-Bot-Api-Secret-Token`, set when two-way control was switched on and compared in constant time before the body is read. Anything else is a 401, including a store with two-way control off. A verified request is always answered 200, and only the store's own private chat is obeyed; everything else is dropped without a word.",
+        "parameters": [
+          { "name": "X-Telegram-Bot-Api-Secret-Token", "in": "header", "required": true, "schema": { "type": "string" } },
+          { "name": "store", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "description": "A Telegram Update.", "additionalProperties": true } } }
+        },
+        "responses": {
+          "200": { "description": "Taken, whatever became of it." },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/admin/x/telegram-alerts/commands": {
+      "get": {
+        "tags": ["telegram-alerts"],
+        "summary": "Whether two-way control is on",
+        "description": "Whether one private chat can run the store by command and button, and why it is paused or cannot be switched on yet. Needs alerts.read.",
+        "responses": {
+          "200": {
+            "description": "The state.",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/TelegramCommands" } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["telegram-alerts"],
+        "summary": "Switch two-way control on or off",
+        "description": "Calls Telegram there and then. Switching on needs the alerts on, a saved bot token and a private chat, and sets the bot's webhook with a new secret; it refuses a bot whose webhook belongs to another service. Switching off stops obeying first and removes the webhook second. Needs alerts.commands, and switching on also needs every right the chat could use: orders.read, orders.write, orders.fulfill, inventory.read, inventory.write, catalog.write, reports.read and store.operate.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["on"], "properties": { "on": { "type": "boolean" } } } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The state afterwards.",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/TelegramCommands" } } } } }
+          },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "description": "The bot's webhook belongs to another service." },
+          "422": { "description": "Telegram could not be reached or said no; its reason is in the message." }
+        }
+      }
+    },
+    "/api/admin/x/telegram-alerts/commands/audit": {
+      "get": {
+        "tags": ["telegram-alerts"],
+        "summary": "What was changed from the chat",
+        "description": "Every change made from Telegram, newest first, with the Telegram user id and the outcome, and each time two-way control was switched. Needs alerts.read.",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The record.",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/TelegramCommandAudit" } } } } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
     "/api/admin/x/telegram-alerts/alerts": {
       "get": {
         "tags": ["telegram-alerts"],
@@ -332,6 +405,28 @@
           "type": { "type": "string", "enum": ["private", "group", "supergroup", "channel"] },
           "title": { "type": "string" },
           "username": { "type": "string" }
+        }
+      },
+      "TelegramCommands": {
+        "type": "object",
+        "properties": {
+          "on": { "type": "boolean" },
+          "paused": { "type": "string", "description": "Why commands are ignored although it is on: the alerts are off, or the bot or chat changed." },
+          "chat_id": { "type": "string" },
+          "blocker": { "type": "string", "description": "Why it cannot be switched on yet." },
+          "webhook_left": { "type": "boolean", "description": "Telegram could not be told when this was switched off. The webhook does nothing any more, and Find my chat removes it." }
+        }
+      },
+      "TelegramCommandAudit": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "telegram_user_id": { "type": "integer", "format": "int64", "nullable": true },
+          "action": { "type": "string", "example": "order.ship" },
+          "arguments": { "type": "object", "additionalProperties": true },
+          "outcome": { "type": "string", "enum": ["started", "ok", "error"] },
+          "detail": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
         }
       },
       "TelegramAlertDelivery": {

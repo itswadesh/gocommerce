@@ -19,6 +19,9 @@
 // prompt, and CREDITS.md, the attribution for every photograph. Both are
 // rewritten from catalogue.json on every run; edit the catalogue, not them.
 //
+// A colour with its own "photos" in the catalogue was really photographed: its
+// files are downloaded like the first colour's, and it needs no edit.
+//
 // out/ is git-ignored: the photographs are not ours to redistribute as a set.
 
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
@@ -34,6 +37,10 @@ const force = process.argv.includes('--force')
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const exists = (p) => access(p).then(() => true, () => false)
 const file = (p, colour, shot) => `${p.slug}/${slugify(colour.name)}-${shot}.webp`
+// Every real photograph of a product: its first colour's, then any other
+// colour's own.
+const photographed = (p) => p.colours.flatMap((colour, i) =>
+	(i === 0 ? p.photos : colour.photos ?? []).map((photo) => ({ colour, photo })))
 
 // ------------------------------------------------------------- recolour.json
 
@@ -41,6 +48,7 @@ const recolour = []
 for (const p of catalogue.products) {
 	const [base, ...others] = p.colours
 	for (const colour of others) {
+		if (colour.photos) continue
 		for (const photo of p.photos) {
 			recolour.push({
 				product: p.slug,
@@ -63,15 +71,17 @@ const lines = [
 	'',
 	'Written by `fetch-photos.mjs` from `core/sample/catalogue.json`; edit the catalogue, not this file.',
 	'',
-	'Each product was photographed in its first colour. Its other colours are colour',
-	'variants edited with ChatGPT from the original photo, which both licences allow.',
+	'Each product was photographed in its first colour. A colour listed below under',
+	'its own name was photographed too. Any other colour is a variant edited with',
+	'ChatGPT from the original photo, which both licences allow.',
 	'',
 	'| Product | Shot | Photographer | Photo | Licence |',
 	'| --- | --- | --- | --- | --- |',
 ]
 for (const p of catalogue.products) {
-	for (const photo of p.photos) {
-		lines.push(`| ${p.title} | ${photo.shot} | [${photo.photographer}](${photo.profile}) | [${photo.page.replace(/^https:\/\/(www\.)?/, '')}](${photo.page}) | [${photo.licence}](${catalogue.licences[photo.licence]}) |`)
+	for (const { colour, photo } of photographed(p)) {
+		const shot = colour === p.colours[0] ? photo.shot : `${photo.shot} (${colour.name.toLowerCase()})`
+		lines.push(`| ${p.title} | ${shot} | [${photo.photographer}](${photo.profile}) | [${photo.page.replace(/^https:\/\/(www\.)?/, '')}](${photo.page}) | [${photo.licence}](${catalogue.licences[photo.licence]}) |`)
 	}
 }
 await writeFile(join(here, 'CREDITS.md'), lines.join('\n') + '\n')
@@ -102,8 +112,8 @@ async function toWebp(buf) {
 let fetched = 0
 for (const p of catalogue.products) {
 	await mkdir(join(out, p.slug), { recursive: true })
-	for (const photo of p.photos) {
-		const target = join(out, file(p, p.colours[0], photo.shot))
+	for (const { colour, photo } of photographed(p)) {
+		const target = join(out, file(p, colour, photo.shot))
 		if (!force && (await exists(target))) continue
 		const res = await fetch(downloadUrl(photo.image))
 		if (!res.ok) throw new Error(`${photo.page}: HTTP ${res.status}`)
@@ -123,7 +133,7 @@ for (const p of catalogue.products) {
 		}
 		await writeFile(target, await toWebp(await img.toBuffer()))
 		fetched++
-		console.log(`fetched  ${file(p, p.colours[0], photo.shot)}`)
+		console.log(`fetched  ${file(p, colour, photo.shot)}`)
 	}
 }
 console.log(`${fetched} photograph(s) fetched; ${recolour.length} colour edits listed in recolour.json`)

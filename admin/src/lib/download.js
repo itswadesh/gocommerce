@@ -9,7 +9,9 @@
  * the two fold together.
  */
 
-import { request } from "$lib/api.js";
+import { apiErrorFrom, request } from "$lib/api.js";
+import { getToken } from "$lib/session.svelte.js";
+import { storeHeaders } from "$lib/store-scope.js";
 import { toast } from "$lib/toast.svelte.js";
 
 /**
@@ -44,6 +46,22 @@ export async function downloadFile(path, filename, type = "text/html") {
     try {
         const body = await request("GET", path, { raw: true });
         const url = URL.createObjectURL(new Blob([body], { type }));
+        save(url, filename);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        toast.error(err);
+    }
+}
+
+/**
+ * downloadBinary saves a file as its exact bytes. downloadFile reads through
+ * request(), which decodes a body as text and would damage a PDF or a photo.
+ */
+export async function downloadBinary(path, filename) {
+    try {
+        const response = await fetch(path, { headers: { Authorization: "Bearer " + getToken(), ...storeHeaders() } });
+        if (!response.ok) throw await apiErrorFrom(response);
+        const url = URL.createObjectURL(await response.blob());
         save(url, filename);
         URL.revokeObjectURL(url);
     } catch (err) {

@@ -97,3 +97,28 @@ func TestSigningInOnABrandSaysNothingOfAnotherBrandsStore(t *testing.T) {
 		t.Errorf("no store named on Beta's admin: role %q, want owner", got)
 	}
 }
+
+// An install with no brands answers under the name it was given, in place of the
+// engine's own, and Brands still wins where it is set.
+func TestAnInstallWithNoBrandsAnswersUnderItsOwnName(t *testing.T) {
+	app := newTestApp(t)
+	name := func() string {
+		t.Helper()
+		var st struct {
+			Brand struct{ Name string } `json:"brand"`
+		}
+		decodeData(t, do(t, app, http.MethodGet, "/api/admin/auth-state"), &st)
+		return st.Brand.Name
+	}
+	if got := name(); got != DefaultBrandName {
+		t.Fatalf("name = %q, want %q with nothing set", got, DefaultBrandName)
+	}
+	app.cfg.BrandName = "ShopNx"
+	if got := name(); got != "ShopNx" {
+		t.Fatalf("name = %q, want ShopNx", got)
+	}
+	app.cfg.Brands = []Brand{{Name: "Beta"}}
+	if got := name(); got != "Beta" {
+		t.Fatalf("name = %q, want the configured brand", got)
+	}
+}

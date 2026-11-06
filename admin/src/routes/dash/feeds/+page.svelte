@@ -28,6 +28,7 @@
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginFields from "$lib/components/PluginFields.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
     import { base } from "$app/paths";
     import { myStores } from "$lib/stores.svelte.js";
@@ -45,9 +46,17 @@
     let saving = $state(false);
     let checking = $state(false);
     let form = $state({});
+    // The form as resetForm built it, so neither its defaults nor the address
+    // it prefills count as an edit.
+    let savedForm = $state("");
+    const dirty = $derived(!!plugin && JSON.stringify(form) !== savedForm);
     let tab = $state("google");
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
+    // An install answers for many stores, so a Merchant Center or Meta fetch has
+    // to say which one; it holds no session and no store of its own (D232).
+    const storeQuery = $derived(myStores.current?.slug ? `?store=${encodeURIComponent(myStores.current.slug)}` : "");
+    const feedURL = (path) => origin + path + storeQuery;
 
     /*
      * An unset storefront URL starts as the store's own address: `domain` is
@@ -86,6 +95,7 @@
         }
         if (needsURL && !filled(draft.storefront_url)) draft.storefront_url = shopURL;
         form = draft;
+        savedForm = JSON.stringify(draft);
     }
 
     async function check() {
@@ -132,10 +142,10 @@
         }
     }
 
-    // Enter in a field saves, like the Save button.
+    // A one-field form still submits on Enter.
     function submit(e) {
         e.preventDefault();
-        if (writable && !saving) save();
+        if (writable && dirty && !saving) save();
     }
 
     async function save() {
@@ -309,6 +319,8 @@
 
 <div class="page page-feeds shopify-skin">
     <div class="page-content">
+        <SaveBar dirty={dirty && writable} {saving} onsave={save} ondiscard={resetForm} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item txt-sm txt-hint">Content</div>
@@ -430,15 +442,15 @@
                                     <span class="txt-bold">{link.label}</span>
                                     <span class="txt-hint txt-sm">{link.hint}</span>
                                 </div>
-                                <a class="feed-link-url txt-code" href={origin + link.path} target="_blank" rel="noreferrer"
-                                    >{origin}{link.path}</a
+                                <a class="feed-link-url txt-code" href={feedURL(link.path)} target="_blank" rel="noreferrer"
+                                    >{feedURL(link.path)}</a
                                 >
                                 <div class="feed-link-actions">
-                                    <button type="button" class="btn sm secondary" onclick={() => copy(origin + link.path)}>
+                                    <button type="button" class="btn sm secondary" onclick={() => copy(feedURL(link.path))}>
                                         <i class="ri-file-copy-line" aria-hidden="true"></i>
                                         <span class="txt">Copy</span>
                                     </button>
-                                    <a class="btn sm transparent secondary" href={origin + link.path} target="_blank" rel="noreferrer">
+                                    <a class="btn sm transparent secondary" href={feedURL(link.path)} target="_blank" rel="noreferrer">
                                         <i class="ri-external-link-line" aria-hidden="true"></i>
                                         <span class="txt">Open</span>
                                     </a>
@@ -562,28 +574,16 @@
                             and it fills in here, or type the address the shop is on.
                         </p>
                     {:else if needsURL && !filled(plugin.settings?.storefront_url) && form.storefront_url === shopURL}
-                        <p class="txt-hint txt-sm m-t-sm">Filled in from the store's domain. Save to use it.</p>
-                    {/if}
-                    {#if writable}
-                        <div class="feed-form-actions">
-                            <button
-                                type="submit"
-                                form="feed-settings"
-                                class="btn sm"
-                                class:loading={saving}
-                                disabled={saving}
-                            >
-                                <span class="txt">Save</span>
-                            </button>
-                            <button
-                                type="button"
-                                class="btn sm transparent secondary"
-                                disabled={saving}
-                                onclick={resetForm}
-                            >
-                                <span class="txt">Discard</span>
-                            </button>
-                        </div>
+                        <p class="txt-hint txt-sm m-t-sm">Filled in from the store's domain.{dirty ? " Save to use it." : ""}</p>
+                        <!-- The prefill is a suggestion, not an edit, so it raises
+                             no bar; this is how it gets taken as it stands. -->
+                        {#if writable && !dirty}
+                            <div class="feed-form-actions">
+                                <button type="button" class="btn sm" class:loading={saving} disabled={saving} onclick={save}>
+                                    <span class="txt">Use this address</span>
+                                </button>
+                            </div>
+                        {/if}
                     {/if}
                 </div>
             </details>

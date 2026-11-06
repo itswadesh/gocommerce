@@ -212,6 +212,12 @@ func (m *Module) Notify(ctx context.Context, n gocommerce.Notification) error {
 			"event", n.Event, "to", n.To, "channel", n.Channel)
 		return nil
 	}
+	if n.From != "" {
+		s.from, s.defaulted = n.From, false
+	}
+	if n.Body != "" {
+		return m.send(ctx, s, n.To, n.Event, n.Subject, n.Body)
+	}
 	tpl, ok, err := m.app.NotifyTemplates().GetIn(ctx, gocommerce.ChannelEmail, n.Event, n.Language)
 	if err != nil {
 		return err

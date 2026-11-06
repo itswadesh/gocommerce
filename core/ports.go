@@ -297,6 +297,12 @@ type Notification struct {
 	// notification log keeps "(hidden)" in their place, because its table is
 	// readable by more people than the one the key is for.
 	Secrets []string `json:"-"`
+	// Body, when set, is the message as somebody wrote it: a backend sends it and
+	// Subject as they are, with no template. From replaces the backend's sender.
+	// None is stored or logged, because a written body can hold a live link.
+	Subject string `json:"-"`
+	Body    string `json:"-"`
+	From    string `json:"-"`
 }
 
 // --------------------------------------------------------------- i18n

@@ -611,12 +611,12 @@ draws no AI credit.
 
 A store can start with a sample shop (D94, D96): `POST /api/stores/create` with
 `"sample_content": true` (`"sample_products"` is still taken), or
-`app.AddSampleShop(ctx)` for the store `ctx` is bound to. It makes the eleven
+`app.AddSampleShop(ctx)` for the store `ctx` is bound to. It makes the twenty-four
 active, stocked garments of `core/sample/catalogue.json` (D159) through
 `CreateProduct`, every colour's variants showing that colour's photographs,
 linked from the binary (`SampleMediaPrefix`, `/sample-media/2/`); they are
 priced in rupees for a store selling in rupees, and otherwise at the
-catalogue's dollar figure as a face value in the store's major units. Eight
+catalogue's dollar figure as a face value in the store's major units. Ten
 categories they are filed in, under Women and Men; two collections; two
 percentage discounts scoped to the sample products; and twelve orders through
 the orders importer, numbered `SAMPLE-1001` on, which move no stock and fire no
@@ -654,10 +654,10 @@ the whole sample shop.
   [inventory](inventory.md) so every change is a delta under a row lock rather
   than an overwrite of a number another request just changed.
 - **Expecting a per-product currency.** There is none: a store has one
-  (D85). It can change only until the store's first order, and a change
-  relabels the store's products and open carts without moving the stored
-  minor units — which is exactly why a currency switch is a business decision,
-  not a migration.
+  (D85). It can change only until an order is paid or sent out (D212), and a
+  change relabels the store's products, open carts and sample orders without
+  moving the stored minor units — which is exactly why a currency switch is a
+  business decision, not a migration. A real unpaid order keeps its currency.
 - **Assuming a draft product 403s.** It 404s. A test asserting 403 is asserting
   an information leak.
 - **Sending an unknown field in a patch.** `DecodeJSON` uses
