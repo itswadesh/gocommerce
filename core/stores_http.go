@@ -211,6 +211,8 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		// Country is where the store is: its profile's country, and what its
 		// default shipping zone covers. Empty is a zone covering everywhere.
 		Country string `json:"country"`
+		// Timezone is the profile's IANA name; empty is UTC (Profile.Timezone).
+		Timezone string `json:"timezone"`
 		// SampleContent starts the store with the sample shop (D96).
 		SampleContent bool `json:"sample_content"`
 		// SampleProducts is SampleContent's name before the samples grew past
@@ -234,6 +236,13 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	if in.Country != "" && !countryRE.MatchString(in.Country) {
 		RespondError(w, r, Validationf("country is a two-letter ISO code, such as %q", "IN"))
 		return
+	}
+	in.Timezone = strings.TrimSpace(in.Timezone)
+	if in.Timezone != "" {
+		if _, err := time.LoadLocation(in.Timezone); err != nil {
+			RespondError(w, r, Validationf("%q is not a timezone this server can read; use an IANA name such as %q", in.Timezone, "Asia/Kolkata"))
+			return
+		}
 	}
 	ctx := r.Context()
 	var owner int64
@@ -265,6 +274,12 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 	if in.Country != "" {
 		if _, err := a.db.ExecContext(bound, `UPDATE store_profile SET country = $1`, in.Country); err != nil {
 			RespondError(w, r, Internalf(err, "set the new store's country"))
+			return
+		}
+	}
+	if in.Timezone != "" {
+		if _, err := a.db.ExecContext(bound, `UPDATE store_profile SET timezone = $1`, in.Timezone); err != nil {
+			RespondError(w, r, Internalf(err, "set the new store's timezone"))
 			return
 		}
 	}

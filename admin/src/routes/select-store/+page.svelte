@@ -16,8 +16,9 @@
     import { takeStoreName } from "$lib/store-name.js";
     import { toast } from "$lib/toast.svelte.js";
     import { currencyOptions } from "$lib/currencies.js";
-    import { COUNTRIES, currencyOf } from "$lib/countries.js";
+    import { COUNTRIES, currencyOf, timezoneOf, timezoneOptions } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
+    import ZoneClock from "$lib/components/ZoneClock.svelte";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -82,6 +83,9 @@
     // settings until an order is paid or sent out.
     let pickedCurrency = $state("");
     const currency = $derived(pickedCurrency || currencyOf(country));
+    // What "today" means on its invoices and reports, the same way.
+    let pickedTimezone = $state("");
+    const timezone = $derived(pickedTimezone || timezoneOf(country));
     // Off unless asked: a sample nobody wanted is something to clean up (D94, D96).
     let sampleContent = $state(false);
 
@@ -134,7 +138,7 @@
             // An address is sent only when somebody typed one. One worked out
             // from the name is the engine's to work out, so a taken one gets a
             // number rather than a refusal.
-            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, sampleContent);
+            const entry = await createStore(name.trim(), slugTouched ? slug.trim() : "", currency, country, timezone, sampleContent);
             // The store opened either way; this says only that its samples did not all arrive.
             if (entry.sample_content?.error) toast.warning(entry.sample_content.error);
             await reloadStoreData();
@@ -243,6 +247,18 @@
                 </div>
                 <div class="link-hint m-t-5">
                     <small>What the store sells in. You can change it until an order is paid or sent out.</small>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="field">
+                    <label for="store_timezone">Timezone</label>
+                    <Select id="store_timezone" bind:value={() => timezone, (zone) => (pickedTimezone = zone)} options={timezoneOptions(timezone)} placeholder="UTC" />
+                </div>
+                <div class="link-hint m-t-5">
+                    <small><ZoneClock zone={timezone} /></small>
+                </div>
+                <div class="link-hint m-t-5">
+                    <small>What "today" means on an invoice and in a report. You can change it on Store settings.</small>
                 </div>
             </div>
             <div class="col-12">

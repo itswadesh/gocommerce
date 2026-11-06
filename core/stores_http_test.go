@@ -410,6 +410,35 @@ func TestAStoreAndItsOwnerAreWrittenTogether(t *testing.T) {
 	}
 }
 
+func TestANewStoreTakesTheTimezoneItIsOpenedWith(t *testing.T) {
+	app := newTestApp(t)
+	tok := signInAs(t, app, "founder@example.com", RoleStaff)
+
+	rec := doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Nowhere","slug":"nowhere","timezone":"Mars/Olympus"}`, bearer(tok))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create with a bad timezone = %d: %s", rec.Code, rec.Body)
+	}
+	if _, err := app.Stores().BySlug(context.Background(), "nowhere"); err == nil {
+		t.Fatal("a refused timezone still opened a store")
+	}
+
+	rec = doBody(t, app, http.MethodPost, "/api/stores/create", `{"name":"Pune Shop","slug":"pune","timezone":"Asia/Kolkata"}`, bearer(tok))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body)
+	}
+	var made struct {
+		Store Store `json:"store"`
+	}
+	decodeData(t, rec, &made)
+	p, err := app.Profile().Get(WithStore(context.Background(), made.Store.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Timezone != "Asia/Kolkata" {
+		t.Fatalf("timezone = %q, want Asia/Kolkata", p.Timezone)
+	}
+}
+
 func TestANewStoreStartsWithTheSampleShopOnlyWhenAsked(t *testing.T) {
 	app := newTestApp(t)
 	tok := signInAs(t, app, "founder@example.com", RoleStaff)

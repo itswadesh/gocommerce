@@ -16697,6 +16697,10 @@
                     "pattern": "^[A-Za-z]{2}$",
                     "description": "Where the store is, an ISO 3166-1 alpha-2 code: its profile's country, and what its default shipping zone (\"Local\") covers. Empty is a default zone covering everywhere."
                   },
+                  "timezone": {
+                    "type": "string",
+                    "description": "The store's IANA timezone, such as Asia/Kolkata: what \"today\" means on an invoice and in a report. Empty is UTC."
+                  },
                   "sample_content": {
                     "type": "boolean",
                     "default": false,

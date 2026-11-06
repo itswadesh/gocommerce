@@ -300,6 +300,100 @@ export function currencyOf(country) {
 }
 
 /**
+ * The main zone of a country with several, where the browser's list comes in
+ * alphabetical order and would open a store in New York on Adak time; and of
+ * two places the list leaves out. Uninhabited places have no answer.
+ */
+const MAIN_ZONE = {
+    AR: "America/Argentina/Buenos_Aires", AU: "Australia/Sydney", BR: "America/Sao_Paulo", CA: "America/Toronto",
+    CD: "Africa/Kinshasa", CL: "America/Santiago", CN: "Asia/Shanghai", CQ: "Europe/Guernsey", CY: "Asia/Nicosia",
+    DE: "Europe/Berlin", EC: "America/Guayaquil", ES: "Europe/Madrid", FM: "Pacific/Pohnpei", GL: "America/Nuuk",
+    ID: "Asia/Jakarta", KI: "Pacific/Tarawa", KZ: "Asia/Almaty", MH: "Pacific/Majuro", MN: "Asia/Ulaanbaatar",
+    MX: "America/Mexico_City", MY: "Asia/Kuala_Lumpur", NZ: "Pacific/Auckland", PF: "Pacific/Tahiti", PG: "Pacific/Port_Moresby",
+    PS: "Asia/Hebron", PT: "Europe/Lisbon", RU: "Europe/Moscow", UA: "Europe/Kyiv", UM: "Pacific/Wake",
+    US: "America/New_York", UZ: "Asia/Tashkent", XK: "Europe/Belgrade",
+};
+
+/**
+ * timezoneOf is the zone to open a store in that country on: the browser's own
+ * when it is in that country, since a Pune shop and a Los Angeles one know their
+ * clock, else the country's only or main zone, else "".
+ *
+ * ponytail: Intl.Locale's zone list is missing from some browsers, where a
+ * one-zone country has no answer and the form shows UTC to change by hand. Carry
+ * a full table if that turns up among the people opening stores.
+ */
+export function timezoneOf(country) {
+    let zones = [];
+    try {
+        const locale = new Intl.Locale(`und-${country}`);
+        zones = locale.getTimeZones?.() ?? locale.timeZones ?? [];
+    } catch {
+        // No such region, or no country chosen: no zones.
+    }
+    try {
+        const here = new Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (zones.includes(here)) return here;
+        const zone = MAIN_ZONE[country] ?? (zones.length === 1 ? zones[0] : "");
+        // Spelled as this browser's own list spells it (Asia/Calcutta, Asia/Kolkata).
+        return zone && new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone;
+    } catch {
+        return "";
+    }
+}
+
+/** zoneOffset is a zone's distance from UTC at that moment: "+5:30", "-5:00", "+0:00". */
+export function zoneOffset(timeZone, at = new Date()) {
+    // en-US because other locales write the sign and the "GMT" their own way.
+    const gmt = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
+        .formatToParts(at)
+        .find((part) => part.type === "timeZoneName")?.value ?? "";
+    const [, sign = "+", hours = "0", minutes = "00"] = gmt.match(/GMT([+-])(\d+)(?::(\d+))?/) ?? [];
+    return `${sign}${hours}:${minutes}`;
+}
+
+let zoneList = null;
+
+/**
+ * The browser's zones, labelled with their country, because nobody looking for
+ * India's time would search "Asia/Calcutta". Sorted by that label, so a country's
+ * zones sit together. Built once: it asks about every country.
+ */
+function labelledZones() {
+    if (zoneList) return zoneList;
+    const countryOf = new Map();
+    for (const { value, label } of COUNTRIES) {
+        try {
+            const locale = new Intl.Locale(`und-${value}`);
+            for (const zone of locale.getTimeZones?.() ?? locale.timeZones ?? []) countryOf.set(zone, label);
+        } catch {
+            // Not a region this browser knows.
+        }
+    }
+    let zones = [];
+    try {
+        zones = Intl.supportedValuesOf("timeZone");
+    } catch {
+        // Older browsers: only what is saved.
+    }
+    zoneList = zones
+        .map((zone) => {
+            // Browsers still spell the city the old way, and people search the new one.
+            const name = zone === "Asia/Calcutta" ? "Asia/Calcutta (Kolkata)" : zone;
+            const country = countryOf.get(zone);
+            return { value: zone, label: country ? `${country}: ${name}` : name };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+    return zoneList;
+}
+
+/** timezoneOptions is the zones to choose from, keeping a saved one not listed. */
+export function timezoneOptions(saved) {
+    const zones = labelledZones();
+    return saved && !zones.some((z) => z.value === saved) ? [{ value: saved, label: saved }, ...zones] : zones;
+}
+
+/**
  * countryOptions is the list for a select whose saved value may predate it: a
  * value that is not a code on the list (a name typed into the old text box,
  * an import's "India") stays a choice, first, rather than the select showing
