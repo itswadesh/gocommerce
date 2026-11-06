@@ -19,7 +19,8 @@ test("a phone is offered only where the install says a code can be sent", () => 
     assert.match(login, /textsCode = \$derived\(canPhone && looksLikePhone\(identity\)\)/);
     assert.match(signup, /canPhone = !!s\.phone_signup/);
     assert.match(signup, /textsCode = \$derived\(canPhone && looksLikePhone\(email\)\)/);
-    assert.ok(account.includes("canPhone = !!(await auth.state()).phone_login"));
+    assert.ok(account.includes("canPhone = !!state.phone_login"));
+    assert.ok(account.includes("canEmail = !!state.password_reset"));
 });
 
 test("where sign-up is shut, the screen does not say a code was sent", () => {
@@ -68,4 +69,12 @@ test("one box first: the password stays hidden until an email has been given", (
 
 test("the installer still asks for an email and a password together", () => {
     assert.match(login, /if \(!installed\) step = "password"/);
+});
+
+test("somebody with no password can add an email and change their number, and is asked for no password", () => {
+    assert.match(account, /\{#if !hasPassword\}[\s\S]*?\{#if canEmail\}[\s\S]*?onsubmit=\{submitEmail\}/);
+    assert.match(account, /\{#if canPhone && \(!me\.phone \|\| !hasPassword\)\}/);
+    // Each password box on the phone forms sits behind hasPassword.
+    assert.match(account, /\{#if hasPassword\}\s*<div class="field required"[^>]*>\s*<label for="acc-phone-remove">/);
+    assert.match(account, /\{#if hasPassword\}\s*<div class="delimiter"><\/div>\s*<div class="field required">\s*<label for="acc-phone-password">/);
 });

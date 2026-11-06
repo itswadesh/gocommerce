@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -104,7 +105,21 @@ func atInstall(ctx context.Context) context.Context {
 }
 
 func loginCodeNote(to string) Notification {
-	return Notification{Event: EventLoginCode, Channel: ChannelSMS, To: to}
+	channel := ChannelSMS
+	if isEmailAddress(to) {
+		channel = ChannelEmail
+	}
+	return Notification{Event: EventLoginCode, Channel: channel, To: to}
+}
+
+func isEmailAddress(to string) bool { return strings.Contains(to, "@") }
+
+// maskAddress is an email or a phone as a log may keep it.
+func maskAddress(to string) string {
+	if isEmailAddress(to) {
+		return maskEmail(to)
+	}
+	return MaskPhone(to)
 }
 
 // phoneCanReach is whether a code for phone could leave on either channel it
@@ -135,10 +150,10 @@ func (a *App) phoneSignupOpen(ctx context.Context) bool {
 	return a.signupOpen(ctx) && a.notifier.carries(atInstall(ctx), loginCodeNote(reachProbe))
 }
 
-// storePhoneCode charges the limits and stores a new code as the phone's only
+// storeLoginCode charges the limits and stores a new code as the phone's only
 // open one, all under locks: a burst of requests counts one at a time, on
 // every replica. It writes the row whether or not the phone has an account.
-func (s *Superusers) storePhoneCode(ctx context.Context, phone, clientIP string) (string, error) {
+func (s *Superusers) storeLoginCode(ctx context.Context, phone, clientIP string) (string, error) {
 	code, err := newResetCode()
 	if err != nil {
 		return "", Internalf(err, "generate sign-in code")
@@ -155,10 +170,10 @@ func (s *Superusers) storePhoneCode(ctx context.Context, phone, clientIP string)
 		}
 		var recent, today, fromClient int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT count(*) FILTER (WHERE phone = $1 AND created_at > now() - interval '1 minute'),
-			       count(*) FILTER (WHERE phone = $1 AND created_at > now() - interval '1 day'),
+			SELECT count(*) FILTER (WHERE identity = $1 AND created_at > now() - interval '1 minute'),
+			       count(*) FILTER (WHERE identity = $1 AND created_at > now() - interval '1 day'),
 			       count(*) FILTER (WHERE client_hash = $2 AND created_at > now() - interval '1 hour')
-			FROM superuser_login_codes WHERE phone = $1 OR client_hash = $2`, phone, client).
+			FROM superuser_login_codes WHERE identity = $1 OR client_hash = $2`, phone, client).
 			Scan(&recent, &today, &fromClient); err != nil {
 			return Internalf(err, "count sign-in codes")
 		}
@@ -167,11 +182,11 @@ func (s *Superusers) storePhoneCode(ctx context.Context, phone, clientIP string)
 		}
 		// Only the latest code works.
 		if _, err := tx.ExecContext(ctx, `UPDATE superuser_login_codes SET consumed_at = now()
-			WHERE phone = $1 AND consumed_at IS NULL`, phone); err != nil {
+			WHERE identity = $1 AND consumed_at IS NULL`, phone); err != nil {
 			return Internalf(err, "retire sign-in codes")
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO superuser_login_codes (phone, code_hash, client_hash, expires_at)
+			INSERT INTO superuser_login_codes (identity, code_hash, client_hash, expires_at)
 			VALUES ($1, $2, $3, $4)`, phone, phoneCodeHash(phone, code), client, time.Now().Add(phoneCodeTTL)); err != nil {
 			return Internalf(err, "store sign-in code")
 		}
@@ -188,10 +203,10 @@ func (s *Superusers) storePhoneCode(ctx context.Context, phone, clientIP string)
 	return code, nil
 }
 
-// spendPhoneCode spends one try at phone's open code, and says whether it was
+// spendLoginCode spends one try at phone's open code, and says whether it was
 // right. Charged and matched in one statement, so a burst of guesses queues on
 // the row lock, and a right code is spent with its try.
-func (s *Superusers) spendPhoneCode(ctx context.Context, phone, code string) (bool, error) {
+func (s *Superusers) spendLoginCode(ctx context.Context, phone, code string) (bool, error) {
 	code = strings.TrimSpace(code)
 	if len(code) != phoneCodeLength {
 		return false, nil
@@ -201,7 +216,7 @@ func (s *Superusers) spendPhoneCode(ctx context.Context, phone, code string) (bo
 		WITH tried AS (
 			UPDATE superuser_login_codes SET attempts = attempts + 1,
 			       consumed_at = CASE WHEN code_hash = $2 THEN now() END
-			WHERE phone = $1 AND consumed_at IS NULL AND expires_at > now() AND attempts < $3
+			WHERE identity = $1 AND consumed_at IS NULL AND expires_at > now() AND attempts < $3
 			RETURNING code_hash)
 		SELECT true FROM tried WHERE code_hash = $2`,
 		phone, phoneCodeHash(phone, code), phoneCodeAttempts).Scan(&right)
@@ -226,11 +241,11 @@ func (s *Superusers) RequestPhoneCode(ctx context.Context, phone, clientIP strin
 	if s.app.cfg.Demo || !s.phoneCanReach(ctx, phone) {
 		return phoneUnavailable()
 	}
-	code, err := s.storePhoneCode(ctx, phone, clientIP)
+	code, err := s.storeLoginCode(ctx, phone, clientIP)
 	if err != nil {
 		return err
 	}
-	s.deliverPhoneCode(ctx, phone, code, 0)
+	s.deliverLoginCode(ctx, phone, code, 0)
 	return nil
 }
 
@@ -245,21 +260,21 @@ func (s *Superusers) RequestOwnPhoneCode(ctx context.Context, id int64, phone, c
 	if !s.phoneCanReach(ctx, phone) {
 		return phoneUnavailable()
 	}
-	code, err := s.storePhoneCode(ctx, phone, clientIP)
+	code, err := s.storeLoginCode(ctx, phone, clientIP)
 	if err != nil {
 		return err
 	}
-	s.deliverPhoneCode(ctx, phone, code, id)
+	s.deliverLoginCode(ctx, phone, code, id)
 	return nil
 }
 
-// deliverPhoneCode sends the code off the request goroutine. With id, to that
+// deliverLoginCode sends the code off the request goroutine. With id, to that
 // person; with none, to whoever holds the phone, or to a new person where
 // sign-up is open, and to nobody otherwise. A person's code goes on the channel
 // identityMailScope chooses, and a new person's on the install's: a store's
 // provider account is its owner's to read, and this code opens every store the
 // person works in.
-func (s *Superusers) deliverPhoneCode(reqCtx context.Context, phone, code string, id int64) {
+func (s *Superusers) deliverLoginCode(reqCtx context.Context, phone, code string, id int64) {
 	brand := s.app.Brand(reqCtx)
 	detached := context.WithoutCancel(reqCtx)
 	s.deliveries.Add(1)
@@ -286,7 +301,7 @@ func (s *Superusers) deliverPhoneCode(reqCtx context.Context, phone, code string
 		note := loginCodeNote(phone)
 		if !s.app.notifier.carries(scope, note) {
 			s.app.log.Warn("sign-in code not sent: nothing on this person's channel carries it; set up SMS for the install",
-				"to", MaskPhone(phone))
+				"to", maskAddress(phone))
 			return
 		}
 		note.Language = s.app.cfg.DefaultLanguage
@@ -299,8 +314,11 @@ func (s *Superusers) deliverPhoneCode(reqCtx context.Context, phone, code string
 		defer cancel()
 		if err := s.app.notifier.send(ctx, note); err != nil {
 			// A provider's refusal can quote the number it refused.
-			s.app.log.Error("sign-in code could not be sent", "to", MaskPhone(phone),
-				"error", MaskPhoneIn(err.Error(), phone))
+			reason := strings.ReplaceAll(err.Error(), phone, maskAddress(phone))
+			if !isEmailAddress(phone) {
+				reason = MaskPhoneIn(reason, phone)
+			}
+			s.app.log.Error("sign-in code could not be sent", "to", maskAddress(phone), "error", reason)
 		}
 	}()
 }
@@ -329,7 +347,7 @@ func (s *Superusers) VerifyPhoneCode(ctx context.Context, phone, code string) (*
 	if s.app.cfg.Demo {
 		return nil, nil, false, phoneUnavailable()
 	}
-	right, err := s.spendPhoneCode(ctx, phone, code)
+	right, err := s.spendLoginCode(ctx, phone, code)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -418,7 +436,7 @@ func (s *Superusers) SetOwnPhone(ctx context.Context, id int64, currentPassword,
 	if err := s.checkOwnPassword(ctx, id, currentPassword); err != nil {
 		return nil, err
 	}
-	right, err := s.spendPhoneCode(ctx, phone, code)
+	right, err := s.spendLoginCode(ctx, phone, code)
 	if err != nil {
 		return nil, err
 	}
@@ -446,10 +464,90 @@ func (s *Superusers) checkOwnPassword(ctx context.Context, id int64, password st
 	if err != nil {
 		return Internalf(err, "read superuser")
 	}
-	if !verifyPassword(hash, password) {
+	// Somebody who signed up with a phone has no password to be asked for, and
+	// would otherwise have no way to change how they sign in (D195).
+	//
+	// ponytail: for them an unlocked laptop is enough to add a way in, since the
+	// code proves the new address and nothing proves the person. A code to the
+	// address already on the account would close that, but not for a lost SIM,
+	// which is the case this is here for.
+	if hash != "" && !verifyPassword(hash, password) {
 		return Forbiddenf("your current password is not correct")
 	}
 	return nil
+}
+
+// RequestOwnEmailCode emails a code to an address a signed-in person wants on
+// their account. It shares the codes and limits a phone's have, keyed by the
+// address.
+func (s *Superusers) RequestOwnEmailCode(ctx context.Context, id int64, email, clientIP string) error {
+	email, err := checkedEmail(email)
+	if err != nil {
+		return err
+	}
+	if !s.app.notifier.delivers(atInstall(ctx), ChannelEmail) && !s.app.notifier.delivers(ctx, ChannelEmail) {
+		return &APIError{Status: http.StatusConflict, Code: "email_unavailable", Message: "this install cannot send email yet"}
+	}
+	code, err := s.storeLoginCode(ctx, email, clientIP)
+	if err != nil {
+		return err
+	}
+	s.deliverLoginCode(ctx, email, code, id)
+	return nil
+}
+
+// SetOwnEmail puts email on person id's account, once its code proves the
+// address is theirs. They sign in with it by its password: somebody who has none
+// chooses one through the reset, which is what brings them back after a lost SIM.
+func (s *Superusers) SetOwnEmail(ctx context.Context, id int64, currentPassword, email, code string) (*Superuser, error) {
+	email, err := checkedEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkOwnPassword(ctx, id, currentPassword); err != nil {
+		return nil, err
+	}
+	right, err := s.spendLoginCode(ctx, email, code)
+	if err != nil {
+		return nil, err
+	}
+	if !right {
+		return nil, wrongPhoneCode()
+	}
+	rights, err := s.roles.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var su *Superuser
+	err = InTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
+		su, err = scanSuperuser(tx.QueryRowContext(ctx, `UPDATE superusers SET email = $2, updated_at = now()
+			WHERE id = $1 RETURNING `+superuserColumns, id, email))
+		switch {
+		case isUniqueViolation(err):
+			return Conflictf("%s already signs in to another account here", email)
+		case err != nil:
+			return Internalf(err, "set email")
+		}
+		return writeAudit(ctx, tx, auditRecord{
+			Action: AuditSuperuserSelfUpdate, Entity: AuditEntitySuperuser,
+			ID: su.ID, Label: su.who(), Summary: "Changed the email on their account",
+			After: map[string]any{"email_changed": true},
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	su.Rights = rights[su.Role]
+	return su, nil
+}
+
+func checkedEmail(email string) (string, error) {
+	email = normalizeEmail(email)
+	if _, err := mail.ParseAddress(email); err != nil {
+		return "", Validationf("%q is not a valid email address", email)
+	}
+	return email, nil
 }
 
 func (s *Superusers) writeOwnPhone(ctx context.Context, id int64, phone, summary string) (*Superuser, error) {
@@ -603,6 +701,43 @@ func (a *App) handleSetMyPhone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updated, err := a.superusers.SetOwnPhone(r.Context(), su.ID, in.CurrentPassword, in.Phone, in.Code)
+	respondOr(w, r, updated, err)
+}
+
+func (a *App) handleRequestMyEmailCode(w http.ResponseWriter, r *http.Request) {
+	su := personCaller(w, r)
+	if su == nil {
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if err := a.superusers.RequestOwnEmailCode(r.Context(), su.ID, in.Email, clientIP(r)); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusAccepted, map[string]int{"expires_in_minutes": int(phoneCodeTTL / time.Minute)})
+}
+
+func (a *App) handleSetMyEmail(w http.ResponseWriter, r *http.Request) {
+	su := personCaller(w, r)
+	if su == nil {
+		return
+	}
+	var in struct {
+		CurrentPassword string `json:"current_password"`
+		Email           string `json:"email"`
+		Code            string `json:"code"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	updated, err := a.superusers.SetOwnEmail(r.Context(), su.ID, in.CurrentPassword, in.Email, in.Code)
 	respondOr(w, r, updated, err)
 }
 

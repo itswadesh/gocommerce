@@ -10963,7 +10963,7 @@
           "admin:auth"
         ],
         "summary": "Sign in with this phone from now on",
-        "description": "Needs the code texted to the number and your current password, as any change of how you sign in does. A number that opens another account is 409. A person with no password has none to give, so this is 403 for them.",
+        "description": "Needs the code texted to the number, and your current password if you have one. A number that opens another account is 409.",
         "security": [
           {
             "adminToken": []
@@ -10977,8 +10977,7 @@
                 "type": "object",
                 "required": [
                   "phone",
-                  "code",
-                  "current_password"
+                  "code"
                 ],
                 "properties": {
                   "phone": {
@@ -11033,7 +11032,7 @@
           "admin:auth"
         ],
         "summary": "Stop signing in with your phone",
-        "description": "Needs your current password, and an email to go on signing in with.",
+        "description": "Needs your current password if you have one, and an email to go on signing in with.",
         "security": [
           {
             "adminToken": []
@@ -11045,9 +11044,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "current_password"
-                ],
                 "properties": {
                   "current_password": {
                     "type": "string",
@@ -17767,6 +17763,137 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/me/email/code": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Email a code to an address you want on your account",
+        "description": "Shares its limits with the codes texted to a phone: one a minute and five a day for the address, twenty an hour for a client.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Taken."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "409": {
+            "description": "Nothing could send this email (`email_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many codes (`too_many_attempts`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/me/email": {
+      "put": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Put this email on your account",
+        "description": "Needs the code emailed to the address, and your current password if you have one. An address that opens another account is 409. It signs in with a password, so somebody with none chooses one through the password reset.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "code"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "current_password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "description": "The current password is not right.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "description": "The code is wrong, spent or expired (`invalid_code`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
