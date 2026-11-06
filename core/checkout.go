@@ -86,7 +86,7 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 		// which it was.
 		return nil, NotFoundf("no payment method named %q", code)
 	}
-	if err := validateCheckoutInput(&in); err != nil {
+	if err := validateCheckoutInput(ctx, &in); err != nil {
 		return nil, err
 	}
 
@@ -339,7 +339,8 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// address is. One physical line and the whole basket is a parcel.
 		physical := false
 		for _, l := range lines {
-			if l.RequiresShipping {
+			// Goods handed over at a counter are not sent anywhere, whatever they are.
+			if l.RequiresShipping && !isCounterSale(ctx) {
 				physical = true
 				break
 			}
@@ -832,12 +833,13 @@ func loadCheckoutLines(ctx context.Context, tx *sql.Tx, cartID int64) ([]checkou
 	return lines, rows.Err()
 }
 
-func validateCheckoutInput(in *CheckoutInput) error {
+func validateCheckoutInput(ctx context.Context, in *CheckoutInput) error {
 	in.Email = strings.TrimSpace(in.Email)
 	if in.CartID == "" {
 		return Validationf("cart_id is required")
 	}
-	if in.Email == "" || !strings.Contains(in.Email, "@") {
+	counter := isCounterSale(ctx)
+	if !counter && (in.Email == "" || !strings.Contains(in.Email, "@")) {
 		return Validationf("a valid email is required")
 	}
 	// The note is the shop's, not the shopper's. POST /api/checkout/{code} is
@@ -854,6 +856,9 @@ func validateCheckoutInput(in *CheckoutInput) error {
 	// transaction, which is where validation belongs.
 	if _, taken := in.Metadata[OrderNoteKey]; taken {
 		return Validationf("metadata key %q is reserved for the shop's own note on an order", OrderNoteKey)
+	}
+	if counter {
+		return nil
 	}
 	return in.Address.Validate()
 }
@@ -915,7 +920,16 @@ type NewOrderInput struct {
 	// a shopper's choice is — against the address typed above and the groups
 	// it is in (D76). Omitted takes the first option, as checkout does.
 	ShippingRateID *int64 `json:"shipping_rate_id,omitempty"`
+	// Counter is a sale made in person, to nobody in particular (D211): no
+	// email or address is needed, and nothing is charged for delivery. Address, if
+	// any, is only where the sale happened, for tax. Not in JSON, so it takes a
+	// module's Go code and cannot arrive over POST /api/admin/orders.
+	Counter bool `json:"-"`
 }
+
+type counterSaleKey struct{}
+
+func isCounterSale(ctx context.Context) bool { return ctx.Value(counterSaleKey{}) != nil }
 
 // NewOrderLine is one variant and how many of it.
 type NewOrderLine struct {
@@ -947,8 +961,43 @@ type NewOrderLine struct {
 // It is never handed out, so it needs no token of its own beyond the one the
 // cart service mints.
 func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult, error) {
+	ctx, code, cart, err := s.cartForNewOrder(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	// No idempotency key: the operator is a person clicking a button, and the
+	// panel does not retry. A caller that wants replay protection can check out
+	// the cart itself with a key.
+	return s.Checkout(ctx, code, in.checkoutInput(cart), "")
+}
+
+// Preview is what Create would charge, from the checkout's own arithmetic, with
+// nothing placed. The cart it builds is left to expire as an abandoned one would.
+func (s *Orders) Preview(ctx context.Context, in NewOrderInput) (*CheckoutQuote, error) {
+	ctx, code, cart, err := s.cartForNewOrder(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return s.Quote(ctx, code, in.checkoutInput(cart))
+}
+
+func (in NewOrderInput) checkoutInput(cart string) CheckoutInput {
+	return CheckoutInput{
+		CartID:         cart,
+		Email:          in.Email,
+		Phone:          in.Phone,
+		Name:           in.Name,
+		Address:        in.Address,
+		Metadata:       in.Metadata,
+		ShippingRateID: in.ShippingRateID,
+	}
+}
+
+// cartForNewOrder builds the cart an operator's order is checked out from, and
+// returns the context and payment code to check it out under.
+func (s *Orders) cartForNewOrder(ctx context.Context, in NewOrderInput) (context.Context, string, string, error) {
 	if len(in.Lines) == 0 {
-		return nil, Validationf("an order needs at least one line")
+		return ctx, "", "", Validationf("an order needs at least one line")
 	}
 	// AddLine merges a variant named twice into one line, and one line has one
 	// price — so two different agreed prices for the same variant cannot both
@@ -959,16 +1008,19 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 			continue
 		}
 		if *l.UnitPriceMinor < 0 {
-			return nil, Validationf("unit_price_minor must not be negative")
+			return ctx, "", "", Validationf("unit_price_minor must not be negative")
 		}
 		if prev, ok := agreed[l.VariantID]; ok && prev != *l.UnitPriceMinor {
-			return nil, Validationf("variant %d is listed twice at two different prices", l.VariantID)
+			return ctx, "", "", Validationf("variant %d is listed twice at two different prices", l.VariantID)
 		}
 		agreed[l.VariantID] = *l.UnitPriceMinor
 	}
 	// Every checkout guard is told this order is being placed on someone's
 	// behalf rather than by a token holder (D67).
 	ctx = withByOperator(ctx)
+	if in.Counter {
+		ctx = context.WithValue(ctx, counterSaleKey{}, true)
+	}
 	code := strings.TrimSpace(in.PaymentMethod)
 	if code == "" {
 		code = CodeCOD
@@ -978,14 +1030,14 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 		// off (D102), "no payment method named cod" would blame a code the
 		// operator never typed.
 		if strings.TrimSpace(in.PaymentMethod) == "" {
-			return nil, Validationf("choose a payment method: cash on delivery, the default, is switched off for this store")
+			return ctx, "", "", Validationf("choose a payment method: cash on delivery, the default, is switched off for this store")
 		}
-		return nil, NotFoundf("no payment method named %q", code)
+		return ctx, "", "", NotFoundf("no payment method named %q", code)
 	}
 
 	cart, err := s.app.carts.Create(ctx, in.Email)
 	if err != nil {
-		return nil, err
+		return ctx, "", "", err
 	}
 	// The operator is the proof (D66): somebody signed in to the panel, under
 	// orders.write, typed this customer's address, so the order is priced as
@@ -994,23 +1046,23 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	// the right figure the first time.
 	if strings.TrimSpace(in.Email) != "" {
 		if _, err := s.app.carts.VerifyEmail(ctx, cart.Token, in.Email); err != nil {
-			return nil, err
+			return ctx, "", "", err
 		}
 	}
 	for _, l := range in.Lines {
 		if l.Quantity <= 0 {
-			return nil, Validationf("every line needs a quantity")
+			return ctx, "", "", Validationf("every line needs a quantity")
 		}
 		// AddLine is the shopper's own path, so an inactive variant or one the
 		// shelf cannot cover is refused here in the same words the storefront
 		// would use — before any order exists to be half-made.
 		if _, err := s.app.carts.AddLine(ctx, cart.Token, l.VariantID, l.Quantity); err != nil {
-			return nil, err
+			return ctx, "", "", err
 		}
 	}
 	for variantID, price := range agreed {
 		if err := s.app.carts.agreePrice(ctx, cart.Token, variantID, price); err != nil {
-			return nil, err
+			return ctx, "", "", err
 		}
 	}
 
@@ -1022,22 +1074,10 @@ func (s *Orders) Create(ctx context.Context, in NewOrderInput) (*CheckoutResult,
 	// before any stock is reserved.
 	if dc := strings.TrimSpace(in.DiscountCode); dc != "" {
 		if err := s.app.carts.SetDiscountCode(ctx, cart.Token, dc); err != nil {
-			return nil, err
+			return ctx, "", "", err
 		}
 	}
-
-	// No idempotency key: the operator is a person clicking a button, and the
-	// panel does not retry. A caller that wants replay protection can check out
-	// the cart itself with a key.
-	return s.Checkout(ctx, code, CheckoutInput{
-		CartID:         cart.Token,
-		Email:          in.Email,
-		Phone:          in.Phone,
-		Name:           in.Name,
-		Address:        in.Address,
-		Metadata:       in.Metadata,
-		ShippingRateID: in.ShippingRateID,
-	}, "")
+	return ctx, code, cart.Token, nil
 }
 
 // orderNumber is the next human order number in the store ctx is bound to:

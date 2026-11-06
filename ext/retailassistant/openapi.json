@@ -1564,6 +1564,209 @@
           }
         }
       }
+    },
+    "/api/admin/x/retailassistant/counter/lookup": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Find what a scanner read",
+        "description": "Exact on the barcode or SKU. Needs retailassistant.counter.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching variants, usually one"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/barcodes": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Save a scanned barcode on a variant",
+        "description": "Through the catalogue's service. Needs retailassistant.counter and catalog.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "variant_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "barcode": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs catalog.write"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/preview": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "What a basket comes to",
+        "description": "From the checkout's own arithmetic, with nothing placed. Needs retailassistant.counter.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "discount_bps": {
+                    "type": "integer"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "cash",
+                      "upi",
+                      "credit"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "money_seen": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The figures"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The discount is over the store's limit"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/sales": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Record a sale at the counter",
+        "description": "An order through core's own path, so stock moves once. Cash is paid; UPI is paid only with money_seen; credit is not. Needs an Idempotency-Key and retailassistant.counter.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "discount_bps": {
+                    "type": "integer"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "cash",
+                      "upi",
+                      "credit"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "money_seen": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The sale"
+          },
+          "200": {
+            "description": "The same press again, and the sale it already made"
+          },
+          "400": {
+            "description": "No Idempotency-Key, or a bad basket"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The discount is over the store's limit"
+          },
+          "409": {
+            "description": "Not enough stock"
+          }
+        }
+      }
     }
   }
 }
