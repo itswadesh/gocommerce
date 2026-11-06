@@ -35,8 +35,8 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 		t.Fatalf("add the sample shop: %v", err)
 	}
 	// Their returns page stays theirs, so two sample pages, and the footer
-	// links only those: eight categories in the header and two pages below.
-	want := gocommerce.SampleCounts{"products": 11, "orders": 12, "reviews": 11, "pages": 2, "faq": 5, "menu_links": 10, "banners": 5}
+	// links only those: ten categories in the header and two pages below.
+	want := gocommerce.SampleCounts{"products": 24, "orders": 12, "reviews": 11, "pages": 2, "faq": 5, "menu_links": 12, "banners": 5}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
@@ -70,8 +70,8 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 		}
 		tree = append(tree, it.URL+" ["+strings.Join(under, " ")+"]")
 	}
-	if got, want := strings.Join(tree, "\n"), "/categories/women [/categories/women-dresses /categories/women-jumpsuits /categories/women-ethnic-wear /categories/women-co-ord-sets]\n"+
-		"/categories/men [/categories/men-kurtas /categories/men-jackets]"; !strings.HasSuffix(got, want) {
+	if got, want := strings.Join(tree, "\n"), "/categories/women [/categories/women-dresses /categories/women-jumpsuits /categories/women-ethnic-wear /categories/women-co-ord-sets /categories/women-tops]\n"+
+		"/categories/men [/categories/men-kurtas /categories/men-jackets /categories/men-shirts]"; !strings.HasSuffix(got, want) {
 		t.Fatalf("header menu =\n%s\nwant it to end with\n%s", got, want)
 	}
 	rec := gctest.Request(t, app, http.MethodGet, "/x/navigation/menus/footer", nil)

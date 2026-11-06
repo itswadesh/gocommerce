@@ -430,12 +430,12 @@ func TestANewStoreStartsWithTheSampleShopOnlyWhenAsked(t *testing.T) {
 			} `json:"sample_content"`
 		}
 		decodeData(t, rec, &with)
-		if with.SampleContent == nil || with.SampleContent.Added["products"] != 11 ||
+		if with.SampleContent == nil || with.SampleContent.Added["products"] != 24 ||
 			with.SampleContent.Added["orders"] != 12 || with.SampleContent.Error != "" {
-			t.Fatalf("%s: sample_content = %+v, want 11 products and 12 orders added", field, with.SampleContent)
+			t.Fatalf("%s: sample_content = %+v, want 24 products and 12 orders added", field, with.SampleContent)
 		}
-		if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 11 {
-			t.Fatalf("the new store holds %d samples, want 11", got)
+		if got := sampleCount(t, app, WithStore(context.Background(), with.Store.ID)); got != 24 {
+			t.Fatalf("the new store holds %d samples, want 24", got)
 		}
 	}
 

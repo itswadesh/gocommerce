@@ -7,9 +7,11 @@
     { "slug": "women-jumpsuits", "title": "Jumpsuits", "parent": "women", "picture": "paisley-print-jumpsuit-black-front" },
     { "slug": "women-ethnic-wear", "title": "Ethnic wear", "parent": "women", "picture": "embroidered-lehenga-set-rani-pink-front" },
     { "slug": "women-co-ord-sets", "title": "Co-ord sets", "parent": "women", "picture": "ikat-print-co-ord-set-aqua-front" },
+    { "slug": "women-tops", "title": "Tops", "parent": "women", "picture": "floral-front-slit-top-pale-blue-front" },
     { "slug": "men", "title": "Men", "picture": "mens-embroidered-kurta-yellow-front" },
     { "slug": "men-kurtas", "title": "Kurtas", "parent": "men", "picture": "mens-kurta-pyjama-set-royal-blue-front" },
-    { "slug": "men-jackets", "title": "Jackets", "parent": "men", "picture": "mens-nehru-jacket-silver-front" }
+    { "slug": "men-jackets", "title": "Jackets", "parent": "men", "picture": "mens-nehru-jacket-silver-front" },
+    { "slug": "men-shirts", "title": "Shirts", "parent": "men", "picture": "mens-formal-shirt-white-front" }
   ],
   "collections": [
     { "slug": "new-arrivals", "title": "New arrivals", "description": "Recently added to the catalogue." },
@@ -327,6 +329,333 @@
       "low": ["Olive/S"],
       "photos": [
         { "shot": "front", "page": "https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY", "image": "https://images.unsplash.com/photo-1770359993283-a2c2f386584e", "photographer": "Noor Alam", "profile": "https://unsplash.com/@itsmenoor2022", "licence": "Unsplash License" }
+      ]
+    },
+    {
+      "slug": "white-saree-red-motifs",
+      "title": "White saree with red motifs",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A white saree scattered with small red motifs, with a woven red and gold border and a red pallu end. Shown with a red sleeveless blouse with a gold net yoke, which is not included.",
+      "highlights": ["Red motifs on white", "Woven red and gold border", "Stripes across the pallu", "Dry clean only"],
+      "hs_code": "5407",
+      "weight_grams": 580,
+      "price_minor": 349900,
+      "compare_at_minor": 429900,
+      "price_usd": 45,
+      "compare_at_usd": 55,
+      "sku": "WSR",
+      "sizes": ["Free size"],
+      "garment": "white saree (keep the red motifs and border red)",
+      "colours": [
+        { "name": "White", "code": "WHT", "hex": "#f4f1e8" }
+      ],
+      "sold_out": [],
+      "low": ["White/Free size"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/14205210/", "image": "https://images.pexels.com/photos/14205210/pexels-photo-14205210.jpeg", "photographer": "Vishal Adhikari", "profile": "https://www.pexels.com/@vishalcreation/", "licence": "Pexels License" },
+        { "shot": "detail", "page": "https://www.pexels.com/photo/14205208/", "image": "https://images.pexels.com/photos/14205208/pexels-photo-14205208.jpeg", "photographer": "Vishal Adhikari", "profile": "https://www.pexels.com/@vishalcreation/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "yellow-half-saree",
+      "title": "Yellow half saree with woven border",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A bright yellow half saree: a full pleated skirt with small woven dots, a matching drape edged with a wide grey and gold woven border, and a yellow blouse with sleeves in the border's weave.",
+      "highlights": ["Skirt, drape and blouse", "Wide grey and gold woven border", "Full pleated skirt", "Dry clean only"],
+      "badge": "Three-piece set",
+      "hs_code": "6204",
+      "weight_grams": 900,
+      "price_minor": 499900,
+      "price_usd": 62,
+      "sku": "YHS",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "yellow half saree (keep the border grey and gold)",
+      "colours": [
+        { "name": "Yellow", "code": "YLW", "hex": "#f2c814" }
+      ],
+      "sold_out": ["Yellow/XL"],
+      "low": ["Yellow/S"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/39358672/", "image": "https://images.pexels.com/photos/39358672/pexels-photo-39358672.jpeg", "photographer": "AA's Photography", "profile": "https://www.pexels.com/@aa-s-photography-2161967704/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "embroidered-straight-kurta",
+      "title": "Embroidered straight kurta",
+      "category": "women-ethnic-wear",
+      "collections": ["new-arrivals"],
+      "description": "A straight, calf-length kurta in pale pistachio, with tonal thread embroidery on the yoke and cuffs, leaf motifs across the body and a floral border at the hem and side slits. Shown with white trousers, which are not included.",
+      "highlights": ["Tonal thread embroidery", "Calf length with side slits", "Long sleeves", "Hand wash cold"],
+      "badge": "Thread embroidery",
+      "hs_code": "6204",
+      "weight_grams": 300,
+      "price_minor": 249900,
+      "price_usd": 32,
+      "sku": "EKT",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "kurta (leave the white trousers white)",
+      "colours": [
+        { "name": "Pistachio", "code": "PST", "hex": "#c5d6bb" }
+      ],
+      "sold_out": ["Pistachio/XS"],
+      "low": ["Pistachio/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/28512787/", "image": "https://images.pexels.com/photos/28512787/pexels-photo-28512787.jpeg", "photographer": "Neha Mishra", "profile": "https://www.pexels.com/@neha-mishra-1851906907/", "licence": "Pexels License" },
+        { "shot": "standing", "page": "https://www.pexels.com/photo/28512785/", "image": "https://images.pexels.com/photos/28512785/pexels-photo-28512785.jpeg", "photographer": "Neha Mishra", "profile": "https://www.pexels.com/@neha-mishra-1851906907/", "licence": "Pexels License" },
+        { "shot": "side", "page": "https://www.pexels.com/photo/28512786/", "image": "https://images.pexels.com/photos/28512786/pexels-photo-28512786.jpeg", "photographer": "Neha Mishra", "profile": "https://www.pexels.com/@neha-mishra-1851906907/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "printed-a-line-kurta",
+      "title": "Printed A-line kurta",
+      "category": "women-ethnic-wear",
+      "collections": ["new-arrivals"],
+      "description": "A calf-length A-line kurta in mustard with a large leaf print, a striped notched collar, a short button placket, three-quarter sleeves with striped cuffs and a side pocket. Shown with dark green trousers, which are not included.",
+      "highlights": ["Large leaf print", "Striped collar and cuffs", "Side pocket", "Hand wash cold"],
+      "hs_code": "6204",
+      "weight_grams": 340,
+      "price_minor": 199900,
+      "compare_at_minor": 249900,
+      "price_usd": 25,
+      "compare_at_usd": 32,
+      "sku": "PAK",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "printed kurta (leave the green trousers as they are)",
+      "colours": [
+        { "name": "Mustard", "code": "MST", "hex": "#d9a520" }
+      ],
+      "sold_out": ["Mustard/S"],
+      "low": ["Mustard/L"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/28213774/", "image": "https://images.pexels.com/photos/28213774/pexels-photo-28213774.jpeg", "photographer": "TAVSI APPAREL", "profile": "https://www.pexels.com/@tavsiapparel/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "kurta-set-printed-dupatta",
+      "title": "Red kurta set with printed dupatta",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit", "new-arrivals"],
+      "description": "A flared red kurta with gold lace at the neck, cuffs and hem and three-quarter sleeves, with matching red trousers and a long sheer dupatta. The colour you pick is the dupatta's, each in its own print; the kurta and trousers are red in all three.",
+      "highlights": ["Kurta, trousers and dupatta", "Gold lace trim", "Sheer dupatta in three prints", "Hand wash cold"],
+      "badge": "Three-piece set",
+      "hs_code": "6204",
+      "weight_grams": 620,
+      "price_minor": 399900,
+      "price_usd": 49,
+      "sku": "KDS",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "dupatta",
+      "colours": [
+        { "name": "Purple", "code": "PRP", "hex": "#5a2d72" },
+        { "name": "Green", "code": "GRN", "hex": "#1f7a45", "photos": [
+          { "shot": "front", "page": "https://www.pexels.com/photo/13584942/", "image": "https://images.pexels.com/photos/13584942/pexels-photo-13584942.jpeg", "photographer": "Abdullah khan", "profile": "https://www.pexels.com/@abdullah-khan-314140297/", "licence": "Pexels License" }
+        ] },
+        { "name": "Orange", "code": "ORG", "hex": "#e8791f", "photos": [
+          { "shot": "front", "page": "https://www.pexels.com/photo/13584946/", "image": "https://images.pexels.com/photos/13584946/pexels-photo-13584946.jpeg", "photographer": "Abdullah khan", "profile": "https://www.pexels.com/@abdullah-khan-314140297/", "licence": "Pexels License" }
+        ] }
+      ],
+      "sold_out": ["Green/XS"],
+      "low": ["Orange/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/13584941/", "image": "https://images.pexels.com/photos/13584941/pexels-photo-13584941.jpeg", "photographer": "Abdullah khan", "profile": "https://www.pexels.com/@abdullah-khan-314140297/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "teal-printed-kurta-dupatta",
+      "title": "Teal printed kurta with dupatta",
+      "category": "women-ethnic-wear",
+      "collections": ["festive-edit"],
+      "description": "A kurta in a teal geometric print, gathered at the waist below an embroidered yoke with small mirrors, with three-quarter sleeves and embroidered cuffs, and a plain aqua dupatta.",
+      "highlights": ["Kurta and dupatta", "Embroidered yoke with small mirrors", "Gathered at the waist", "Hand wash cold"],
+      "badge": "With dupatta",
+      "hs_code": "6204",
+      "weight_grams": 500,
+      "price_minor": 329900,
+      "compare_at_minor": 399900,
+      "price_usd": 42,
+      "compare_at_usd": 49,
+      "sku": "TKD",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "kurta and dupatta",
+      "colours": [
+        { "name": "Teal", "code": "TEL", "hex": "#2b7a78" }
+      ],
+      "sold_out": [],
+      "low": ["Teal/S"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/33363057/", "image": "https://images.pexels.com/photos/33363057/pexels-photo-33363057.jpeg", "photographer": "HEMANT SAINI", "profile": "https://www.pexels.com/@hemant-saini-2148893253/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "smocked-maxi-dress",
+      "title": "Smocked off-shoulder maxi dress",
+      "category": "women-dresses",
+      "collections": ["new-arrivals"],
+      "description": "An ankle-length dress in plain pink, with a smocked off-shoulder bodice, three-quarter puff sleeves with frilled cuffs and a full skirt finished with a deep frill at the hem.",
+      "highlights": ["Smocked off-shoulder bodice", "Puff sleeves with frilled cuffs", "Full skirt with a frilled hem", "Machine wash cold, gentle cycle"],
+      "hs_code": "6204",
+      "weight_grams": 400,
+      "price_minor": 259900,
+      "price_usd": 33,
+      "sku": "SMX",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "pink maxi dress",
+      "colours": [
+        { "name": "Pink", "code": "PNK", "hex": "#e8a0a8" }
+      ],
+      "sold_out": ["Pink/XL"],
+      "low": ["Pink/M"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/15528063/", "image": "https://images.pexels.com/photos/15528063/pexels-photo-15528063.jpeg", "photographer": "Jk Films", "profile": "https://www.pexels.com/@jk-films-394879512/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "floral-front-slit-top",
+      "title": "Floral front-slit top",
+      "category": "women-tops",
+      "collections": ["new-arrivals"],
+      "description": "A long, sheer top in a pale blue floral print, with a round neck, frilled shoulders, three-quarter sleeves and a frilled waist above a skirt that opens down the front. Shown with white jeans, which are not included.",
+      "highlights": ["Frilled waist, open front", "Frilled shoulders", "Three-quarter sleeves", "Machine wash cold"],
+      "hs_code": "6206",
+      "weight_grams": 240,
+      "price_minor": 199900,
+      "price_usd": 25,
+      "sku": "FST",
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "garment": "floral top (leave the white jeans white)",
+      "colours": [
+        { "name": "Pale blue", "code": "PBL", "hex": "#a9cfd0" }
+      ],
+      "sold_out": ["Pale blue/XS"],
+      "low": ["Pale blue/L"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/9322209/", "image": "https://images.pexels.com/photos/9322209/pexels-photo-9322209.jpeg", "photographer": "RAJESH KUMAR VERMA", "profile": "https://www.pexels.com/@rajeshverma/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "mens-formal-shirt",
+      "title": "Men's plain formal shirt",
+      "category": "men-shirts",
+      "collections": ["new-arrivals"],
+      "description": "A plain white shirt with a spread collar, a full button front and long sleeves with cuffs that fold back. Shown with grey trousers, which are not included.",
+      "highlights": ["Spread collar", "Full button front", "Long sleeves", "Machine wash cold"],
+      "hs_code": "6205",
+      "weight_grams": 240,
+      "price_minor": 199900,
+      "price_usd": 25,
+      "sku": "MFS",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "white shirt (leave the grey trousers as they are)",
+      "colours": [
+        { "name": "White", "code": "WHT", "hex": "#f4f1e8" }
+      ],
+      "sold_out": ["White/XXL"],
+      "low": ["White/S"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/12661575/", "image": "https://images.pexels.com/photos/12661575/pexels-photo-12661575.jpeg", "photographer": "veeru edits", "profile": "https://www.pexels.com/@veeru-edits-2043202/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "mens-black-shirt",
+      "title": "Men's black shirt",
+      "category": "men-shirts",
+      "collections": [],
+      "description": "A plain black shirt with a collar, a full button front and long sleeves that roll up. Shown with striped trousers, which are not included.",
+      "highlights": ["Plain black", "Full button front", "Sleeves that roll up", "Machine wash cold"],
+      "hs_code": "6205",
+      "weight_grams": 280,
+      "price_minor": 219900,
+      "price_usd": 29,
+      "sku": "MBS",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "black shirt (leave the striped trousers as they are)",
+      "colours": [
+        { "name": "Black", "code": "BLK", "hex": "#1a1a1a" }
+      ],
+      "sold_out": [],
+      "low": ["Black/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/5819413/", "image": "https://images.pexels.com/photos/5819413/pexels-photo-5819413.jpeg", "photographer": "Naveen sita", "profile": "https://www.pexels.com/@nani3026d/", "licence": "Pexels License", "crop": { "left": 0.12, "top": 0.14, "size": 0.72 } }
+      ]
+    },
+    {
+      "slug": "mens-textured-kurta",
+      "title": "Men's textured kurta",
+      "category": "men-kurtas",
+      "collections": ["festive-edit"],
+      "description": "A knee-length kurta in a tonal textured plum fabric, with a mandarin collar, a concealed placket and side slits. Shown with white churidar trousers, which are not included.",
+      "highlights": ["Tonal textured fabric", "Mandarin collar, concealed placket", "Knee length with side slits", "Machine wash cold"],
+      "hs_code": "6205",
+      "weight_grams": 320,
+      "price_minor": 229900,
+      "price_usd": 29,
+      "sku": "MTK",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "plum kurta (leave the white trousers white)",
+      "colours": [
+        { "name": "Plum", "code": "PLM", "hex": "#6d1f4d" }
+      ],
+      "sold_out": ["Plum/S"],
+      "low": ["Plum/XXL"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/9064117/", "image": "https://images.pexels.com/photos/9064117/pexels-photo-9064117.jpeg", "photographer": "Shazaf Zafar", "profile": "https://www.pexels.com/@shazafzafar/", "licence": "Pexels License" },
+        { "shot": "side", "page": "https://www.pexels.com/photo/9064116/", "image": "https://images.pexels.com/photos/9064116/pexels-photo-9064116.jpeg", "photographer": "Shazaf Zafar", "profile": "https://www.pexels.com/@shazafzafar/", "licence": "Pexels License" },
+        { "shot": "seated", "page": "https://www.pexels.com/photo/9064114/", "image": "https://images.pexels.com/photos/9064114/pexels-photo-9064114.jpeg", "photographer": "Shazaf Zafar", "profile": "https://www.pexels.com/@shazafzafar/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "mens-floral-velvet-blazer",
+      "title": "Men's floral velvet blazer",
+      "category": "men-jackets",
+      "collections": ["festive-edit"],
+      "description": "A navy velvet blazer with an all-over floral pattern, a black satin shawl lapel, a single button and a chest pocket. Shown over a dark shirt, which is not included.",
+      "highlights": ["All-over floral pattern", "Black satin shawl lapel", "Single button, chest pocket", "Dry clean only"],
+      "badge": "Shawl lapel",
+      "hs_code": "6203",
+      "weight_grams": 780,
+      "price_minor": 499900,
+      "compare_at_minor": 599900,
+      "price_usd": 62,
+      "compare_at_usd": 75,
+      "sku": "MVB",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "velvet blazer (keep the lapel black)",
+      "colours": [
+        { "name": "Navy", "code": "NVY", "hex": "#1f2a4d" }
+      ],
+      "sold_out": ["Navy/XXL"],
+      "low": ["Navy/M"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/16325764/", "image": "https://images.pexels.com/photos/16325764/pexels-photo-16325764.jpeg", "photographer": "THEMRSINGH", "profile": "https://www.pexels.com/@themrsingh-784412/", "licence": "Pexels License" }
+      ]
+    },
+    {
+      "slug": "mens-embroidered-sherwani",
+      "title": "Men's embroidered sherwani",
+      "category": "men-jackets",
+      "collections": ["festive-edit"],
+      "description": "A knee-length ivory sherwani with fine thread and sequin embroidery, a mandarin collar and covered buttons, with a matching stole edged in a wide embroidered border. Shown with white churidar trousers, which are not included; the side view also shows a turban and beads, which are not included either.",
+      "highlights": ["Sherwani and stole", "Thread and sequin embroidery", "Mandarin collar, covered buttons", "Dry clean only"],
+      "badge": "With stole",
+      "hs_code": "6203",
+      "weight_grams": 1200,
+      "price_minor": 999900,
+      "compare_at_minor": 1249900,
+      "price_usd": 125,
+      "compare_at_usd": 155,
+      "sku": "MSW",
+      "sizes": ["S", "M", "L", "XL", "XXL"],
+      "garment": "sherwani and stole",
+      "colours": [
+        { "name": "Ivory", "code": "IVR", "hex": "#efe6d2" }
+      ],
+      "sold_out": ["Ivory/S"],
+      "low": ["Ivory/XL"],
+      "photos": [
+        { "shot": "front", "page": "https://www.pexels.com/photo/11749506/", "image": "https://images.pexels.com/photos/11749506/pexels-photo-11749506.jpeg", "photographer": "aman ajimal Fashion Stylist", "profile": "https://www.pexels.com/@1054048/", "licence": "Pexels License" },
+        { "shot": "side", "page": "https://www.pexels.com/photo/11749504/", "image": "https://images.pexels.com/photos/11749504/pexels-photo-11749504.jpeg", "photographer": "aman ajimal Fashion Stylist", "profile": "https://www.pexels.com/@1054048/", "licence": "Pexels License" }
       ]
     }
   ]
