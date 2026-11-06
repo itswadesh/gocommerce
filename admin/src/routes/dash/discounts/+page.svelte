@@ -7,6 +7,7 @@
      * with the code and how far through its limit it is, and everything else is
      * the editor's problem.
      */
+    import { discountCodeProblem } from "$lib/discount-code.js";
     import { base } from "$app/paths";
     import { api, query } from "$lib/api.js";
     import { rowKey } from "$lib/rowkey.js";
@@ -175,6 +176,7 @@
     let open = $state(false);
     let editing = $state(null);
     let form = $state(blank());
+    const codeProblem = $derived(discountCodeProblem(form.code, editing?.code));
     let saving = $state(false);
 
     let confirmOpen = $state(false);
@@ -549,6 +551,7 @@
 
     async function save(event) {
         event?.preventDefault();
+        if (codeProblem) return toast.error(codeProblem);
         const body = payload();
         if (!body) return;
         saving = true;
@@ -995,6 +998,11 @@
                     type="text"
                     bind:value={form.code}
                     placeholder="SPRING24"
+                    maxlength={Math.max(20, editing?.code?.length ?? 0)}
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-invalid={!!codeProblem}
+                    aria-describedby="d-code-help"
                 />
             </div>
             <div class="delimiter"></div>
@@ -1003,8 +1011,11 @@
                 <input id="d-title" type="text" bind:value={form.title} />
             </div>
         </div>
-        <div class="field-help">
-            The code is what a shopper types, matched whatever case they type it in. Leave it empty
+        {#if codeProblem}
+            <div class="field-help txt-danger" role="alert">{codeProblem}</div>
+        {/if}
+        <div class="field-help" id="d-code-help">
+            Letters and digits, up to 20. The code is what a shopper types, matched whatever case they type it in. Leave it empty
             for a discount that applies on its own — those are stored but not applied yet.
         </div>
 
