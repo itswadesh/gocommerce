@@ -102,7 +102,7 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 			return nil, err
 		}
 		if result != nil {
-			return result, nil
+			return s.replayedPayment(ctx, provider, result, in, scope, idempotencyKey)
 		}
 		if resume != nil {
 			return s.initiatePayment(ctx, provider, resume, in, scope, idempotencyKey)
@@ -667,7 +667,30 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 
 // initiatePayment is phase B, outside any transaction.
 func (s *Orders) initiatePayment(ctx context.Context, provider PaymentProvider, o *Order, in CheckoutInput, scope, key string) (*CheckoutResult, error) {
-	intent, err := provider.Initiate(ctx, o, PayOptions{ReturnURL: in.ReturnURL, Data: in.PaymentData})
+	return s.startPayment(ctx, provider, provider.Initiate, o, in, scope, key)
+}
+
+// replayedPayment answers a checkout retried after its first answer went out,
+// which is a shopper paying again after closing the gateway's window (D231).
+func (s *Orders) replayedPayment(ctx context.Context, provider PaymentProvider, result *CheckoutResult, in CheckoutInput, scope, key string) (*CheckoutResult, error) {
+	o := result.Order
+	unpaid := o.PaymentStatus == PaymentPending || o.PaymentStatus == PaymentFailed
+	// Its stock has gone back, and money taken for it would have to be refunded
+	// by hand, so it is not offered for payment.
+	if unpaid && o.Status == OrderCancelled && result.Payment.Kind != IntentNone {
+		return nil, Conflictf("order %s was cancelled, so it can no longer be paid; please place a new order", o.Number)
+	}
+	resumer, ok := provider.(PaymentResumer)
+	if !ok || !unpaid {
+		return result, nil
+	}
+	return s.startPayment(ctx, provider, func(ctx context.Context, o *Order, opts PayOptions) (PaymentIntent, error) {
+		return resumer.ResumePayment(ctx, o, result.Payment, opts)
+	}, o, in, scope, key)
+}
+
+func (s *Orders) startPayment(ctx context.Context, provider PaymentProvider, start func(context.Context, *Order, PayOptions) (PaymentIntent, error), o *Order, in CheckoutInput, scope, key string) (*CheckoutResult, error) {
+	intent, err := start(ctx, o, PayOptions{ReturnURL: in.ReturnURL, Data: in.PaymentData})
 	if err != nil {
 		// The order stands, unpaid. A retry with the same key resumes here
 		// rather than reserving stock all over again.

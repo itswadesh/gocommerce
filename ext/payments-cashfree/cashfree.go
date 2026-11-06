@@ -352,6 +352,44 @@ func (m *Module) Initiate(ctx context.Context, order *gocommerce.Order, opts goc
 	}, nil
 }
 
+// ResumePayment implements gocommerce.PaymentResumer. A shopper who closed the
+// window pays again on the same Cashfree order, which takes attempts until one
+// succeeds and refunds a duplicate itself. A second Cashfree order would be safe
+// from neither: a UPI request approved after the window closed could then charge
+// both, with nothing to refund the second. So a new one is made only when
+// Cashfree says no payment can start on the first.
+func (m *Module) ResumePayment(ctx context.Context, order *gocommerce.Order, prior gocommerce.PaymentIntent, opts gocommerce.PayOptions) (gocommerce.PaymentIntent, error) {
+	if !m.refresh(ctx) {
+		return gocommerce.PaymentIntent{}, errNotConfigured
+	}
+	var out struct {
+		OrderStatus      string `json:"order_status"`
+		PaymentSessionID string `json:"payment_session_id"`
+	}
+	if err := m.do(ctx, http.MethodGet, "/orders/"+url.PathEscape(prior.Reference), nil, &out); err != nil {
+		return gocommerce.PaymentIntent{}, err
+	}
+	switch out.OrderStatus {
+	case "ACTIVE":
+		if out.PaymentSessionID == "" {
+			return gocommerce.PaymentIntent{}, errors.New("cashfree: the order came back without a payment session")
+		}
+		prior.ClientData["payment_session_id"] = out.PaymentSessionID
+		return prior, nil
+	case "PAID":
+		// The webhook has not landed. Recording it now tells the shopper, and
+		// the empty reference leaves the payment id this records in place.
+		if _, err := m.pay.CheckPayment(ctx, order.ID); err != nil {
+			return gocommerce.PaymentIntent{}, err
+		}
+		prior.Reference = ""
+		return prior, nil
+	case "EXPIRED", "TERMINATED":
+		return m.Initiate(ctx, order, opts)
+	}
+	return gocommerce.PaymentIntent{}, fmt.Errorf("cashfree: order %s cannot be paid while Cashfree has it as %q", order.Number, out.OrderStatus)
+}
+
 // Refund implements gocommerce.Refunder.
 func (m *Module) Refund(ctx context.Context, order *gocommerce.Order, amountMinor int64) error {
 	_, err := m.RefundWithReference(ctx, order, amountMinor)
