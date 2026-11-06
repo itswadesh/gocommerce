@@ -21,7 +21,7 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout and WhatsApp sign-in.
+Also not built: barcode checkout.
 
 ## Setting it up
 
@@ -47,6 +47,7 @@ through.
 | `RETAIL_ASSISTANT_DISPLAY_NUMBER` | The number as people dial it, shown when a store links a phone |
 | `RETAIL_ASSISTANT_QUIET_TO_STRANGERS` | `1` when the number is shared with another service: nobody unlinked gets a reply |
 | `RETAIL_ASSISTANT_TEMPLATE` | Optional. The name of a Meta-approved template for messages outside the 24-hour window (below) |
+| `RETAIL_ASSISTANT_LOGIN_TEMPLATE` | Optional. The name of a Meta-approved authentication template that carries panel sign-in codes (below) |
 | `RETAIL_ASSISTANT_FILE_KEY` | Optional. 32 random bytes in base64 that encrypt new files in the database |
 | `RETAIL_ASSISTANT_CLAMD_ADDR` | Optional. The `host:port` of a ClamAV daemon that scans new files |
 
@@ -107,6 +108,29 @@ to shopkeepers.** What a person sees in the panel is still English.
 **Stopping.** A phone can reply `STOP`, or `बंद`, to end confirmations in every store
 it is linked to, including any already queued. It can still send bills. An owner cannot
 tick it back on: the phone has to send `START`.
+
+## Signing in with a WhatsApp code
+
+The panel's sign-in screen already takes a phone number and asks for a code (D193).
+This sends that code on WhatsApp. Nothing else about signing in changes: the engine
+makes the code, limits the tries, checks it and issues the session, and a phone being
+linked to a store gives nobody a way in. A person still needs an operator account with
+that phone on it.
+
+1. In WhatsApp Manager, create an **Authentication** template with a copy-code button, in
+   English (`en`) and Hindi (`hi`), and wait for Meta to approve it.
+2. Set `RETAIL_ASSISTANT_LOGIN_TEMPLATE` to its name.
+
+It is the install's choice, for every number, because the answer to asking for a code
+must not depend on whose number it is.
+
+- **With MSG91** set up for sign-in codes, a person gets the same code by both SMS and
+  WhatsApp, and you pay for both. Remove the sign-in template from MSG91 to stop the SMS.
+- **With Twilio** or another SMS provider, WhatsApp takes over sign-in codes, so someone
+  not on WhatsApp cannot get one and has to sign in by email and password.
+
+The screen may still say the code was texted. Meta's real authentication template has
+not been tried.
 
 ## Reading PDFs and photos with AI
 
