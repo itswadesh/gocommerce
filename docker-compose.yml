@@ -149,6 +149,7 @@ services:
       RETAIL_ASSISTANT_LOGIN_TEMPLATE: ${RETAIL_ASSISTANT_LOGIN_TEMPLATE:-}
       PLATFORM_TELEGRAM_BOT_TOKEN: ${PLATFORM_TELEGRAM_BOT_TOKEN:-}
       PLATFORM_TELEGRAM_CHAT_ID: ${PLATFORM_TELEGRAM_CHAT_ID:-}
+      GOCOMMERCE_PLATFORM_OWNER_PHONE: ${GOCOMMERCE_PLATFORM_OWNER_PHONE:-}
       # GOCOMMERCE_ALLOW_PRIVATE_URLS is deliberately not passed through. It
       # lets the addresses a store sets — webhook endpoints, provider base
       # URLs — reach this server's own network, which is wrong wherever people

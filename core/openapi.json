@@ -16435,6 +16435,102 @@
         }
       }
     },
+    "/api/stores/directory": {
+      "get": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "List every store with its owners and counts",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Every store on the install, oldest first, suspended ones included, with how to reach its owners and how many products and orders it has. Only for the person whose proved phone number is GOCOMMERCE_PLATFORM_OWNER_PHONE; everybody else, the static admin token included, is refused.",
+        "responses": {
+          "200": {
+            "description": "Every store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "slug": { "type": "string" },
+                          "name": { "type": "string" },
+                          "status": { "type": "string" },
+                          "legal_name": { "type": "string" },
+                          "owners": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "email": { "type": "string" },
+                                "phone": { "type": "string" }
+                              }
+                            }
+                          },
+                          "products": { "type": "integer" },
+                          "orders": { "type": "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid credential."
+          },
+          "403": {
+            "description": "The caller is not the install's owner."
+          }
+        }
+      }
+    },
+    "/api/stores/directory/allowed": {
+      "get": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Say whether the caller may read the store list",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Lets the panel show its All stores link only to the one person who can open it.",
+        "responses": {
+          "200": {
+            "description": "Whether the caller may read GET /api/stores/directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "allowed": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid credential."
+          }
+        }
+      }
+    },
     "/api/stores/my": {
       "get": {
         "tags": [
