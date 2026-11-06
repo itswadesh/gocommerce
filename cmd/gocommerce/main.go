@@ -118,6 +118,7 @@ commands:
     gocommerce superuser update <email> <password>
     gocommerce superuser list
     gocommerce superuser disable|enable <email or phone>
+    gocommerce superuser phone <email or old phone> <new phone>
 
   taxonomy usage:
     gocommerce taxonomy import            Shopify's standard taxonomy (embedded),
@@ -179,6 +180,12 @@ environment:
                     answers at <slug>.<base domain>
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
+  GOCOMMERCE_SMS_CODES_PER_DAY
+                    the codes texted in 24 hours, to operators in total
+                    and to each store's shoppers in total; unset, 500
+  GOCOMMERCE_SMS_COUNTRIES
+                    the calling codes an operator's sign-in code may be texted
+                    to, comma-separated, such as 91,1; unset or unreadable, 91
   RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
   RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,
   RETAIL_ASSISTANT_DISPLAY_NUMBER
@@ -389,6 +396,13 @@ environment:
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
+		// A value that does not read is 0, the default: a typo in a spending
+		// limit is no reason to stop every store on the install.
+		SMSCodesPerDay: func() int {
+			n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("GOCOMMERCE_SMS_CODES_PER_DAY")))
+			return n
+		}(),
+		SMSCountries: gocommerce.ParseSMSCountries(os.Getenv("GOCOMMERCE_SMS_COUNTRIES")),
 		// Whether the addresses a store sets may reach the server's own
 		// network: the same kind of choice about who this install is for, read
 		// as a word for the same reason as the demo switch.
@@ -442,6 +456,8 @@ environment:
 			return v
 		}
 		var modules []gocommerce.Module
+		// B2B is handed to the retail assistant, further down.
+		var trade *b2b.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
 		if *withAI || *withPhotos || *withCatAI || *withAds {
@@ -477,10 +493,11 @@ environment:
 			})
 			modules = append(modules, accounts)
 			if *withB2B {
-				modules = append(modules, b2b.New(b2b.Config{
+				trade = b2b.New(b2b.Config{
 					Accounts:  accounts,
 					InviteURL: env("GOCOMMERCE_B2B_INVITE_URL"),
-				}))
+				})
+				modules = append(modules, trade)
 			}
 		}
 		if *withWebhooks {
@@ -636,6 +653,12 @@ environment:
 				PhoneNumberID:    os.Getenv("RETAIL_ASSISTANT_PHONE_NUMBER_ID"),
 				DisplayNumber:    os.Getenv("RETAIL_ASSISTANT_DISPLAY_NUMBER"),
 				QuietToStrangers: envTrue("RETAIL_ASSISTANT_QUIET_TO_STRANGERS"),
+				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
+				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
+				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
+				LoginTemplate:    os.Getenv("RETAIL_ASSISTANT_LOGIN_TEMPLATE"),
+				B2B:              trade,
+				Gateway:          gateway,
 				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))
 		}
@@ -1056,9 +1079,17 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		return nil
 	}
 
+	if len(args) == 3 && args[0] == "phone" {
+		if err := sus.ChangePhone(ctx, args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Printf("%s now signs in with %s; their sessions were signed out\n", args[1], args[2])
+		return nil
+	}
+
 	if len(args) < 3 || (args[0] != "create" && args[0] != "update") {
 		return errors.New(
-			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list  |  gocommerce superuser disable|enable <email or phone>")
+			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list  |  gocommerce superuser disable|enable <email or phone>  |  gocommerce superuser phone <email or old phone> <new phone>")
 	}
 	action, email, password := args[0], args[1], args[2]
 	// The role is optional and defaults to owner, so a script that has always

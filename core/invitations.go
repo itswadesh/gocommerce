@@ -43,6 +43,9 @@ const invitationTTL = 48 * time.Hour
 type Invitation struct {
 	ID    int64  `json:"id"`
 	Email string `json:"email"`
+	// Phone is who a phone invitation is for, in place of Email. It has no link:
+	// the person is asked when they sign in with this number (D205).
+	Phone string `json:"phone,omitempty"`
 	Role  string `json:"role"`
 	// Rights is what the role carries *here*, resolved on the way out through
 	// the store's matrix. The person deciding whether to send this needs to see
@@ -80,8 +83,8 @@ const (
 	InvitationRevoked  = "revoked"
 )
 
-const invitationColumns = `i.id, i.email, i.role, i.invited_by,
-	coalesce(s.email, ''), i.created_at, i.expires_at, i.accepted_at, i.revoked_at`
+const invitationColumns = `i.id, coalesce(i.email, ''), coalesce(i.phone, ''), i.role, i.invited_by,
+	coalesce(s.email, s.phone, ''), i.created_at, i.expires_at, i.accepted_at, i.revoked_at`
 
 // scanInvitation reads one invitation. rights is the store's resolved matrix,
 // passed in rather than looked up here so that listing a page of invitations
@@ -91,7 +94,7 @@ func scanInvitation(row scanner, rights map[string][]Right) (*Invitation, error)
 	inv := &Invitation{}
 	var invitedBy sql.NullInt64
 	var accepted, revoked sql.NullTime
-	if err := row.Scan(&inv.ID, &inv.Email, &inv.Role, &invitedBy,
+	if err := row.Scan(&inv.ID, &inv.Email, &inv.Phone, &inv.Role, &invitedBy,
 		&inv.InvitedByName, &inv.CreatedAt, &inv.ExpiresAt, &accepted, &revoked); err != nil {
 		return nil, err
 	}
@@ -185,6 +188,181 @@ func (s *Invitations) Invite(ctx context.Context, email, role string, invitedBy 
 	return inv, nil
 }
 
+// phoneInvitationTTL is longer than a link's: there is no link to forward, and
+// it waits on somebody's next sign-in.
+const phoneInvitationTTL = 30 * 24 * time.Hour
+
+// InvitePhone asks whoever signs in with phone to join the team. Nothing is sent
+// and there is no link to pass on: they are asked when they next sign in, and
+// join only if they say yes (D205). Their first code makes the account if they
+// have none, so the install must be able to text them one.
+func (s *Invitations) InvitePhone(ctx context.Context, phone, role string, invitedBy *int64) (*Invitation, error) {
+	phone, err := NormalizePhone(phone)
+	if err != nil {
+		return nil, err
+	}
+	if s.app.cfg.Demo || !s.app.notifier.carries(atInstall(ctx), loginCodeNote(phone)) {
+		return nil, Validationf("this install cannot text a sign-in code to that number, so invite them by email")
+	}
+	if role == "" {
+		role = RoleStaff
+	}
+	if err := s.app.roles.requireRole(ctx, role); err != nil {
+		return nil, err
+	}
+	// Never handed out. The column is required, and an email invitation's route
+	// must find nothing to accept here.
+	token, err := newSessionToken()
+	if err != nil {
+		return nil, Internalf(err, "generate invitation token")
+	}
+	expires := time.Now().Add(phoneInvitationTTL)
+	var id int64
+	err = InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT true FROM superusers WHERE phone = $1 AND `+memberHere, phone).Scan(&exists); err == nil {
+			return Conflictf("%s is already on the team; change their role instead", phone)
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return Internalf(err, "look up superuser")
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM superuser_invitations WHERE phone = $1 AND accepted_at IS NULL AND revoked_at IS NULL`,
+			phone); err != nil {
+			return Internalf(err, "clear the previous invitation")
+		}
+		if err := roleGone(tx.QueryRowContext(ctx, `
+			INSERT INTO superuser_invitations (phone, role, token_hash, invited_by, expires_at)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			phone, role, hashToken(token), invitedBy, expires,
+		).Scan(&id), role); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO store_phone_invitations (phone, store_id, expires_at)
+			VALUES ($1, current_setting('gocommerce.store_id', true), $2)
+			ON CONFLICT (phone, store_id) DO UPDATE SET expires_at = excluded.expires_at`,
+			phone, expires); err != nil {
+			return Internalf(err, "index the invitation")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}
+
+// PhoneInvitation is a store asking the signed-in person to join.
+type PhoneInvitation struct {
+	ID        int64  `json:"id"`
+	StoreID   string `json:"store_id"`
+	StoreName string `json:"store_name"`
+	Role      string `json:"role"`
+	InvitedBy string `json:"invited_by,omitempty"`
+}
+
+// ForPerson lists the stores waiting on su's answer, in the brand the request
+// came through, as their store list is (D114). Only a number a code has proved
+// counts: anybody may type anybody's number at sign-up (D191).
+func (s *Invitations) ForPerson(ctx context.Context, su *Superuser) ([]PhoneInvitation, error) {
+	out := []PhoneInvitation{}
+	if su.Phone == "" || !su.phoneProved {
+		return out, nil
+	}
+	rows, err := s.app.db.QueryContext(ctx, `
+		SELECT st.id, st.name, coalesce(st.brand_host, '')
+		FROM store_phone_invitations p JOIN stores st ON st.id = p.store_id
+		WHERE p.phone = $1 AND p.expires_at > now() AND st.status = 'active'
+		ORDER BY p.expires_at, st.id`, su.Phone)
+	if err != nil {
+		return nil, Internalf(err, "list invitations")
+	}
+	defer rows.Close()
+	here := s.app.Brand(ctx)
+	for rows.Next() {
+		var inv PhoneInvitation
+		var brandHost string
+		if err := rows.Scan(&inv.StoreID, &inv.StoreName, &brandHost); err != nil {
+			return nil, Internalf(err, "scan invitation")
+		}
+		if sameBrand(s.app.storeBrand(brandHost), here) {
+			out = append(out, inv)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, Internalf(err, "list invitations")
+	}
+	rows.Close()
+	open := []PhoneInvitation{}
+	for _, inv := range out {
+		err := s.app.db.QueryRowContext(WithStore(ctx, inv.StoreID), `
+			SELECT i.id, i.role, coalesce(s.email, s.phone, '')
+			FROM superuser_invitations i LEFT JOIN superusers s ON s.id = i.invited_by
+			WHERE i.phone = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()`,
+			su.Phone).Scan(&inv.ID, &inv.Role, &inv.InvitedBy)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, Internalf(err, "read invitation")
+		}
+		open = append(open, inv)
+	}
+	return open, nil
+}
+
+// AnswerPhone is su's yes or no to a store's invitation. Yes joins the store in
+// the invited role; no is kept as a withdrawn invitation, which the store's
+// team screen can show. Either way the store stops asking.
+func (s *Invitations) AnswerPhone(ctx context.Context, su *Superuser, storeID string, id int64, accept bool) error {
+	if su.Phone == "" || !su.phoneProved {
+		return NotFoundf("this invitation is no longer open")
+	}
+	ctx = WithStore(ctx, storeID)
+	rights, err := s.app.roles.All(ctx)
+	if err != nil {
+		return err
+	}
+	return InTx(ctx, s.app.db, func(tx *sql.Tx) error {
+		inv, err := scanInvitation(tx.QueryRowContext(ctx, `
+			SELECT `+invitationColumns+`
+			FROM superuser_invitations i
+			LEFT JOIN superusers s ON s.id = i.invited_by
+			WHERE i.id = $1 AND i.phone = $2 FOR UPDATE OF i`, id, su.Phone), rights)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NotFoundf("this invitation is no longer open")
+		}
+		if err != nil {
+			return Internalf(err, "read invitation")
+		}
+		if err := usableInvitation(inv); err != nil {
+			return err
+		}
+		column := "revoked_at"
+		if accept {
+			column = "accepted_at"
+			var here bool
+			err := tx.QueryRowContext(ctx, `SELECT true FROM superusers WHERE id = $1 AND `+memberHere, su.ID).Scan(&here)
+			if errors.Is(err, sql.ErrNoRows) {
+				if err := joinStore(ctx, tx, su.ID, inv.Role, nil); err != nil {
+					return Internalf(err, "add to store")
+				}
+			} else if err != nil {
+				return Internalf(err, "look up membership")
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE superuser_invitations SET `+column+` = now() WHERE id = $1`, id); err != nil {
+			return Internalf(err, "answer invitation")
+		}
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM store_phone_invitations WHERE phone = $1 AND store_id = $2`, su.Phone, storeID); err != nil {
+			return Internalf(err, "answer invitation")
+		}
+		return nil
+	})
+}
+
 // Get returns one invitation, without its token.
 func (s *Invitations) Get(ctx context.Context, id int64) (*Invitation, error) {
 	rights, err := s.app.roles.All(ctx)
@@ -244,6 +422,12 @@ func (s *Invitations) Revoke(ctx context.Context, id int64) error {
 		`UPDATE superuser_invitations SET revoked_at = now()
 		 WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL`, id)
 	if err != nil {
+		return Internalf(err, "revoke invitation")
+	}
+	if _, err := s.app.db.ExecContext(ctx, `
+		DELETE FROM store_phone_invitations
+		WHERE store_id = current_setting('gocommerce.store_id', true)
+		  AND phone = (SELECT phone FROM superuser_invitations WHERE id = $1)`, id); err != nil {
 		return Internalf(err, "revoke invitation")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {

@@ -100,7 +100,7 @@ func phoneCodeSignupApp(t *testing.T) (*App, *smsStub) {
 // withPhone gives an operator a phone, as a proved code would.
 func withPhone(t *testing.T, app *App, su *Superuser, phone string) {
 	t.Helper()
-	if _, err := app.superusers.writeOwnPhone(context.Background(), su.ID, phone, "test"); err != nil {
+	if _, err := app.superusers.writeOwnPhone(context.Background(), su.ID, phone, "test", ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -347,7 +347,7 @@ func TestWrongCodesAtOnceGetOnlyFiveTries(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = app.superusers.spendLoginCode(context.Background(), knownPhone, otherCode(code))
+			_, _ = app.superusers.spendLoginCode(context.Background(), knownPhone, otherCode(code), phoneCodeHash)
 		}()
 	}
 	wg.Wait()
@@ -654,9 +654,9 @@ func TestADisabledPhoneCannotSignUpAgain(t *testing.T) {
 	}
 }
 
-// A store's provider account is its owner's to read, and this code opens every
-// store the person works in. So the code goes on the store's channel only for
-// somebody who works in that store alone.
+// A store's provider account is its staff's to read, and this code opens an
+// account. So on an install that hosts several stores no code goes on a store's
+// channel, whoever the person is (D213).
 func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 	sms := &smsStub{}
 	app := newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}}, sms)
@@ -683,7 +683,7 @@ func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 		name, phone, via, want string
 	}{
 		{"someone of another store only", "+919876500011", b, installScope},
-		{"someone of this store only", "+919876500012", b, b},
+		{"someone of this store only", "+919876500012", b, installScope},
 		{"someone of two stores", "+919876500013", b, installScope},
 		{"someone of two stores, through the other", "+919876500013", first, installScope},
 		{"a new person", "+919876500014", b, installScope},
@@ -704,25 +704,16 @@ func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 	// On the install's channel the send leaves no row in any store's log.
 	var rows int
 	if err := app.db.QueryRowContext(ctxB,
-		`SELECT count(*) FROM notifications WHERE recipient = '+919876500011'`).Scan(&rows); err != nil {
+		`SELECT count(*) FROM notifications WHERE recipient IN ('+919876500011', '+919876500012')`).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 0 {
-		t.Fatalf("store B's log holds %d rows about store A's owner", rows)
-	}
-	// On a store's own, its log hides the code.
-	var data string
-	if err := app.db.QueryRowContext(ctxB,
-		`SELECT data::text FROM notifications WHERE recipient = '+919876500012'`).Scan(&data); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(data, "hidden") {
-		t.Fatalf("the store's log shows the code: %s", data)
+		t.Fatalf("store B's log holds %d rows about sign-in codes", rows)
 	}
 }
 
-// A store with SMS of its own and an install with none: the store's only member
-// can use it, and nobody else's code goes out on it.
+// A store with SMS of its own and an install with none, on an install hosting
+// several: no code goes out on it, and no phone is offered.
 func TestAnInstallWithNoSMSOfItsOwnSendsNothingForAnotherStoresPeople(t *testing.T) {
 	sms := &smsStub{}
 	app := newTestApp(t, sms)
@@ -733,13 +724,15 @@ func TestAnInstallWithNoSMSOfItsOwnSendsNothingForAnotherStoresPeople(t *testing
 	}
 	newSuperuser(t, app, "owner-a@example.com", "a-long-enough-password")
 	withPhone(t, app, newSuperuser(t, app, "a@example.com", "a-long-enough-password"), knownPhone)
-	mustAsk(t, app, knownPhone, header("X-Store", b))
+	if rec := askPhoneCode(t, app, knownPhone, header("X-Store", b)); rec.Code != http.StatusConflict {
+		t.Fatalf("asking = %d, want 409: %s", rec.Code, rec.Body)
+	}
 	app.superusers.waitForResetDelivery(5 * time.Second)
 	if n := len(sms.notes()); n != 0 {
-		t.Fatalf("%d texts went out on the store's channel for somebody of another store", n)
+		t.Fatalf("%d texts went out on the store's channel", n)
 	}
-	if !phoneState(t, app, header("X-Store", b))["phone_login"] {
-		t.Error("the store with SMS does not offer a phone")
+	if phoneState(t, app, header("X-Store", b))["phone_login"] {
+		t.Error("a phone is offered with no install channel to text it on")
 	}
 	if phoneState(t, app, header("X-Store", b))["phone_signup"] {
 		t.Error("a phone sign-up is offered with no install channel to text a new person on")
@@ -1095,5 +1088,47 @@ func TestTheSignInTemplateIsTheEnginesOwn(t *testing.T) {
 	body, err := RenderNotifyText(tpl.Body, map[string]string{"code": "123456", "store_name": "ShopNx"})
 	if err != nil || !strings.Contains(body, "123456") || !strings.Contains(body, "ShopNx") {
 		t.Fatalf("body = %q, %v", body, err)
+	}
+}
+
+// Support moves somebody who lost their SIM to a new number (D197): the new
+// number signs in at once, and whatever the old SIM's holder had open ends.
+func TestSupportChangesALostPhone(t *testing.T) {
+	p := phonePerson(t)
+	ctx := context.Background()
+	const fresh = "+919876512345"
+	if err := p.app.superusers.ChangePhone(ctx, unknownPhone, "+91 98765 12345"); err != nil {
+		t.Fatalf("change: %v", err)
+	}
+	if rec := do(t, p.app, http.MethodGet, "/api/stores/my", p.token); rec.Code != http.StatusUnauthorized {
+		t.Errorf("the old session = %d, want it ended", rec.Code)
+	}
+	su, err := p.app.superusers.personOnPhone(ctx, fresh)
+	if err != nil || su == nil || su.ID != p.id || !su.phoneProved {
+		t.Fatalf("new number = %+v, %v; want person %d, proved", su, err, p.id)
+	}
+	if other, _ := p.app.superusers.personOnPhone(ctx, unknownPhone); other != nil {
+		t.Errorf("the old number still opens %+v", other)
+	}
+	if err := p.app.superusers.ChangePhone(ctx, "nobody@example.com", "+919876512346"); err == nil {
+		t.Error("changing nobody's phone succeeded")
+	}
+	newSuperuser(t, p.app, "other@example.com", "another good password")
+	if err := p.app.superusers.ChangePhone(ctx, "other@example.com", fresh); err == nil {
+		t.Error("took a number from the person who has it")
+	}
+}
+
+// Many numbers from many addresses cannot run up the install's SMS bill.
+func TestTheInstallStopsTextingCodesAtItsDailyLimit(t *testing.T) {
+	app, _ := phoneApp(t)
+	app.cfg.SMSCodesPerDay = 3
+	number := func(i int) string { return fmt.Sprintf("+91987651%04d", i) }
+	client := func(i int) string { return fmt.Sprintf("198.51.100.%d", i+1) }
+	if got := parallelAsks(t, app, number, 8, client); got != 3 {
+		t.Fatalf("%d codes stored, want 3", got)
+	}
+	if rec := askPhoneCode(t, app, "+919876599999", fromIP("198.51.100.200")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("past the limit = %d: %s", rec.Code, rec.Body)
 	}
 }

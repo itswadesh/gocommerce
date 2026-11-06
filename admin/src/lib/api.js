@@ -333,6 +333,8 @@ export const auth = {
     // way any earlier link for the address stops working.
     invite: (email, role, sendEmail = true) =>
         api.post("/api/admin/invitations", { email, role, send_email: sendEmail }),
+    // A number instead: no link and no email, they are asked when they sign in.
+    invitePhone: (phone, role) => api.post("/api/admin/invitations", { phone, role }),
     revokeInvitation: (id) => api.delete(`/api/admin/invitations/${id}`),
 
     // Ending sessions. Somebody else's is team management; your own is the
@@ -372,6 +374,13 @@ export const stores = {
     /** mine lists the caller's stores with their role in each, oldest first. */
     async mine() {
         return (await api.get("/api/stores/my")) ?? [];
+    },
+    /** invitations are the stores asking this person to join, by their phone. */
+    async invitations() {
+        return (await api.get("/api/stores/invitations")) ?? [];
+    },
+    async answerInvitation(storeID, id, accept) {
+        return await api.post("/api/stores/invitations/answer", { store_id: storeID, id, accept });
     },
     /** suggest is a name for a new store, with an address nobody has. */
     async suggest() {
@@ -603,6 +612,8 @@ export const retailAssistant = {
     approve: (id, body) => api.post(`${RETAIL}/documents/${id}/approve`, body),
     reject: (id, body) => api.post(`${RETAIL}/documents/${id}/reject`, body),
     retry: (id) => api.post(`${RETAIL}/documents/${id}/retry`),
+    removeFile: (id) => api.post(`${RETAIL}/documents/${id}/remove-file`),
+    readWithAI: (id) => api.post(`${RETAIL}/documents/${id}/read`),
     suppliers: () => api.get(`${RETAIL}/suppliers`),
     payables: (params) => api.get(`${RETAIL}/payables` + query(params)),
     payments: (params) => api.get(`${RETAIL}/payments` + query(params)),
@@ -614,6 +625,21 @@ export const retailAssistant = {
     addCredit: (body, key) => api.post(`${RETAIL}/credits`, body, keyed(key)),
     allocateCredit: (id, body, key) => api.post(`${RETAIL}/credits/${id}/allocate`, body, keyed(key)),
     reverseCredit: (id) => api.post(`${RETAIL}/credits/${id}/reverse`),
+    invoiceLines: (id) => api.get(`${RETAIL}/invoices/${id}/lines`),
+    receive: (id, body) => api.post(`${RETAIL}/invoices/${id}/receive`, body),
+    insights: () => api.get(`${RETAIL}/insights`),
+    counterLookup: (code) => api.get(`${RETAIL}/counter/lookup` + query({ code })),
+    counterLinkBarcode: (body) => api.post(`${RETAIL}/counter/barcodes`, body),
+    counterPreview: (body) => api.post(`${RETAIL}/counter/preview`, body),
+    counterSale: (body, key) => api.post(`${RETAIL}/counter/sales`, body, keyed(key)),
+    wholesalePreview: (body) => api.post(`${RETAIL}/wholesale/preview`, body),
+    wholesaleQuote: (body, key) => api.post(`${RETAIL}/wholesale/quotes`, body, keyed(key)),
+    bankLines: (params) => api.get(`${RETAIL}/bank-lines` + query(params)),
+    importStatement: (text) => api.post(`${RETAIL}/bank-statements`, text, { headers: { "Content-Type": "text/csv" } }),
+    matchLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/match`, body),
+    recordFromLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/record`, body),
+    ignoreLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/ignore`),
+    undoLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/undo`),
 };
 
 /**

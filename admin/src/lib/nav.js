@@ -88,6 +88,10 @@ export const NAV = [
             // forwarded on WhatsApp, and each supplier's account.
             { href: "/dash/retail-assistant", label: "Supplier bills", right: "retailassistant.read", module: "retailassistant", keywords: "whatsapp purchase invoice bill documents review" },
             { href: "/dash/retail-assistant/suppliers", label: "Suppliers", right: "retailassistant.read", module: "retailassistant", keywords: "payables outstanding vendor ledger credit note advance" },
+            { href: "/dash/retail-assistant/counter", label: "Shop counter", right: "retailassistant.counter", module: "retailassistant", keywords: "pos point of sale billing barcode scanner cash upi" },
+            { href: "/dash/retail-assistant/bank", label: "Bank statement", right: "retailassistant.read", module: "retailassistant", keywords: "reconcile reconciliation statement utr verify payment" },
+            { href: "/dash/retail-assistant/wholesale", label: "Wholesale quote", right: "quotes.write", module: "retailassistant", keywords: "manufacturer price list markup margin retailer" },
+            { href: "/dash/retail-assistant/insights", label: "Shop insights", right: "retailassistant.read", module: "retailassistant", keywords: "summary recommendations slow stock low stock owed" },
             { href: "/dash/payouts", label: "Payouts", right: "payouts.read", keywords: "settlements gateways collected refunded reconcile" },
             // A business customer's side of selling, where Shopify keeps its
             // own: a quote is an order being priced, an approval is an order

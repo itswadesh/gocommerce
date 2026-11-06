@@ -702,22 +702,24 @@ The store picker's create form has a **Start with a sample shop** switch, off
 by default (D94, D96, D159). Turned on, the new store opens as a small fashion
 shop to look around, so every screen has something in it:
 
-- **Eleven garments with photographs**: kurtas, a saree, a lehenga, co-ord
-  sets, a jumpsuit, a dress and menswear, active and in stock at the default
-  location, each in three or four colours and every size. Each colour has one
-  to three photographs of a model, and that colour's variants show them, so
+- **Twenty-four garments with photographs**: kurtas, sarees, a half saree, a
+  lehenga, co-ord sets, a jumpsuit, dresses, a top, and shirts, kurtas, jackets
+  and a sherwani for men, active and in stock at the default location, each in
+  one to four colours and every size. Each colour has one to three photographs
+  of a model, and that colour's variants show them, so
   the gallery changes when a shopper picks a colour. A few sizes are sold out
   and a few are down to two, so a storefront has both states to show. Every
-  product has its highlights, and seven carry a badge naming something the
+  product has its highlights, and thirteen carry a badge naming something the
   photographs show, such as "Two-piece set".
 - **Prices** come from the catalogue (`core/sample/catalogue.json`), which is
   priced in rupees: a store selling in rupees gets ₹1,999 to ₹12,999, with a
-  struck-through price on five. Any other currency gets the catalogue's dollar
+  struck-through price on ten. Any other currency gets the catalogue's dollar
   figure as a face value in its own units, so the anarkali kurta is 45.00 in
   dollars or euros, 45 in yen and 45.000 in dinars, never a rupee number read
   as another currency. Neither is a market price: they are sample numbers.
-- **Eight categories** the products are filed in, under Women (Dresses,
-  Jumpsuits, Ethnic wear, Co-ord sets) and Men (Kurtas, Jackets), and **two
+- **Ten categories** the products are filed in, under Women (Dresses,
+  Jumpsuits, Ethnic wear, Co-ord sets, Tops) and Men (Kurtas, Jackets, Shirts),
+  and **two
   collections** (New arrivals, Festive edit).
 - **Two discount codes**, WELCOME10 and BUNDLE15 (15% off a basket of 5,000 or
   more in rupees, 100 or more in any other currency), which only ever apply to
@@ -732,7 +734,7 @@ shop to look around, so every screen has something in it:
   Women, Men), each a row of the products' photographs, and a **Shop by
   collection** grid of the two collections. The categories carry pictures of
   their own (`metadata.image`), which the storefront's own category tiles show.
-- With the other modules installed, **a review on each product** by a customer whose
+- With the other modules installed, **a review on the first eleven products** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**
   to the categories in the header menu, nested as the categories are, and to
@@ -765,13 +767,15 @@ categories they point at. Erase it before the store opens: the reviews and
 orders are made up, and a real shopper should not see them.
 
 The photographs are built into the engine and served at `/sample-media/2/`, so
-every install has them whether or not it can store uploads: 89 files, 750 by
+every install has them whether or not it can store uploads: 110 files, 750 by
 1000 pixels for a product's and cut to 1500 by 380 and 720 by 380 for a
-banner's, 4.5 MB in all. `scripts/fashion-images/build-sample.mjs` makes them
-from the full-size files `fetch-photos.mjs` downloads. Each product was
-photographed in one colour, and its other colours are edits of that
-photograph, made with ChatGPT at the owner's request, which both licences
-allow; the banners are cut from the same photographs. The catalogue's men's
+banner's, 5.7 MB in all. `scripts/fashion-images/build-sample.mjs` makes them
+from the full-size files `fetch-photos.mjs` downloads. Each of the first
+eleven products was photographed in one colour, and its other colours are edits
+of that photograph, made with ChatGPT at the owner's request, which both
+licences allow. The thirteen added later (D207) show only colours that were
+really photographed: twelve have one colour, and the red kurta set's three
+dupattas are three photographs. The banners are cut from the same photographs. The catalogue's men's
 cotton shirt is left out, because its photographs show another company's
 logo. The photographs are free under the Unsplash and Pexels licences, by:
 
@@ -803,6 +807,27 @@ logo. The photographs are free under the Unsplash and Pexels licences, by:
 | Men's embroidered Nehru jacket | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c](https://unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c) | [Unsplash License](https://unsplash.com/license) |
 | Men's embroidered Nehru jacket | standing | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4](https://unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4) | [Unsplash License](https://unsplash.com/license) |
 | Men's kurta pyjama set | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY](https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY) | [Unsplash License](https://unsplash.com/license) |
+| White saree with red motifs | front | [Vishal Adhikari](https://www.pexels.com/@vishalcreation/) | [pexels.com/photo/14205210/](https://www.pexels.com/photo/14205210/) | [Pexels License](https://www.pexels.com/license/) |
+| White saree with red motifs | detail | [Vishal Adhikari](https://www.pexels.com/@vishalcreation/) | [pexels.com/photo/14205208/](https://www.pexels.com/photo/14205208/) | [Pexels License](https://www.pexels.com/license/) |
+| Yellow half saree with woven border | front | [AA's Photography](https://www.pexels.com/@aa-s-photography-2161967704/) | [pexels.com/photo/39358672/](https://www.pexels.com/photo/39358672/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | front | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512787/](https://www.pexels.com/photo/28512787/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | standing | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512785/](https://www.pexels.com/photo/28512785/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | side | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512786/](https://www.pexels.com/photo/28512786/) | [Pexels License](https://www.pexels.com/license/) |
+| Printed A-line kurta | front | [TAVSI APPAREL](https://www.pexels.com/@tavsiapparel/) | [pexels.com/photo/28213774/](https://www.pexels.com/photo/28213774/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584941/](https://www.pexels.com/photo/13584941/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front (green) | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584942/](https://www.pexels.com/photo/13584942/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front (orange) | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584946/](https://www.pexels.com/photo/13584946/) | [Pexels License](https://www.pexels.com/license/) |
+| Teal printed kurta with dupatta | front | [HEMANT SAINI](https://www.pexels.com/@hemant-saini-2148893253/) | [pexels.com/photo/33363057/](https://www.pexels.com/photo/33363057/) | [Pexels License](https://www.pexels.com/license/) |
+| Smocked off-shoulder maxi dress | front | [Jk Films](https://www.pexels.com/@jk-films-394879512/) | [pexels.com/photo/15528063/](https://www.pexels.com/photo/15528063/) | [Pexels License](https://www.pexels.com/license/) |
+| Floral front-slit top | front | [RAJESH KUMAR VERMA](https://www.pexels.com/@rajeshverma/) | [pexels.com/photo/9322209/](https://www.pexels.com/photo/9322209/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's plain formal shirt | front | [veeru edits](https://www.pexels.com/@veeru-edits-2043202/) | [pexels.com/photo/12661575/](https://www.pexels.com/photo/12661575/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's black shirt | front | [Naveen sita](https://www.pexels.com/@nani3026d/) | [pexels.com/photo/5819413/](https://www.pexels.com/photo/5819413/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | front | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064117/](https://www.pexels.com/photo/9064117/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | side | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064116/](https://www.pexels.com/photo/9064116/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | seated | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064114/](https://www.pexels.com/photo/9064114/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's floral velvet blazer | front | [THEMRSINGH](https://www.pexels.com/@themrsingh-784412/) | [pexels.com/photo/16325764/](https://www.pexels.com/photo/16325764/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's embroidered sherwani | front | [aman ajimal Fashion Stylist](https://www.pexels.com/@1054048/) | [pexels.com/photo/11749506/](https://www.pexels.com/photo/11749506/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's embroidered sherwani | side | [aman ajimal Fashion Stylist](https://www.pexels.com/@1054048/) | [pexels.com/photo/11749504/](https://www.pexels.com/photo/11749504/) | [Pexels License](https://www.pexels.com/license/) |
 
 `/sample-media/1/` serves D96's photographs of general goods, which new stores
 no longer get. They stay in the binary for the stores that added the sample
@@ -1095,9 +1120,19 @@ the button. Where sign-up is shut, **Go to sign in** carries the number on.
 
 A code lasts ten minutes and takes five tries. A phone gets one code a minute and
 five a day, and one client address twenty an hour. The code goes out on the
-install's SMS provider, unless the person works in the store the request reached
-and no other: a store's provider account is its owner's to read, and the code
-opens every store the person works in.
+install's SMS provider, never a store's, because a store's provider account is its
+staff's to read and the code opens an account. The one exception is an install
+closed to sign-ups with a single store, whose panel settings are the install's. A
+code asked for from Your account only adds the address to that account; it signs
+nobody in. Resets go the same way.
+
+A team member can be added by phone number instead of email: the Invite box takes
+either. Nothing is sent. When that number signs in, with an account or not, the panel
+asks them to join the store, and they are added if they accept (D205).
+
+`gocommerce superuser phone <email or old phone> <new phone>` is what support runs
+for someone who lost their SIM: it moves them to the new number and signs them
+out everywhere (D197).
 
 `gocommerce superuser disable <email or phone>` shuts a person out of the whole
 install, by any way of signing in, and ends their sessions. `enable` lets them

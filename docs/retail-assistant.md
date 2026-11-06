@@ -15,15 +15,14 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 
 | It does | It does not |
 |---|---|
-| Takes files and photos on one shared WhatsApp number | Read PDFs or photos: a person enters those by hand |
+| Takes files and photos on one shared WhatsApp number | Read PDFs or photos unless a store turns on AI reading: otherwise a person enters them |
 | Reads tables in CSV, XLSX and DOCX files | Post anything without a person approving it |
 | Keeps each store's records apart, behind the store policy | Keep a file from a number no store has linked |
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout, wholesale quotes, insights, WhatsApp sign-in,
-OCR or AI reading, a virus scan, retention and deletion rules, encrypting files
-at rest, template messages, and bank reconciliation.
+Not built at the counter: working offline, printing a receipt, batch and expiry, and
+machines such as the NGX SP92TB, whose maker documents no API or export.
 
 ## Setting it up
 
@@ -48,6 +47,10 @@ through.
 | `RETAIL_ASSISTANT_PHONE_NUMBER_ID` | The shared number's id at Meta |
 | `RETAIL_ASSISTANT_DISPLAY_NUMBER` | The number as people dial it, shown when a store links a phone |
 | `RETAIL_ASSISTANT_QUIET_TO_STRANGERS` | `1` when the number is shared with another service: nobody unlinked gets a reply |
+| `RETAIL_ASSISTANT_TEMPLATE` | Optional. The name of a Meta-approved template for messages outside the 24-hour window (below) |
+| `RETAIL_ASSISTANT_LOGIN_TEMPLATE` | Optional. The name of a Meta-approved authentication template that carries panel sign-in codes (below) |
+| `RETAIL_ASSISTANT_FILE_KEY` | Optional. 32 random bytes in base64 that encrypt new files in the database |
+| `RETAIL_ASSISTANT_CLAMD_ADDR` | Optional. The `host:port` of a ClamAV daemon that scans new files |
 
 With any of the first four unset, webhooks are refused or nothing can be sent,
 and the panel says the number is not set up.
@@ -84,11 +87,192 @@ One phone can be linked to several stores. It then has to say which one first, b
 replying `STORE <store's slug>`, and what it sends goes there until it says
 otherwise. Nothing is posted into a store by guesswork.
 
-Confirmation messages are off until the owner ticks **Send** beside a phone. They
-are free text, so Meta only delivers them inside its customer-service window after
-the phone last wrote. Outside that window Meta refuses them, and the refusal is
-kept on the message's row. Template messages are not built yet; if you add them,
-their wording has to be approved by Meta first.
+Confirmation messages are off until the owner ticks **Send** beside a phone. Within
+23 hours of the phone last writing they go as ordinary text, an hour inside Meta's
+24-hour window. After that they need a template:
+
+1. In WhatsApp Manager, create a **Utility** template with one variable in its body,
+   such as `Update from your shop assistant: {{1}}`, in English (`en`) and Hindi
+   (`hi`), and wait for Meta to approve both. Choosing the category and getting it
+   approved is yours: Meta may change or reject it.
+2. Set `RETAIL_ASSISTANT_TEMPLATE` to its name.
+
+With no template, a message outside the window is marked undelivered with the reason
+and is not retried.
+
+**Phones and language.** A phone can reply `HINDI` or `ENGLISH` to change the language
+of everything sent to it, or the owner can set it beside the phone. Before a phone is
+linked, replies come in both. **The Hindi is a machine translation that no native
+speaker has reviewed; have one read `ext/retailassistant/messages.go` before showing it
+to shopkeepers.**
+
+The retail assistant's screens have an **English / हिंदी** switch, remembered in each
+browser. **That Hindi is a machine translation too, in `admin/src/lib/retail-hindi.js`.**
+The sidebar, the rest of the panel, and messages the engine writes, such as a refused
+amount or what is wrong with a bill, stay in English. The screens' Hindi has not been
+read by a native speaker.
+
+**Stopping.** A phone can reply `STOP`, or `बंद`, to end confirmations in every store
+it is linked to, including any already queued. It can still send bills. An owner cannot
+tick it back on: the phone has to send `START`.
+
+## Signing in with a WhatsApp code
+
+The panel's sign-in screen already takes a phone number and asks for a code (D193).
+This sends that code on WhatsApp. Nothing else about signing in changes: the engine
+makes the code, limits the tries, checks it and issues the session, and a phone being
+linked to a store gives nobody a way in. A person still needs an operator account with
+that phone on it.
+
+1. In WhatsApp Manager, create an **Authentication** template with a copy-code button, in
+   English (`en`) and Hindi (`hi`), and wait for Meta to approve it.
+2. Set `RETAIL_ASSISTANT_LOGIN_TEMPLATE` to its name.
+
+It is the install's choice, for every number, because the answer to asking for a code
+must not depend on whose number it is.
+
+- **With MSG91** set up for sign-in codes, a person gets the same code by both SMS and
+  WhatsApp, and you pay for both. Remove the sign-in template from MSG91 to stop the SMS.
+- **With Twilio** or another SMS provider, WhatsApp takes over sign-in codes, so someone
+  not on WhatsApp cannot get one and has to sign in by email and password.
+
+The screen may still say the code was texted. Meta's real authentication template has
+not been tried.
+
+## Reading PDFs and photos with AI
+
+CSV, XLSX and DOCX tables are read exactly by the engine. A PDF or a photo needs a
+model, so it stays off until both of these are done:
+
+1. The install runs with `-ai-gateway`, and the store's **AI gateway** plugin can
+   make calls and has **Share documents** on.
+2. **Read PDFs and photos with AI** is on in the settings under **Orders › Supplier
+   bills**. This is separate on purpose: using AI for product listings is not
+   agreeing to send supplier bills to a provider.
+
+A new PDF or photo is then sent through the gateway, under its spending cap, and
+the review form fills in from what comes back. **Read with AI** asks again after a
+failure. Amounts are read as text and through the same parser as a typed amount.
+A smaller model's reading goes to a stronger one when it is unsure, or when its
+figures do not add up. An amount that cannot be parsed fails the reading, and a
+person types the document in, as they would with no AI.
+
+It can still misread a figure and look right. So a document a model read stops at
+review like any other, and the engine refuses to approve it until a person says
+they compared it with the file; saying so goes in the audit trail. A person's typing
+is never overwritten by a reading that arrives late.
+
+The accuracy on real bills has not been measured. Try it on real documents before
+relying on it.
+
+## Keeping files safe
+
+**Encryption.** Make a key with `openssl rand -base64 32` and set
+`RETAIL_ASSISTANT_FILE_KEY`. New files are then sealed with AES-256-GCM; files
+already kept stay readable as they were. **Keep the key somewhere other than the
+database's backups, and do not lose it: a file sealed with a lost key cannot be
+opened.** The ledger is unaffected, since only the original files are sealed, and
+what was read from a file is not. A mistyped key does not stop the engine: each new
+file fails with the reason, and none is stored in clear until the key is fixed.
+There is no key rotation yet.
+
+**Virus scanning.** Run [ClamAV's daemon](https://docs.clamav.net/) and set
+`RETAIL_ASSISTANT_CLAMD_ADDR` to its address. A flagged file is not kept, and its
+document shows as failed with the reason. While the scanner is down, files wait and
+are retried, and after five tries the document fails. **Try again** fetches it from
+Meta again, which works only while Meta still holds the file.
+
+**Deleting files.** Under **Orders › Supplier bills**, **Settings** takes a number
+of days. Past that, counted from the review, a posted document loses its file, and
+a rejected or failed one also loses what was read from it. Supplier accounts never
+change. Empty keeps files for good. Check with your accountant how long you have to
+keep bills before setting this. A reviewed document's own **Delete file** button
+does the same for one file, at any time.
+
+**Exports.** **Orders › Suppliers** downloads balances, bills, payments and credit
+notes as CSV for an accountant.
+
+## Matching a bank statement
+
+A screenshot does not prove money moved, and a bank statement does. Under **Orders ›
+Bank statement**, upload your statement as a CSV. If your bank only gives Excel, open
+it and save it as CSV. Money going out is listed, and each line suggests recorded
+payments of exactly that amount within a week of its date.
+
+- **This is it** ties the line to that payment, and verifies it if it was not.
+- **Record as paid to them** makes a verified payment from a line nobody recorded.
+- **Not a supplier payment** sets a line aside.
+- **Undo** puts a line back. A payment that match verified goes back to not verified,
+  unless money from it is allocated to a bill, in which case reverse that first.
+
+Uploading an overlapping statement adds only what is new. A row whose date or amount
+cannot be read is left out and counted, so check those against the file. The column
+names are a first guess at how Indian banks lay out a CSV, and have not met a real
+statement. One transfer that pays two recorded payments cannot be matched yet.
+
+## Shop insights
+
+**Orders › Shop insights** shows what you owe, what you bought and paid in 30 days, what
+needs doing, who is owed most, what is running low, and what has not sold in 90 days.
+Every figure comes from your records, and no AI is involved. Someone who may not read
+orders and inventory sees only the supplier figures.
+
+It says when it cannot know something. Until sales records reach back 90 days it will
+not call anything slow, because no sales recorded is not the same as no sales.
+
+**Send a morning summary** in the settings sends each phone taking confirmations what
+you owe and what is waiting, once a day around 8 in the morning, India time. Outside
+the 24-hour window it needs the template, and each one may cost a WhatsApp message.
+
+Asking questions in plain language on WhatsApp is not built.
+
+## The shop counter
+
+**Orders › Shop counter** is a fast checkout for a phone or tablet. A Bluetooth or USB
+barcode scanner types like a keyboard, so the box stays ready: scan, and the item is on
+the bill. The same item again is one more.
+
+- A sale is an ordinary order, made through the engine's own order path, so it takes
+  stock once, under the same locks as any order. It shows in Orders and Reports. Return
+  it there, and tick restock to put it back on the shelf.
+- The total comes from the engine. Nothing is charged for delivery, and no email is sent.
+- **Choosing UPI is not proof of money.** The sale is paid only if the cashier ticks that
+  they saw it arrive, and otherwise it is recorded as not paid yet. Credit is the same.
+  Mark it paid on the order when the money comes.
+- A cashier's discount is capped by **Most discount at the counter** in the settings, and
+  is 0 until the owner sets it.
+- An unknown barcode asks which product it is, and is saved on that product if the person
+  may change the catalogue.
+- A scanner has not been tried on a real phone. Check one at the shop before relying on it.
+
+Set **Counter's state** and **Counter's country code** in the settings, since tax on a
+counter sale is worked out from where the counter is.
+
+Staff can use the counter through the `retailassistant.counter` right, and see nothing of
+what the shop owes its suppliers.
+
+## Wholesale quotes
+
+A wholesaler can turn a manufacturer's bill or price list into a quote for one retailer
+without rebuilding a spreadsheet. It needs `-b2b`, the retailer as a company with a
+buyer, and the `quotes.write` and `retailassistant.write` rights.
+
+Under **Orders › Wholesale quote**, choose a document, a retailer, and a rule. The two
+rules are different prices, and the screen says so: 20% **markup** on ₹100 is ₹120, and
+20% **gross margin** is ₹125. Match each line to a product, change any price by hand,
+and press **Show prices**, then **Draft the quote**.
+
+- The cost comes from the document, and the retailer's quote holds only the price. What
+  you paid and your margin stay in this module, kept from custom reports.
+- A price below what you paid is refused until you tick that you mean it, and that goes
+  in the audit trail.
+- The draft is not sent. **Review and send** opens the quote in B2B, where the retailer
+  is told by email and accepts it, and accepting makes the order.
+- Quoting from a document puts nothing on your supplier accounts, and makes no tax
+  invoice.
+
+Prices are before tax, and tax is added as for any B2B order. MRP limits are not
+checked. Sending the quote on WhatsApp and a PDF of it are not built.
 
 ## Who can do what
 
@@ -112,12 +296,17 @@ worked back from what was recorded.
 
 ## Goods
 
-A bill does not put goods on the shelf. `POST /api/admin/x/retailassistant/invoices/{id}/receive`
-books a line in, naming the variant and the quantity, and moves stock through the
-stock service once per line. There is no screen for this yet. If the server dies
-between recording a receipt and moving the stock, the line stays `pending` and
-cannot be received again: a person checks the stock and corrects it, rather than
-it being counted twice.
+A bill does not put goods on the shelf. Under **Orders › Suppliers**, open a
+supplier and press **Book in goods** on a bill. Each line asks which product it is
+and how many arrived; a line whose SKU is exactly a variant's comes matched, and a
+whole quantity on the bill comes filled in. Lines left without a product stay open
+for later. Behind it, `POST /api/admin/x/retailassistant/invoices/{id}/receive`
+moves stock through the stock service once per line, and needs
+`retailassistant.write` and `inventory.write`.
+
+If the server dies between recording a receipt and moving the stock, the line stays
+`pending`, shows as **Interrupted**, and cannot be received again: a person checks
+the stock and corrects it, rather than it being counted twice.
 
 ## A walkthrough with no Meta account
 
@@ -169,5 +358,7 @@ Then:
 ## What has not been tested
 
 - Meta's real webhook, media download and message sending. The request shapes follow Meta's documentation and `ext/notify-whatsapp`.
+- AI reading against a real model. Its prompt and answer shape have only met a stand-in.
 - Real supplier documents. The reader's labels and columns are a first guess at how Indian bills are laid out, and only real documents will show how far off that is.
-- Hindi. The module's wording is in English and is not yet set up for translation.
+- Meta's real template approval and sending. The request follows Meta's documentation.
+- The Hindi wording, on WhatsApp and in the panel, with a native speaker.

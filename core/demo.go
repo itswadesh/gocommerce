@@ -546,6 +546,7 @@ func (a *App) maskInvitations(ctx context.Context, is []*Invitation) {
 	}
 	for _, i := range is {
 		i.Email = maskEmail(i.Email)
+		i.Phone = maskPhone(i.Phone)
 	}
 }
 

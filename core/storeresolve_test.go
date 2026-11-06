@@ -295,9 +295,9 @@ func (m *storeSeeingMail) Register(app *App) error {
 }
 
 // A reset link is a credential for the person everywhere they work. Store B's
-// template and email account are B's owner's to read, so they may carry the
-// link only for somebody who works in B alone; anybody else's goes by the
-// install's own channel.
+// template and email account are its staff's to read, so on an install with other
+// stores nobody's link goes through them, not even someone's who works in B alone
+// (D213).
 func TestAResetLinkNeverTravelsThroughAnotherStoresMail(t *testing.T) {
 	mail := &storeSeeingMail{}
 	app := newTestApp(t, mail)
@@ -318,12 +318,12 @@ func TestAResetLinkNeverTravelsThroughAnotherStoresMail(t *testing.T) {
 	app.superusers.waitForResetDelivery(5 * time.Second)
 	mail.mu.Lock()
 	defer mail.mu.Unlock()
-	want := []string{EventSuperuserPasswordReset + "@" + installScope, EventSuperuserPasswordReset + "@" + b}
+	want := []string{EventSuperuserPasswordReset + "@" + installScope, EventSuperuserPasswordReset + "@" + installScope}
 	got := slices.Clone(mail.under)
 	slices.Sort(got)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
-		t.Fatalf("resets sent under %v, want %v: store A's owner's link must not go through store B's mail", mail.under, want)
+		t.Fatalf("resets sent under %v, want %v: no link may go through a store's mail", mail.under, want)
 	}
 }
 

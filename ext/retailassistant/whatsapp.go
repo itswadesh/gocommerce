@@ -31,6 +31,9 @@ const (
 	maxWorkAttempts  = 5
 	claimVisibility  = 2 * time.Minute
 	replyTimeout     = 5 * time.Second
+	// Meta's window is 24 hours. An hour short of it, so a message queued at the
+	// edge goes as a template rather than being refused for being a minute late.
+	windowHours = 23
 )
 
 var (
@@ -138,6 +141,7 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 type linkedStore struct {
 	id       string
 	selected sql.NullTime
+	language string
 }
 
 // receive decides whose message this is and records it there.
@@ -173,8 +177,8 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 		}
 		var l linkedStore
 		err := m.db.QueryRowContext(ctx, `
-			SELECT selected_at FROM retailassistant_phone_links
-			WHERE phone = $1 AND verified_at IS NOT NULL AND revoked_at IS NULL`, sender).Scan(&l.selected)
+			SELECT selected_at, language FROM retailassistant_phone_links
+			WHERE phone = $1 AND verified_at IS NOT NULL AND revoked_at IS NULL`, sender).Scan(&l.selected, &l.language)
 		found := err == nil
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -204,7 +208,7 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 	case seen:
 		return nil
 	case proved != "":
-		m.say(ctx, sender, fmt.Sprintf("This number is now linked to %s. Send a supplier bill or a payment proof here and it will wait for review in your dashboard.", m.storeName(ctx, proved)))
+		m.say(ctx, sender, inBoth("linked", m.storeName(ctx, proved)))
 		return nil
 	case len(linked) == 0:
 		// Nothing is kept: a file from a stranger has no store to belong to, and
@@ -212,11 +216,17 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 		if m.cfg.QuietToStrangers {
 			return nil
 		}
-		m.say(ctx, sender, "This number is not linked to a store yet, so nothing you sent was kept. Ask your store's owner to add this number under Retail assistant, then send the code they give you.")
+		m.say(ctx, sender, inBoth("not_linked"))
 		return nil
 	}
+	lang := linked[0].language
+	if msg.Type == "text" {
+		if done, err := m.command(ctx, sender, msg.Text.Body, linked, lang); done || err != nil {
+			return err
+		}
+	}
 	if g := storeCommand.FindStringSubmatch(msg.Text.Body); msg.Type == "text" && g != nil {
-		return m.selectStore(ctx, sender, g[1], linked)
+		return m.selectStore(ctx, sender, g[1], linked, lang)
 	}
 	target, ok := chooseStore(linked)
 	if !ok {
@@ -226,10 +236,48 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 				names = append(names, st.Slug)
 			}
 		}
-		m.say(ctx, sender, "This number works for several stores, so nothing you sent was kept. Reply STORE and the store's name, then send it again: "+strings.Join(names, ", "))
+		m.say(ctx, sender, phrase(lang, "several_stores", strings.Join(names, ", ")))
 		return nil
 	}
-	return m.record(gocommerce.WithStore(ctx, target), sender, msg)
+	return m.record(gocommerce.WithStore(ctx, target), sender, msg, languageOf(linked, target))
+}
+
+func languageOf(linked []linkedStore, store string) string {
+	for _, l := range linked {
+		if l.id == store {
+			return l.language
+		}
+	}
+	return langEnglish
+}
+
+// command handles what a person says to the assistant rather than to a store.
+// STOP and the language are about the person, so they reach every store the phone
+// is linked to, with no need to choose one first.
+func (m *Module) command(ctx context.Context, sender, body string, linked []linkedStore, lang string) (bool, error) {
+	var query, reply string
+	var args []any
+	switch {
+	case stopCommand.MatchString(body):
+		query, reply = `UPDATE retailassistant_phone_links SET notify = false, opted_out_at = now() WHERE phone = $1`, "stopped"
+	case startCommand.MatchString(body):
+		query, reply = `UPDATE retailassistant_phone_links SET notify = true, opted_out_at = NULL WHERE phone = $1`, "started"
+	case hindiCommand.MatchString(body):
+		query, reply, lang = `UPDATE retailassistant_phone_links SET language = $2 WHERE phone = $1`, "language_set", langHindi
+		args = []any{langHindi}
+	case englishCommand.MatchString(body):
+		query, reply, lang = `UPDATE retailassistant_phone_links SET language = $2 WHERE phone = $1`, "language_set", langEnglish
+		args = []any{langEnglish}
+	default:
+		return false, nil
+	}
+	for _, l := range linked {
+		if _, err := m.db.ExecContext(gocommerce.WithStore(ctx, l.id), query, append([]any{sender}, args...)...); err != nil {
+			return true, err
+		}
+	}
+	m.say(ctx, sender, phrase(lang, reply))
+	return true, nil
 }
 
 // chooseStore is the one store, or the one this sender last chose. Several with
@@ -248,7 +296,7 @@ func chooseStore(linked []linkedStore) (string, bool) {
 	return best, best != ""
 }
 
-func (m *Module) selectStore(ctx context.Context, sender, slug string, linked []linkedStore) error {
+func (m *Module) selectStore(ctx context.Context, sender, slug string, linked []linkedStore, lang string) error {
 	for _, l := range linked {
 		st, err := m.app.Stores().Get(ctx, l.id)
 		if err != nil || !strings.EqualFold(st.Slug, slug) {
@@ -258,10 +306,10 @@ func (m *Module) selectStore(ctx context.Context, sender, slug string, linked []
 			`UPDATE retailassistant_phone_links SET selected_at = now() WHERE phone = $1`, sender); err != nil {
 			return err
 		}
-		m.say(ctx, sender, "What you send now goes to "+st.Name+".")
+		m.say(ctx, sender, phrase(lang, "store_chosen", st.Name))
 		return nil
 	}
-	m.say(ctx, sender, "This number is not linked to a store called "+slug+".")
+	m.say(ctx, sender, phrase(lang, "store_unknown", slug))
 	return nil
 }
 
@@ -321,7 +369,7 @@ func codeHash(store, phone, code string) string {
 // record keeps a message in the store it belongs to. The bytes are fetched
 // later, by the worker: a webhook answers quickly and holds no transaction
 // across a network call (AGENTS.md rule 5).
-func (m *Module) record(ctx context.Context, sender string, msg inbound) error {
+func (m *Module) record(ctx context.Context, sender string, msg inbound, lang string) error {
 	media, mime, filename := msg.Document.ID, msg.Document.MimeType, msg.Document.Filename
 	if msg.Type == "image" {
 		media, mime = msg.Image.ID, msg.Image.MimeType
@@ -353,7 +401,7 @@ func (m *Module) record(ctx context.Context, sender string, msg inbound) error {
 	if queued {
 		m.nudge()
 	} else if media == "" {
-		m.say(ctx, sender, "Send a supplier bill or a payment proof as a file or a photo, and it will wait for review in your dashboard.")
+		m.say(ctx, sender, phrase(lang, "send_a_file"))
 	}
 	return nil
 }
@@ -369,9 +417,26 @@ func (m *Module) say(ctx context.Context, to, text string) {
 }
 
 func (m *Module) send(ctx context.Context, to, text string) error {
-	raw, err := json.Marshal(map[string]any{
+	return m.post(ctx, map[string]any{
 		"messaging_product": "whatsapp", "to": to, "type": "text", "text": map[string]string{"body": text},
 	})
+}
+
+// sendTemplate is how a message reaches somebody outside the customer-service
+// window. The name and its wording are approved by Meta, per language, so a phone
+// on a language the template lacks is refused, and the row says so.
+func (m *Module) sendTemplate(ctx context.Context, to, lang, text string) error {
+	return m.post(ctx, map[string]any{
+		"messaging_product": "whatsapp", "to": to, "type": "template",
+		"template": map[string]any{
+			"name": m.cfg.TemplateName, "language": map[string]string{"code": lang},
+			"components": []map[string]any{{"type": "body", "parameters": []map[string]string{{"type": "text", "text": templateText(text)}}}},
+		},
+	})
+}
+
+func (m *Module) post(ctx context.Context, payload map[string]any) error {
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -474,6 +539,29 @@ func (m *Module) start(ctx context.Context) error {
 			}
 		}
 	}()
+	go func() {
+		t := time.NewTicker(retentionEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				if !m.enabled(ctx) {
+					return nil
+				}
+				if err := m.SummaryPass(ctx, time.Now()); err != nil {
+					return err
+				}
+				return m.RetentionPass(ctx)
+			})
+			if err != nil && !errors.Is(err, context.Canceled) {
+				m.log.Error("retail assistant retention pass failed", "error", err)
+			}
+		}
+	}()
 	return nil
 }
 
@@ -524,6 +612,14 @@ func (m *Module) documentPass(ctx context.Context) error {
 
 	for _, j := range jobs {
 		data, err := m.download(ctx, j.media)
+		if err == nil {
+			err = m.scanFile(ctx, data)
+		}
+		var stored []byte
+		var sealed bool
+		if err == nil {
+			stored, sealed, err = m.sealFile(ctx, j.id, data)
+		}
 		if err != nil {
 			var perm errPermanent
 			permanent := errors.As(err, &perm)
@@ -536,9 +632,10 @@ func (m *Module) documentPass(ctx context.Context) error {
 			}
 			continue
 		}
-		if err := m.keepDocument(ctx, j.id, j.sender, j.filename, data); err != nil {
+		if err := m.keepDocument(ctx, j.id, j.sender, j.filename, data, stored, sealed); err != nil {
 			return err
 		}
+		m.readIfAllowed(ctx, j.id)
 	}
 	return nil
 }
@@ -549,7 +646,7 @@ func (m *Module) documentPass(ctx context.Context) error {
 // other row, because the engine's media store serves public addresses and a
 // supplier's bill must not have one. Move to object storage when volume hurts
 // the database.
-func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename string, data []byte) error {
+func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename string, data, stored []byte, sealed bool) error {
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
 	mime, draft := Extract(data, filename, m.app.Currency(ctx))
@@ -569,28 +666,30 @@ func (m *Module) keepDocument(ctx context.Context, id int64, sender, filename st
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE retailassistant_documents
-			SET status = 'needs_review', content = $2, sha256 = $3, detected_mime = $4,
-			    extraction = $5, draft = $5, last_error = ''
-			WHERE id = $1`, id, data, hash, mime, raw); err != nil {
+			SET status = 'needs_review', content = $2, content_sealed = $6, content_removed_at = NULL,
+			    sha256 = $3, detected_mime = $4, extraction = $5, draft = $5, last_error = ''
+			WHERE id = $1`, id, stored, hash, mime, raw, sealed); err != nil {
 			return err
 		}
-		name := filename
-		if name == "" {
-			name = "your file"
-		}
-		return m.tell(ctx, tx, "received:"+strconv.FormatInt(id, 10), sender, "Got "+name+". It is waiting for review in your dashboard.")
+		return m.tell(ctx, tx, "received:"+strconv.FormatInt(id, 10), sender, func(lang string) string {
+			name := filename
+			if name == "" {
+				name = phrase(lang, "your_file")
+			}
+			return phrase(lang, "received", name)
+		})
 	})
 }
 
-// tell queues a message for a sender who opted in. Queued in the transaction of
-// the fact it reports, and sent after commit by the worker. It is free text, so
-// outside WhatsApp's customer-service window Meta refuses it, and the row says
-// so; template messages are not built yet.
-func (m *Module) tell(ctx context.Context, tx *sql.Tx, key, to, text string) error {
+// tell queues a message for a sender who opted in, in their language. Queued in
+// the transaction of the fact it reports, and sent after commit by the worker,
+// which chooses free text or the template by when the phone last wrote.
+func (m *Module) tell(ctx context.Context, tx *sql.Tx, key, to string, text func(lang string) string) error {
 	var notify bool
+	var lang string
 	err := tx.QueryRowContext(ctx, `
-		SELECT notify FROM retailassistant_phone_links
-		WHERE phone = $1 AND verified_at IS NOT NULL AND revoked_at IS NULL`, to).Scan(&notify)
+		SELECT notify, language FROM retailassistant_phone_links
+		WHERE phone = $1 AND verified_at IS NOT NULL AND revoked_at IS NULL`, to).Scan(&notify, &lang)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && !notify) {
 		return nil
 	}
@@ -598,8 +697,8 @@ func (m *Module) tell(ctx context.Context, tx *sql.Tx, key, to, text string) err
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO retailassistant_replies (dedupe_key, recipient, body) VALUES ($1, $2, $3)
-		ON CONFLICT (store_id, dedupe_key) DO NOTHING`, key, to, text)
+		INSERT INTO retailassistant_replies (dedupe_key, recipient, body, language) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (store_id, dedupe_key) DO NOTHING`, key, to, text(lang), lang)
 	return err
 }
 
@@ -613,19 +712,23 @@ func (m *Module) replyPass(ctx context.Context) error {
 		UPDATE retailassistant_replies r
 		SET attempts = r.attempts + 1, available_at = now() + make_interval(secs => $1)
 		FROM claimed WHERE r.id = claimed.id
-		RETURNING r.id, r.recipient, r.body, r.attempts`, claimVisibility.Seconds())
+		RETURNING r.id, r.recipient, r.body, r.attempts, r.language,
+		    EXISTS (SELECT 1 FROM retailassistant_messages x WHERE x.sender = r.recipient AND x.received_at > now() - make_interval(hours => $2)),
+		    COALESCE((SELECT l.notify AND l.opted_out_at IS NULL FROM retailassistant_phone_links l WHERE l.phone = r.recipient), false)`,
+		claimVisibility.Seconds(), windowHours)
 	if err != nil {
 		return err
 	}
 	type reply struct {
-		id       int64
-		to, body string
-		attempts int
+		id                 int64
+		to, body, language string
+		attempts           int
+		inWindow, wanted   bool
 	}
 	var batch []reply
 	for rows.Next() {
 		var x reply
-		if err := rows.Scan(&x.id, &x.to, &x.body, &x.attempts); err != nil {
+		if err := rows.Scan(&x.id, &x.to, &x.body, &x.attempts, &x.language, &x.inWindow, &x.wanted); err != nil {
 			rows.Close()
 			return err
 		}
@@ -637,8 +740,27 @@ func (m *Module) replyPass(ctx context.Context) error {
 	}
 	rows.Close()
 	for _, x := range batch {
+		// Neither of these improves by trying again, so neither is retried.
+		refused := ""
+		switch {
+		case !x.wanted:
+			refused = "This phone asked for no more messages after this was queued."
+		case !x.inWindow && m.cfg.TemplateName == "":
+			refused = "This phone last wrote outside WhatsApp's 24-hour window, and no template is set up."
+		}
+		if refused != "" {
+			if _, err := m.db.ExecContext(ctx, `UPDATE retailassistant_replies SET last_error = $2, dead = true WHERE id = $1`, x.id, refused); err != nil {
+				return err
+			}
+			continue
+		}
 		sendCtx, cancel := context.WithTimeout(ctx, replyTimeout)
-		err := m.send(sendCtx, x.to, x.body)
+		var err error
+		if x.inWindow {
+			err = m.send(sendCtx, x.to, x.body)
+		} else {
+			err = m.sendTemplate(sendCtx, x.to, x.language, x.body)
+		}
 		cancel()
 		if err == nil {
 			if _, err := m.db.ExecContext(ctx, `UPDATE retailassistant_replies SET sent_at = now(), last_error = '' WHERE id = $1`, x.id); err != nil {
@@ -679,6 +801,8 @@ type PhoneLink struct {
 	Phone      string     `json:"phone"`
 	VerifiedAt *time.Time `json:"verified_at"`
 	Notify     bool       `json:"notify"`
+	Language   string     `json:"language"`
+	OptedOut   bool       `json:"opted_out"`
 	CreatedAt  time.Time  `json:"created_at"`
 	// Code is the one time it is ever shown, when it is issued.
 	Code string `json:"code,omitempty"`
@@ -686,7 +810,7 @@ type PhoneLink struct {
 
 func (m *Module) handleListLinks(w http.ResponseWriter, r *http.Request) {
 	rows, err := m.db.QueryContext(r.Context(), `
-		SELECT id, phone, verified_at, notify, created_at FROM retailassistant_phone_links
+		SELECT id, phone, verified_at, notify, language, opted_out_at IS NOT NULL, created_at FROM retailassistant_phone_links
 		WHERE revoked_at IS NULL ORDER BY id`)
 	if err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list phone links"))
@@ -696,7 +820,7 @@ func (m *Module) handleListLinks(w http.ResponseWriter, r *http.Request) {
 	out := []PhoneLink{}
 	for rows.Next() {
 		var l PhoneLink
-		if err := rows.Scan(&l.ID, &l.Phone, &l.VerifiedAt, &l.Notify, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Phone, &l.VerifiedAt, &l.Notify, &l.Language, &l.OptedOut, &l.CreatedAt); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list phone links"))
 			return
 		}
@@ -741,9 +865,9 @@ func (m *Module) handleCreateLink(w http.ResponseWriter, r *http.Request) {
 			ON CONFLICT (store_id, phone) DO UPDATE
 			SET code_hash = $2, code_expires_at = $3, code_attempts = 0,
 			    verified_at = NULL, revoked_at = NULL, selected_at = NULL, created_by = $4
-			RETURNING id, phone, verified_at, notify, created_at`,
+			RETURNING id, phone, verified_at, notify, language, opted_out_at IS NOT NULL, created_at`,
 			phone, codeHash(store, phone, code), time.Now().Add(linkCodeTTL), actor(ctx)).
-			Scan(&l.ID, &l.Phone, &l.VerifiedAt, &l.Notify, &l.CreatedAt)
+			Scan(&l.ID, &l.Phone, &l.VerifiedAt, &l.Notify, &l.Language, &l.OptedOut, &l.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -764,23 +888,40 @@ func (m *Module) handleUpdateLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Notify bool `json:"notify"`
+		Notify   *bool   `json:"notify"`
+		Language *string `json:"language"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	res, err := m.db.ExecContext(r.Context(), `
-		UPDATE retailassistant_phone_links SET notify = $2 WHERE id = $1 AND revoked_at IS NULL`, id, in.Notify)
+	if in.Language != nil && *in.Language != langEnglish && *in.Language != langHindi {
+		gocommerce.RespondError(w, r, gocommerce.Validationf("language is %s or %s", langEnglish, langHindi))
+		return
+	}
+	ctx := r.Context()
+	var optedOut bool
+	err = m.db.QueryRowContext(ctx, `SELECT opted_out_at IS NOT NULL FROM retailassistant_phone_links WHERE id = $1 AND revoked_at IS NULL`, id).Scan(&optedOut)
+	if errors.Is(err, sql.ErrNoRows) {
+		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no phone link %d", id))
+		return
+	}
 	if err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "change a phone link"))
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no phone link %d", id))
+	// The person holding the phone said no, and it is theirs to take back.
+	if optedOut && in.Notify != nil && *in.Notify {
+		gocommerce.RespondError(w, r, gocommerce.Conflictf("this phone sent STOP. It has to send START to get messages again"))
 		return
 	}
-	gocommerce.Respond(w, http.StatusOK, map[string]bool{"notify": in.Notify})
+	if _, err := m.db.ExecContext(ctx, `
+		UPDATE retailassistant_phone_links SET notify = COALESCE($2, notify), language = COALESCE($3, language) WHERE id = $1`,
+		id, in.Notify, in.Language); err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "change a phone link"))
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, map[string]bool{"changed": true})
 }
 
 func (m *Module) handleRevokeLink(w http.ResponseWriter, r *http.Request) {

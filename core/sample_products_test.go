@@ -38,11 +38,11 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add samples: %v", err)
 	}
-	if added != 10 {
-		t.Fatalf("added = %d, want 10 (eleven, less the saree the store already has)", added)
+	if added != 23 {
+		t.Fatalf("added = %d, want 23 (twenty-four, less the saree the store already has)", added)
 	}
-	if got := sampleCount(t, app, ctx); got != 10 {
-		t.Fatalf("count = %d, want 10", got)
+	if got := sampleCount(t, app, ctx); got != 23 {
+		t.Fatalf("count = %d, want 23", got)
 	}
 
 	kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
@@ -91,8 +91,8 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 		WHERE p.sample`).Scan(&variants, &onHand); err != nil {
 		t.Fatal(err)
 	}
-	if variants != 160 || onHand != 1657 {
-		t.Fatalf("samples hold %d variants with %d on hand, want 160 with 1657", variants, onHand)
+	if variants != 231 || onHand != 2257 {
+		t.Fatalf("samples hold %d variants with %d on hand, want 231 with 2257", variants, onHand)
 	}
 	// Stock to sell means a shopper can put one in a basket.
 	cart := newCart(t, app)
@@ -104,8 +104,8 @@ func TestSampleProductsAreAddedOnceWithStockToSell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add samples again: %v", err)
 	}
-	if again != 0 || sampleCount(t, app, ctx) != 10 {
-		t.Fatalf("a second add made %d, count %d; want 0 and still 10", again, sampleCount(t, app, ctx))
+	if again != 0 || sampleCount(t, app, ctx) != 23 {
+		t.Fatalf("a second add made %d, count %d; want 0 and still 23", again, sampleCount(t, app, ctx))
 	}
 }
 
@@ -170,22 +170,22 @@ func TestErasingSampleProductsLeavesTheMerchantsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erase samples: %v", err)
 	}
-	if deleted != 11 || sampleCount(t, app, ctx) != 0 {
-		t.Fatalf("erased %d, %d left; want 11 and none", deleted, sampleCount(t, app, ctx))
+	if deleted != 24 || sampleCount(t, app, ctx) != 0 {
+		t.Fatalf("erased %d, %d left; want 24 and none", deleted, sampleCount(t, app, ctx))
 	}
 	if got, err := app.Products().GetProduct(ctx, own.ID); err != nil || got.Title != "Test OWN-1" {
 		t.Fatalf("the merchant's product after the erase = %v, %v; want it kept", got, err)
 	}
-	if got := len(outboxEvents(t, app, EventProductDeleted)); got != 11 {
-		t.Errorf("product.deleted events = %d, want one per sample, 11", got)
+	if got := len(outboxEvents(t, app, EventProductDeleted)); got != 24 {
+		t.Errorf("product.deleted events = %d, want one per sample, 24", got)
 	}
 	var audited int
 	if err := app.DB().QueryRowContext(ctx,
 		`SELECT count(*) FROM admin_audit WHERE action = $1`, AuditProductDelete).Scan(&audited); err != nil {
 		t.Fatal(err)
 	}
-	if audited != 11 {
-		t.Errorf("audited deletes = %d, want 11", audited)
+	if audited != 24 {
+		t.Errorf("audited deletes = %d, want 24", audited)
 	}
 
 	again, err := app.Products().DeleteSampleProducts(ctx)
@@ -248,8 +248,8 @@ func TestSampleProductsComeWithTheirPhotos(t *testing.T) {
 		urls = append(urls, u)
 	}
 	rows.Close()
-	if len(urls) != 83 {
-		t.Fatalf("sample pictures = %d, want 83: every colour's shots of eleven products", len(urls))
+	if len(urls) != 104 {
+		t.Fatalf("sample pictures = %d, want 104: every colour's shots of twenty-four products", len(urls))
 	}
 	for _, url := range urls {
 		rec := do(t, app, http.MethodGet, url)

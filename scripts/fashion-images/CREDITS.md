@@ -2,8 +2,9 @@
 
 Written by `fetch-photos.mjs` from `core/sample/catalogue.json`; edit the catalogue, not this file.
 
-Each product was photographed in its first colour. Its other colours are colour
-variants edited with ChatGPT from the original photo, which both licences allow.
+Each product was photographed in its first colour. A colour listed below under
+its own name was photographed too. Any other colour is a variant edited with
+ChatGPT from the original photo, which both licences allow.
 
 | Product | Shot | Photographer | Photo | Licence |
 | --- | --- | --- | --- | --- |
@@ -33,3 +34,24 @@ variants edited with ChatGPT from the original photo, which both licences allow.
 | Men's embroidered Nehru jacket | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c](https://unsplash.com/photos/man-in-light-purple-kurta-and-embellished-vest-01dr7FTdJ6c) | [Unsplash License](https://unsplash.com/license) |
 | Men's embroidered Nehru jacket | standing | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4](https://unsplash.com/photos/a-man-in-a-pink-kurta-and-jacket-smiles-Xgip1NPJ_b4) | [Unsplash License](https://unsplash.com/license) |
 | Men's kurta pyjama set | front | [Noor Alam](https://unsplash.com/@itsmenoor2022) | [unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY](https://unsplash.com/photos/a-man-in-a-blue-kurta-and-pants-smiles-sLRFg-VC2FY) | [Unsplash License](https://unsplash.com/license) |
+| White saree with red motifs | front | [Vishal Adhikari](https://www.pexels.com/@vishalcreation/) | [pexels.com/photo/14205210/](https://www.pexels.com/photo/14205210/) | [Pexels License](https://www.pexels.com/license/) |
+| White saree with red motifs | detail | [Vishal Adhikari](https://www.pexels.com/@vishalcreation/) | [pexels.com/photo/14205208/](https://www.pexels.com/photo/14205208/) | [Pexels License](https://www.pexels.com/license/) |
+| Yellow half saree with woven border | front | [AA's Photography](https://www.pexels.com/@aa-s-photography-2161967704/) | [pexels.com/photo/39358672/](https://www.pexels.com/photo/39358672/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | front | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512787/](https://www.pexels.com/photo/28512787/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | standing | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512785/](https://www.pexels.com/photo/28512785/) | [Pexels License](https://www.pexels.com/license/) |
+| Embroidered straight kurta | side | [Neha Mishra](https://www.pexels.com/@neha-mishra-1851906907/) | [pexels.com/photo/28512786/](https://www.pexels.com/photo/28512786/) | [Pexels License](https://www.pexels.com/license/) |
+| Printed A-line kurta | front | [TAVSI APPAREL](https://www.pexels.com/@tavsiapparel/) | [pexels.com/photo/28213774/](https://www.pexels.com/photo/28213774/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584941/](https://www.pexels.com/photo/13584941/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front (green) | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584942/](https://www.pexels.com/photo/13584942/) | [Pexels License](https://www.pexels.com/license/) |
+| Red kurta set with printed dupatta | front (orange) | [Abdullah khan](https://www.pexels.com/@abdullah-khan-314140297/) | [pexels.com/photo/13584946/](https://www.pexels.com/photo/13584946/) | [Pexels License](https://www.pexels.com/license/) |
+| Teal printed kurta with dupatta | front | [HEMANT SAINI](https://www.pexels.com/@hemant-saini-2148893253/) | [pexels.com/photo/33363057/](https://www.pexels.com/photo/33363057/) | [Pexels License](https://www.pexels.com/license/) |
+| Smocked off-shoulder maxi dress | front | [Jk Films](https://www.pexels.com/@jk-films-394879512/) | [pexels.com/photo/15528063/](https://www.pexels.com/photo/15528063/) | [Pexels License](https://www.pexels.com/license/) |
+| Floral front-slit top | front | [RAJESH KUMAR VERMA](https://www.pexels.com/@rajeshverma/) | [pexels.com/photo/9322209/](https://www.pexels.com/photo/9322209/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's plain formal shirt | front | [veeru edits](https://www.pexels.com/@veeru-edits-2043202/) | [pexels.com/photo/12661575/](https://www.pexels.com/photo/12661575/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's black shirt | front | [Naveen sita](https://www.pexels.com/@nani3026d/) | [pexels.com/photo/5819413/](https://www.pexels.com/photo/5819413/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | front | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064117/](https://www.pexels.com/photo/9064117/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | side | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064116/](https://www.pexels.com/photo/9064116/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's textured kurta | seated | [Shazaf Zafar](https://www.pexels.com/@shazafzafar/) | [pexels.com/photo/9064114/](https://www.pexels.com/photo/9064114/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's floral velvet blazer | front | [THEMRSINGH](https://www.pexels.com/@themrsingh-784412/) | [pexels.com/photo/16325764/](https://www.pexels.com/photo/16325764/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's embroidered sherwani | front | [aman ajimal Fashion Stylist](https://www.pexels.com/@1054048/) | [pexels.com/photo/11749506/](https://www.pexels.com/photo/11749506/) | [Pexels License](https://www.pexels.com/license/) |
+| Men's embroidered sherwani | side | [aman ajimal Fashion Stylist](https://www.pexels.com/@1054048/) | [pexels.com/photo/11749504/](https://www.pexels.com/photo/11749504/) | [Pexels License](https://www.pexels.com/license/) |

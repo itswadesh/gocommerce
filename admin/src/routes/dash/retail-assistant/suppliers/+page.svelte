@@ -4,13 +4,18 @@
      * outstanding is bills less credit notes less verified payments allocated.
      * The screen records and allocates; it never adds anything up itself.
      */
-    import { can, retailAssistant } from "$lib/api.js";
+    import { t } from "$lib/retail-lang.svelte.js";
+    import RetailLanguage from "$lib/components/RetailLanguage.svelte";
+    import { api, can, retailAssistant } from "$lib/api.js";
+    import { downloadBinary } from "$lib/download.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import { formatMoney, fromMinor, isValidMoney, toMinor } from "$lib/format.js";
-    import { CREDIT_KINDS, moneyNote, newKey } from "$lib/retail.js";
+    import { CREDIT_KINDS, moneyNote, newKey, wholeQuantity } from "$lib/retail.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { rise } from "$lib/motion.js";
     import { titled } from "$lib/brand.svelte.js";
+    import VariantSearch from "$lib/components/VariantSearch.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -86,12 +91,15 @@
         }
     }
 
-    const show = (row) => run(() => loadAccount(row));
+    const show = (row) => {
+        receiving = null;
+        return run(() => loadAccount(row));
+    };
     const openBills = $derived(bills.filter((b) => !b.reversed && b.remaining.amount_minor > 0));
     const usable = (e) => !e.reverses_id && !e.reversed && e.unallocated.amount_minor > 0;
 
     function amountOf(value) {
-        if (!isValidMoney(value) || toMinor(value, currency) <= 0) throw new Error("Type an amount above zero, such as 1180.50");
+        if (!isValidMoney(value) || toMinor(value, currency) <= 0) throw new Error(t("Type an amount above zero, such as 1180.50"));
         return toMinor(value, currency);
     }
 
@@ -102,7 +110,7 @@
                 { supplier_id: open.id, amount_minor: amountOf(payment.amount), paid_on: payment.paid_on, method: payment.method.trim(), reference: payment.reference.trim(), verified: payment.verified },
                 payment.key,
             );
-            toast.success(payment.verified ? "Payment recorded" : "Payment recorded as not verified");
+            toast.success(payment.verified ? t("Payment recorded") : t("Payment recorded as not verified"));
             payment = blankPayment();
             await loadAccount(open);
         });
@@ -112,7 +120,7 @@
         e.preventDefault();
         await run(async () => {
             await retailAssistant.addCredit({ supplier_id: open.id, amount_minor: amountOf(credit.amount), kind: credit.kind, credit_no: credit.credit_no.trim() }, credit.key);
-            toast.success("Credit note recorded");
+            toast.success(t("Credit note recorded"));
             credit = blankCredit();
             await loadAccount(open);
         });
@@ -135,7 +143,7 @@
             const body = { invoice_id: Number(allocating.invoice), amount_minor: amountOf(allocating.amount) };
             const fn = allocating.kind === "payment" ? retailAssistant.allocatePayment : retailAssistant.allocateCredit;
             await fn(allocating.entry.id, body, allocating.key);
-            toast.success("Allocated");
+            toast.success(t("Allocated"));
             allocating = null;
             await loadAccount(open);
         });
@@ -147,17 +155,78 @@
             toast.success(message);
             await loadAccount(open);
         });
+
+    const EXPORTS = [
+        { kind: "suppliers", label: "Balances" },
+        { kind: "bills", label: "Bills" },
+        { kind: "payments", label: "Payments" },
+        { kind: "credits", label: "Credit notes" },
+    ];
+
+    const download = (kind) =>
+        run(() => downloadBinary(`/api/admin/x/retailassistant/export/${kind}`, `supplier-${kind}-${today()}.csv`));
+
+    const receivable = $derived(writable && can("inventory.write"));
+    let receiving = $state(null);
+
+    async function loadLines(bill) {
+        const lines = await retailAssistant.invoiceLines(bill.id);
+        receiving = {
+            bill,
+            location: receiving?.location ?? "",
+            locations: receiving?.locations ?? [],
+            lines: lines.map((l) => ({ ...l, variant: l.variant_id ? { id: l.variant_id, sku: l.sku } : null, qty: wholeQuantity(l.quantity) })),
+        };
+    }
+
+    function startReceive(bill) {
+        return run(async () => {
+            receiving = null;
+            await loadLines(bill);
+            if (!receivable || !can("locations.read")) return;
+            // With one place or none to choose, the engine's default location is right.
+            const found = (await api.get("/api/admin/locations")).data ?? [];
+            if (found.length > 1) {
+                receiving.locations = found.map((l) => ({ value: String(l.id), label: l.name }));
+                receiving.location = String(found[0].id);
+            }
+        });
+    }
+
+    async function receive(e) {
+        e.preventDefault();
+        const chosen = receiving.lines.filter((l) => !l.receipt && l.variant && l.qty);
+        if (!chosen.length) {
+            toast.error(new Error(t("Choose a product and a quantity for at least one line")));
+            return;
+        }
+        const bill = receiving.bill;
+        await run(async () => {
+            try {
+                const out = await retailAssistant.receive(bill.id, {
+                    lines: chosen.map((l) => ({ line_id: l.id, variant_id: l.variant.id, location_id: Number(receiving.location) || 0, quantity: Number(l.qty) })),
+                });
+                toast.success(out.received === 1 ? t("1 line booked into stock") : t("{n} lines booked into stock", { n: out.received }));
+            } finally {
+                // Lines go one at a time, so a refusal part way leaves earlier ones
+                // booked in; the list has to show that either way.
+                await loadLines(bill);
+                await loadAccount(open);
+            }
+        });
+    }
 </script>
 
-<svelte:head><title>{titled("Suppliers")}</title></svelte:head>
+<svelte:head><title>{titled(t("Suppliers"))}</title></svelte:head>
 
 <div class="page page-retail shopify-skin">
     <div class="page-content full-height tw:bg-background tw:text-foreground">
         <header class="page-header">
             <nav class="breadcrumbs">
-                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Retail assistant</div>
-                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">Suppliers</h1>
+                <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">{t("Retail assistant")}</div>
+                <h1 class="breadcrumb-item tw:text-2xl tw:font-semibold tw:tracking-tight">{t("Suppliers")}</h1>
             </nav>
+            <RetailLanguage />
         </header>
 
         {#if missing}
@@ -165,19 +234,28 @@
         {:else if !readable}
             <NoAccess right="retailassistant.read" what="the store's supplier accounts" />
         {:else if !enabled}
-            <EmptyState icon="ri-whatsapp-line" title="The retail assistant is off" text="Switch it on under Supplier bills to see what you owe each supplier." />
+            <EmptyState icon="ri-whatsapp-line" title={t("The retail assistant is off")} text={t("Switch it on under Supplier bills to see what you owe each supplier.")} />
         {:else}
             <p class="tw:mb-4 tw:text-sm tw:text-muted-foreground">
-                What you owe is posted bills, less credit notes, less verified payments allocated to a bill. Stock is separate: a bill does not put goods on the shelf.
+                {t("What you owe is posted bills, less credit notes, less verified payments allocated to a bill. Stock is separate: a bill does not put goods on the shelf.")}
             </p>
+            <div class="tw:mb-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2" role="group" aria-label={t("Download as CSV")}>
+                <span class="tw:text-sm tw:text-muted-foreground">{t("Download as CSV:")}</span>
+                {#each EXPORTS as x (x.kind)}
+                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => download(x.kind)}>
+                        <i class="ri-download-line" aria-hidden="true"></i>
+                        <span class="txt">{t(x.label)}</span>
+                    </button>
+                {/each}
+            </div>
             <div class="page-table-wrapper retail-table tw:rounded-xl tw:border">
                 <table class="table responsive-table">
                     <thead>
                         <tr>
-                            <th>Supplier</th>
-                            <th class="min-width">You owe</th>
-                            <th class="min-width">Billed</th>
-                            <th class="min-width"><span class="tw:sr-only">Actions</span></th>
+                            <th>{t("Supplier")}</th>
+                            <th class="min-width">{t("You owe")}</th>
+                            <th class="min-width">{t("Billed")}</th>
+                            <th class="min-width"><span class="tw:sr-only">{t("Actions")}</span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,17 +263,17 @@
                             <tr>
                                 <td data-name="Supplier">
                                     <strong>{row.name}</strong>
-                                    {#if moneyNote(row, formatMoney)}<div class="txt-hint txt-sm">{moneyNote(row, formatMoney)}</div>{/if}
+                                    {#if moneyNote(row, formatMoney, t)}<div class="txt-hint txt-sm">{moneyNote(row, formatMoney, t)}</div>{/if}
                                 </td>
                                 <td class="min-width" data-name="You owe"><strong>{formatMoney(row.outstanding)}</strong></td>
                                 <td class="min-width txt-hint" data-name="Billed">{formatMoney(row.invoiced)}</td>
                                 <td class="min-width" data-name="Actions">
-                                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => show(row)}><span class="txt">Open</span></button>
+                                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => show(row)}><span class="txt">{t("Open")}</span></button>
                                 </td>
                             </tr>
                         {:else}
                             {#if !loading}
-                                <tr><td colspan="4"><EmptyState icon="ri-store-2-line" title="No suppliers yet" text="A supplier appears here when you approve their first bill." /></td></tr>
+                                <tr><td colspan="4"><EmptyState icon="ri-store-2-line" title={t("No suppliers yet")} text={t("A supplier appears here when you approve their first bill.")} /></td></tr>
                             {/if}
                         {/each}
                     </tbody>
@@ -208,135 +286,186 @@
 <Drawer open={!!open} size="md" title={open?.name ?? ""} onclose={() => (open = null)}>
     {#if open}
         <dl class="retail-sum">
-            <div><dt>You owe</dt><dd>{formatMoney(open.outstanding)}</dd></div>
-            <div><dt>Paid in advance</dt><dd>{formatMoney(open.advance)}</dd></div>
-            <div><dt>Not verified yet</dt><dd>{formatMoney(open.unverified)}</dd></div>
+            <div><dt>{t("You owe")}</dt><dd>{formatMoney(open.outstanding)}</dd></div>
+            <div><dt>{t("Paid in advance")}</dt><dd>{formatMoney(open.advance)}</dd></div>
+            <div><dt>{t("Not verified yet")}</dt><dd>{formatMoney(open.unverified)}</dd></div>
         </dl>
 
-        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Bills</h3>
+        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">{t("Bills")}</h3>
         <ul class="retail-list">
             {#each bills as b (b.id)}
                 <li>
-                    <span><strong>{b.invoice_no}</strong> <span class="txt-hint txt-sm">{b.invoice_date}</span>{#if b.reversed} <span class="label">Reversed</span>{/if}</span>
-                    <span>{formatMoney(b.remaining)} <span class="txt-hint txt-sm">of {formatMoney(b.total)}</span></span>
+                    <span><strong>{b.invoice_no}</strong> <span class="txt-hint txt-sm">{b.invoice_date}</span>{#if b.reversed} <span class="label">{t("Reversed")}</span>{/if}</span>
+                    <span>{formatMoney(b.remaining)} <span class="txt-hint txt-sm">{t("of {total}", { total: formatMoney(b.total) })}</span></span>
+                    {#if b.lines && !b.reversed}
+                        <span class="retail-goods">
+                            <span class="txt-hint txt-sm">{t("Goods: {done} of {all} lines booked in", { done: b.lines_received, all: b.lines })}</span>
+                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => startReceive(b)}><span class="txt">{receivable && b.lines_received < b.lines ? t("Book in goods") : t("See goods")}</span></button>
+                        </span>
+                    {/if}
                 </li>
             {:else}
-                <li class="txt-hint">No bills posted yet.</li>
+                <li class="txt-hint">{t("No bills posted yet.")}</li>
             {/each}
         </ul>
 
-        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Payments</h3>
+        {#if receiving}
+            <form class="retail-box" onsubmit={receive} in:rise>
+                <h3 class="tw:mb-1 tw:font-semibold">{t("Goods on {number}", { number: receiving.bill.invoice_no })}</h3>
+                <p class="txt-hint txt-sm tw:mb-2">{t("Book in only what is on the shelf. Each line moves stock once and cannot be repeated.")}</p>
+                {#if receivable && receiving.locations.length}
+                    <div class="field">
+                        <label for="ra-location">{t("Stock goes to")}</label>
+                        <Select id="ra-location" bind:value={receiving.location} options={receiving.locations} />
+                    </div>
+                {/if}
+                {#each receiving.lines as line, i (line.id)}
+                    <fieldset class="retail-line" aria-label={line.description || t("Line {n}", { n: i + 1 })}>
+                        <div><strong>{line.description || t("Line {n}", { n: i + 1 })}</strong> <span class="txt-hint txt-sm">{line.quantity != null ? t("{quantity} on the bill", { quantity: `${line.quantity}${line.unit ? ` ${line.unit}` : ""}` }) : t("No quantity")}</span></div>
+                        {#if line.receipt?.status === "posted"}
+                            <span class="label success">{t("{n} booked in", { n: line.receipt.quantity })}</span>
+                        {:else if line.receipt}
+                            <span class="label warning">{t("Interrupted")}</span>
+                            <p class="txt-hint txt-sm">{t("Booking this in stopped part way. Check the stock count and correct it under Inventory if it did not change.")}</p>
+                        {:else if receivable}
+                            {#if line.variant}
+                                <div class="tw:mt-1 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                                    <span class="txt-sm">{line.variant.product?.title ?? "SKU"} <span class="txt-code">{line.variant.sku}</span></span>
+                                    <button type="button" class="btn sm transparent secondary" onclick={() => (line.variant = null)}><span class="txt">{t("Change")}</span></button>
+                                </div>
+                            {:else}
+                                <VariantSearch id={`ra-variant-${line.id}`} disabled={busy} onpick={(row) => (line.variant = row)} />
+                            {/if}
+                            <div class="field m-t-sm">
+                                <label for={`ra-qty-${line.id}`}>{t("Quantity that arrived")}</label>
+                                <input id={`ra-qty-${line.id}`} type="number" min="1" step="1" inputmode="numeric" bind:value={line.qty} />
+                            </div>
+                        {:else}
+                            <span class="label">{t("Not booked in")}</span>
+                        {/if}
+                    </fieldset>
+                {/each}
+                <div class="tw:mt-3 tw:flex tw:gap-2">
+                    {#if receivable && receiving.lines.some((l) => !l.receipt)}
+                        <button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">{t("Book into stock")}</span></button>
+                    {/if}
+                    <button type="button" class="btn transparent secondary" onclick={() => (receiving = null)}><span class="txt">{t("Close")}</span></button>
+                </div>
+            </form>
+        {/if}
+
+        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">{t("Payments")}</h3>
         <ul class="retail-list">
             {#each payments as p (p.id)}
                 <li>
                     <span>
                         <strong>{formatMoney(p.amount)}</strong>
                         <span class="txt-hint txt-sm">{p.date}{p.reference ? ` · ${p.reference}` : ""}</span>
-                        {#if p.reverses_id}<span class="label">Reversal</span>{:else if p.reversed}<span class="label">Reversed</span>{:else if p.status === "provisional"}<span class="label warning">Not verified</span>{/if}
+                        {#if p.reverses_id}<span class="label">{t("Reversal")}</span>{:else if p.reversed}<span class="label">{t("Reversed")}</span>{:else if p.status === "provisional"}<span class="label warning">{t("Not verified")}</span>{/if}
                     </span>
                     {#if writable && !p.reverses_id && !p.reversed}
                         <span class="retail-actions">
                             {#if p.status === "provisional"}
-                                <button type="button" class="btn sm" disabled={busy} onclick={() => act(() => retailAssistant.verifyPayment(p.id), "Payment verified")}><span class="txt">Verify</span></button>
+                                <button type="button" class="btn sm" disabled={busy} onclick={() => act(() => retailAssistant.verifyPayment(p.id), t("Payment verified"))}><span class="txt">{t("Verify")}</span></button>
                             {:else if usable(p) && openBills.length}
-                                <button type="button" class="btn sm" disabled={busy} onclick={() => startAllocate("payment", p)}><span class="txt">Allocate</span></button>
+                                <button type="button" class="btn sm" disabled={busy} onclick={() => startAllocate("payment", p)}><span class="txt">{t("Allocate")}</span></button>
                             {/if}
-                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => act(() => retailAssistant.reversePayment(p.id), "Payment reversed")}><span class="txt">Reverse</span></button>
+                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => act(() => retailAssistant.reversePayment(p.id), t("Payment reversed"))}><span class="txt">{t("Reverse")}</span></button>
                         </span>
                     {/if}
                 </li>
             {:else}
-                <li class="txt-hint">No payments recorded yet.</li>
+                <li class="txt-hint">{t("No payments recorded yet.")}</li>
             {/each}
         </ul>
 
-        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Credit notes</h3>
+        <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">{t("Credit notes")}</h3>
         <ul class="retail-list">
             {#each credits as c (c.id)}
                 <li>
                     <span>
                         <strong>{formatMoney(c.amount)}</strong>
-                        <span class="txt-hint txt-sm">{c.reference || c.kind}</span>
-                        {#if c.reverses_id}<span class="label">Reversal</span>{:else if c.reversed}<span class="label">Reversed</span>{/if}
+                        <span class="txt-hint txt-sm">{c.reference || t(CREDIT_KINDS.find((k) => k.value === c.kind)?.label ?? c.kind)}</span>
+                        {#if c.reverses_id}<span class="label">{t("Reversal")}</span>{:else if c.reversed}<span class="label">{t("Reversed")}</span>{/if}
                     </span>
                     {#if writable && !c.reverses_id && !c.reversed}
                         <span class="retail-actions">
                             {#if usable(c) && openBills.length}
-                                <button type="button" class="btn sm" disabled={busy} onclick={() => startAllocate("credit", c)}><span class="txt">Allocate</span></button>
+                                <button type="button" class="btn sm" disabled={busy} onclick={() => startAllocate("credit", c)}><span class="txt">{t("Allocate")}</span></button>
                             {/if}
-                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => act(() => retailAssistant.reverseCredit(c.id), "Credit note reversed")}><span class="txt">Reverse</span></button>
+                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => act(() => retailAssistant.reverseCredit(c.id), t("Credit note reversed"))}><span class="txt">{t("Reverse")}</span></button>
                         </span>
                     {/if}
                 </li>
             {:else}
-                <li class="txt-hint">No credit notes yet.</li>
+                <li class="txt-hint">{t("No credit notes yet.")}</li>
             {/each}
         </ul>
 
         {#if allocating}
             <form class="retail-box" onsubmit={allocate}>
-                <h3 class="tw:mb-2 tw:font-semibold">Allocate {formatMoney(allocating.entry.unallocated)}</h3>
+                <h3 class="tw:mb-2 tw:font-semibold">{t("Allocate {amount}", { amount: formatMoney(allocating.entry.unallocated) })}</h3>
                 <div class="field">
-                    <label for="ra-bill">To bill</label>
-                    <Select id="ra-bill" bind:value={allocating.invoice} options={openBills.map((b) => ({ value: String(b.id), label: `${b.invoice_no} (${formatMoney(b.remaining)} left)` }))} />
+                    <label for="ra-bill">{t("To bill")}</label>
+                    <Select id="ra-bill" bind:value={allocating.invoice} options={openBills.map((b) => ({ value: String(b.id), label: t("{number} ({left} left)", { number: b.invoice_no, left: formatMoney(b.remaining) }) }))} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-alloc">Amount ({currency})</label>
+                    <label for="ra-alloc">{t("Amount ({currency})", { currency })}</label>
                     <input id="ra-alloc" inputmode="decimal" required bind:value={allocating.amount} />
                 </div>
                 <div class="tw:mt-3 tw:flex tw:gap-2">
-                    <button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">Allocate</span></button>
-                    <button type="button" class="btn transparent secondary" onclick={() => (allocating = null)}><span class="txt">Cancel</span></button>
+                    <button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">{t("Allocate")}</span></button>
+                    <button type="button" class="btn transparent secondary" onclick={() => (allocating = null)}><span class="txt">{t("Cancel")}</span></button>
                 </div>
             </form>
         {/if}
 
         {#if writable}
             <form class="retail-box" onsubmit={addPayment}>
-                <h3 class="tw:mb-2 tw:font-semibold">Record a payment</h3>
+                <h3 class="tw:mb-2 tw:font-semibold">{t("Record a payment")}</h3>
                 <div class="field">
-                    <label for="ra-pay">Amount ({currency})</label>
+                    <label for="ra-pay">{t("Amount ({currency})", { currency })}</label>
                     <input id="ra-pay" inputmode="decimal" required bind:value={payment.amount} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-paid">Paid on</label>
+                    <label for="ra-paid">{t("Paid on")}</label>
                     <input id="ra-paid" type="date" required bind:value={payment.paid_on} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-how">Paid by</label>
-                    <input id="ra-how" type="text" placeholder="Cash, UPI, bank transfer" bind:value={payment.method} />
+                    <label for="ra-how">{t("Paid by")}</label>
+                    <input id="ra-how" type="text" placeholder={t("Cash, UPI, bank transfer")} bind:value={payment.method} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-ref">Reference</label>
+                    <label for="ra-ref">{t("Reference")}</label>
                     <input id="ra-ref" type="text" bind:value={payment.reference} />
                 </div>
                 <label class="retail-check tw:mt-2">
                     <input type="checkbox" bind:checked={payment.verified} />
-                    <span>I know this money was paid</span>
+                    <span>{t("I know this money was paid")}</span>
                 </label>
-                <div class="tw:mt-2"><button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">Record payment</span></button></div>
+                <div class="tw:mt-2"><button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">{t("Record payment")}</span></button></div>
             </form>
 
             <form class="retail-box" onsubmit={addCredit}>
-                <h3 class="tw:mb-2 tw:font-semibold">Record a credit note</h3>
+                <h3 class="tw:mb-2 tw:font-semibold">{t("Record a credit note")}</h3>
                 <div class="field">
-                    <label for="ra-credit">Amount ({currency})</label>
+                    <label for="ra-credit">{t("Amount ({currency})", { currency })}</label>
                     <input id="ra-credit" inputmode="decimal" required bind:value={credit.amount} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-kind2">Reason</label>
-                    <Select id="ra-kind2" bind:value={credit.kind} options={CREDIT_KINDS} />
+                    <label for="ra-kind2">{t("Reason")}</label>
+                    <Select id="ra-kind2" bind:value={credit.kind} options={CREDIT_KINDS.map((o) => ({ ...o, label: t(o.label) }))} />
                 </div>
                 <div class="field m-t-sm">
-                    <label for="ra-cn">Credit note number</label>
+                    <label for="ra-cn">{t("Credit note number")}</label>
                     <input id="ra-cn" type="text" bind:value={credit.credit_no} />
                 </div>
-                <div class="tw:mt-3"><button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">Record credit note</span></button></div>
+                <div class="tw:mt-3"><button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">{t("Record credit note")}</span></button></div>
             </form>
         {/if}
     {/if}
     {#snippet footer()}
-        <button type="button" class="btn transparent secondary" onclick={() => (open = null)}><span class="txt">Close</span></button>
+        <button type="button" class="btn transparent secondary" onclick={() => (open = null)}><span class="txt">{t("Close")}</span></button>
     {/snippet}
 </Drawer>
 
@@ -374,6 +503,21 @@
         justify-content: space-between;
         gap: 6px 12px;
         padding: 8px 0;
+        border-top: 1px solid var(--color-border, #e5e5e5);
+    }
+    .retail-goods {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px 12px;
+    }
+    .retail-line {
+        border: 0;
+        margin: 0;
+        padding: 12px 0;
+        min-width: 0;
         border-top: 1px solid var(--color-border, #e5e5e5);
     }
     .retail-actions {

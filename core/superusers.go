@@ -1037,13 +1037,20 @@ func (s *Superusers) Authenticate(ctx context.Context, identity, password, clien
 		}
 		return nil, nil, Internalf(err, "look up superuser")
 	}
+	// An account with no password fails without any work, and would otherwise
+	// be the fast answer that says it exists.
+	if su.passwordHash == "" {
+		s.dummyVerify(ctx, password)
+	}
 	if !verifyPassword(su.passwordHash, password) {
 		s.throttle.fail(identity, clientIP)
 		return nil, nil, invalid
 	}
 	s.throttle.succeed(identity, clientIP)
 
-	sess, err := s.issue(ctx, su.ID)
+	// The hash that was just checked, because checking takes long enough for a
+	// code to end this password meanwhile (claimPhoneAccount).
+	sess, err := s.issueFor(ctx, su.ID, &su.passwordHash)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1089,6 +1096,13 @@ var errPersonDisabled = &APIError{
 // issue is the one place a session is made, so it is where a disabled person is
 // refused, whichever way they proved who they are.
 func (s *Superusers) issue(ctx context.Context, superuserID int64) (*Session, error) {
+	return s.issueFor(ctx, superuserID, nil)
+}
+
+// issueFor is issue, refused too when the password is no longer checkedHash. FOR
+// SHARE, so this waits for a change to the person and then reads it, and a change
+// that follows sees this session and ends it. Never call it holding that row.
+func (s *Superusers) issueFor(ctx context.Context, superuserID int64, checkedHash *string) (*Session, error) {
 	token, err := newSessionToken()
 	if err != nil {
 		return nil, Internalf(err, "issue session")
@@ -1096,7 +1110,9 @@ func (s *Superusers) issue(ctx context.Context, superuserID int64) (*Session, er
 	expires := time.Now().Add(sessionTTL)
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO superuser_sessions (token_hash, superuser_id, expires_at)
-		SELECT $1, id, $3 FROM superusers WHERE id = $2 AND disabled_at IS NULL`, hashToken(token), superuserID, expires)
+		SELECT $1, id, $3 FROM superusers
+		WHERE id = $2 AND disabled_at IS NULL AND ($4::text IS NULL OR password_hash = $4) FOR SHARE`,
+		hashToken(token), superuserID, expires, checkedHash)
 	if err != nil {
 		return nil, Internalf(err, "store session")
 	}

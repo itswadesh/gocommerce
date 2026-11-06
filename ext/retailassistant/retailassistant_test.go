@@ -38,7 +38,10 @@ type fakeMeta struct {
 	srv   *httptest.Server
 }
 
-type sentMessage struct{ To, Body string }
+type sentMessage struct {
+	To, Body, Template, Language string
+	Components                   int
+}
 
 func (f *fakeMeta) handler(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -51,9 +54,24 @@ func (f *fakeMeta) handler(w http.ResponseWriter, r *http.Request) {
 			Text struct {
 				Body string `json:"body"`
 			} `json:"text"`
+			Template struct {
+				Name     string `json:"name"`
+				Language struct {
+					Code string `json:"code"`
+				} `json:"language"`
+				Components []struct {
+					Parameters []struct {
+						Text string `json:"text"`
+					} `json:"parameters"`
+				} `json:"components"`
+			} `json:"template"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
-		f.sent = append(f.sent, sentMessage{in.To, in.Text.Body})
+		body := in.Text.Body
+		if len(in.Template.Components) > 0 {
+			body = in.Template.Components[0].Parameters[0].Text
+		}
+		f.sent = append(f.sent, sentMessage{in.To, body, in.Template.Name, in.Template.Language.Code, len(in.Template.Components)})
 		_, _ = w.Write([]byte(`{"messages":[{"id":"wamid.out"}]}`))
 	case strings.HasPrefix(r.URL.Path, "/download/"):
 		data, ok := f.files[strings.TrimPrefix(r.URL.Path, "/download/")]
@@ -93,13 +111,25 @@ type harness struct {
 
 func setup(t *testing.T) *harness {
 	t.Helper()
+	return setupWith(t, func(*Config) {})
+}
+
+func setupWith(t *testing.T, change func(*Config), extra ...gocommerce.Module) *harness {
+	t.Helper()
 	meta := &fakeMeta{files: map[string][]byte{}}
 	meta.srv = gctest.StubHTTP(t, meta.handler)
-	mod := New(Config{
+	cfg := Config{
 		AppSecret: testSecret, VerifyToken: "verify-me", AccessToken: "test-access-token", PhoneNumberID: phoneID,
 		BaseURL: meta.srv.URL, Client: meta.srv.Client(),
-	})
-	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mod)
+	}
+	change(&cfg)
+	mod := New(cfg)
+	mods := []gocommerce.Module{mod}
+	if cfg.Gateway != nil {
+		mods = []gocommerce.Module{cfg.Gateway, mod}
+	}
+	mods = append(extra, mods...)
+	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mods...)
 	st, err := app.Stores().Create(context.Background(), "Store B", "store-b")
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +164,13 @@ func (h *harness) enable(store string) {
 	}
 	if _, err := h.app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
 		h.t.Fatalf("switch on: %v", err)
+	}
+}
+
+func (h *harness) setRetention(days int) {
+	h.t.Helper()
+	if _, err := h.app.Plugins().Update(h.ctxOf(""), pluginKey, gocommerce.PluginPatch{Settings: map[string]any{"retention_days": days}}); err != nil {
+		h.t.Fatalf("set retention: %v", err)
 	}
 }
 
@@ -751,6 +788,16 @@ func TestABillMovesNoStockAndAReceiptMovesItOnce(t *testing.T) {
 	if rec.Code < 400 {
 		t.Fatalf("a missing variant = %d", rec.Code)
 	}
+	var lines []PurchaseLine
+	h.admin(http.MethodGet, path(fmt.Sprintf("/invoices/%d/lines", invoice), ""), nil, &lines, http.StatusOK)
+	if len(lines) != 1 || lines[0].Receipt == nil || lines[0].Receipt.Quantity != 10 || lines[0].Receipt.Status != "posted" {
+		t.Fatalf("lines after a receipt = %+v", lines)
+	}
+	h.admin(http.MethodGet, path(fmt.Sprintf("/invoices/%d/lines", fresh), ""), nil, &lines, http.StatusOK)
+	if len(lines) != 1 || lines[0].Receipt != nil {
+		t.Fatalf("a refused receipt still shows: %+v", lines)
+	}
+	h.admin(http.MethodGet, path("/invoices/999999/lines", ""), nil, nil, http.StatusNotFound)
 	if n := h.count("", "retailassistant_stock_receipts"); n != 1 {
 		t.Fatalf("%d receipts, want the one that moved stock", n)
 	}
@@ -897,4 +944,6 @@ func TestSecretsAreKeptFromReports(t *testing.T) {
 	app := gctest.NewWithReports(t, mod)
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_phone_links", "code_hash")
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_documents", "content")
+	gctest.AssertReportsCannotRead(t, app, "retailassistant_wholesale_quotes", "lines")
+	gctest.AssertReportsCannotRead(t, app, "retailassistant_counter_sales", "idempotency_key")
 }

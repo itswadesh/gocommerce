@@ -143,6 +143,13 @@
                 "properties": {
                   "notify": {
                     "type": "boolean"
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "hi"
+                    ]
                   }
                 }
               }
@@ -928,6 +935,151 @@
         }
       }
     },
+    "/api/admin/x/retailassistant/documents/{id}/remove-file": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Delete a reviewed document's original file",
+        "description": "The ledger is untouched. Refused while the document still waits for review. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file is gone"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such document in this store"
+          },
+          "409": {
+            "description": "The document still waits for review"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/documents/{id}/read": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Read a PDF or photo with AI, and replace the draft with what it reads",
+        "description": "Needs the store's ai_reading setting and an AI gateway that lets documents leave. The document still waits for review, and approving it needs compared_with_file. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document, with what was read"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such document in this store"
+          },
+          "409": {
+            "description": "AI reading is off, this kind of file cannot be read, or somebody changed the document meanwhile"
+          },
+          "502": {
+            "description": "The model gave no usable answer"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/export/{kind}": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Download suppliers, bills, payments or credits as CSV",
+        "description": "Amounts are decimal, beside their currency. Text that a spreadsheet would run as a formula starts with an apostrophe. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "suppliers",
+                "bills",
+                "payments",
+                "credits"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A CSV file",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such export"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/invoices/{id}/lines": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "A bill's lines and whether their goods were booked in",
+        "description": "variant_id suggests the variant whose SKU is exactly the line's. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lines, oldest first"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such bill in this store"
+          }
+        }
+      }
+    },
     "/api/admin/x/retailassistant/invoices/{id}/receive": {
       "post": {
         "tags": [
@@ -987,6 +1139,631 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/insights": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "What the shop's records say now",
+        "description": "Figures from the ledger and sales records, with no model involved. stock is null for someone without orders.read and inventory.read, and slow_withheld says why a slow list cannot be given. Needs retailassistant.read.",
+        "responses": {
+          "200": {
+            "description": "The figures"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-statements": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Import a bank statement",
+        "description": "The body is the CSV. Only money going out is kept, and an overlapping statement adds only what is new. Needs retailassistant.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many lines were added, were already here, or could not be read"
+          },
+          "400": {
+            "description": "This is not a bank statement"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Statement lines, and the payments each might be",
+        "description": "Suggestions match on exact amount within a week of the date. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "unmatched",
+                "matched",
+                "ignored"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of lines"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/match": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Say which payment a line is",
+        "description": "The amounts must be equal. Verifies the payment if it was not. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payment_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/record": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Make a verified payment from a line",
+        "description": "For a payment nobody recorded. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "supplier_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/ignore": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Set a line aside as not a supplier payment",
+        "description": "Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/undo": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Put a line back",
+        "description": "A payment this match verified goes back to not verified, unless money from it is allocated. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/wholesale/preview": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Work out a retailer's prices from a manufacturer's document",
+        "description": "Costs come from the document, never the request. Writes nothing. Needs retailassistant.write and quotes.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "company_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "buyer_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "markup",
+                      "margin"
+                    ]
+                  },
+                  "percent_bps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "allow_below_cost": {
+                    "type": "boolean"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "index": {
+                          "type": "integer"
+                        },
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "price_minor": {
+                          "type": "integer",
+                          "format": "int64"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Each line's cost, price and margin, for the wholesaler's eyes"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs quotes.write"
+          },
+          "404": {
+            "description": "This install does not have B2B quotes"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/wholesale/quotes": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Draft a B2B quote from a manufacturer's document",
+        "description": "The quote holds prices only and is not sent. A price below cost needs allow_below_cost. Send an Idempotency-Key. Needs retailassistant.write and quotes.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "company_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "buyer_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "markup",
+                      "margin"
+                    ]
+                  },
+                  "percent_bps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "allow_below_cost": {
+                    "type": "boolean"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "index": {
+                          "type": "integer"
+                        },
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "price_minor": {
+                          "type": "integer",
+                          "format": "int64"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The drafted quote"
+          },
+          "200": {
+            "description": "The same press again, and the quote it already made"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs quotes.write"
+          },
+          "404": {
+            "description": "This install does not have B2B quotes"
+          },
+          "409": {
+            "description": "A price is below cost, or the document cannot be quoted from"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/lookup": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Find what a scanner read",
+        "description": "Exact on the barcode or SKU. Needs retailassistant.counter.",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching variants, usually one"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/barcodes": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Save a scanned barcode on a variant",
+        "description": "Through the catalogue's service. Needs retailassistant.counter and catalog.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "variant_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "barcode": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs catalog.write"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/preview": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "What a basket comes to",
+        "description": "From the checkout's own arithmetic, with nothing placed. Needs retailassistant.counter.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "discount_bps": {
+                    "type": "integer"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "cash",
+                      "upi",
+                      "credit"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "money_seen": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The figures"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The discount is over the store's limit"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/counter/sales": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Record a sale at the counter",
+        "description": "An order through core's own path, so stock moves once. Cash is paid; UPI is paid only with money_seen; credit is not. Needs an Idempotency-Key and retailassistant.counter.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  },
+                  "discount_bps": {
+                    "type": "integer"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "cash",
+                      "upi",
+                      "credit"
+                    ]
+                  },
+                  "reference": {
+                    "type": "string"
+                  },
+                  "money_seen": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The sale"
+          },
+          "200": {
+            "description": "The same press again, and the sale it already made"
+          },
+          "400": {
+            "description": "No Idempotency-Key, or a bad basket"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The discount is over the store's limit"
+          },
+          "409": {
+            "description": "Not enough stock"
           }
         }
       }

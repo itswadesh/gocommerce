@@ -223,6 +223,48 @@ func (m *Module) RequestQuote(ctx context.Context, buyer *identity.Customer, req
 	return m.Quote(ctx, id)
 }
 
+// DraftQuote is the merchant starting a quote rather than answering a request, as
+// a wholesaler does for a retailer who asked by phone. It is the same quote from
+// here: it waits as requested until the merchant sends it, and the buyer named
+// accepts it and is told about it as if they had asked. That buyer must belong to
+// the company, or they could never accept it.
+func (m *Module) DraftQuote(ctx context.Context, companyID, buyerID int64, req QuoteRequest) (*Quote, error) {
+	company, err := m.Company(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if company.Status == StatusClosed {
+		return nil, gocommerce.Forbiddenf("%s's account is closed", company.Name)
+	}
+	members, err := m.Members(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	email := ""
+	for _, member := range members {
+		if member.CustomerID == buyerID {
+			email = member.Email
+		}
+	}
+	if email == "" {
+		return nil, gocommerce.Validationf("that buyer does not belong to %s", company.Name)
+	}
+	var id int64
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO b2b_quotes (company_id, requested_by, requested_by_email, currency, note)
+			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			company.ID, buyerID, strings.ToLower(email), m.app.Currency(ctx), strings.TrimSpace(req.Note)).Scan(&id); err != nil {
+			return err
+		}
+		return m.writeQuoteLines(ctx, tx, id, req.Lines, true, company)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return m.Quote(ctx, id)
+}
+
 // writeQuoteLines replaces a quote's lines, reading each variant's SKU and
 // title so the quote still says what it was for if the product is renamed.
 //

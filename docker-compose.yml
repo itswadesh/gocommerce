@@ -127,6 +127,12 @@ services:
       # It stays shut until the install has email of its own (RESEND_API_KEY
       # or SENDGRID_API_KEY below), so whoever signs up can reset a password.
       GOCOMMERCE_SIGNUP: ${GOCOMMERCE_SIGNUP:-}
+      # The sign-in codes texted in 24 hours, to operators in total and to each
+      # store's shoppers in total. Unset, 500.
+      GOCOMMERCE_SMS_CODES_PER_DAY: ${GOCOMMERCE_SMS_CODES_PER_DAY:-}
+      # The calling codes an operator's sign-in code may be texted to, such as
+      # 91,1. Unset or unreadable, 91.
+      GOCOMMERCE_SMS_COUNTRIES: ${GOCOMMERCE_SMS_COUNTRIES:-}
       # The install owner's own bot and chat, told whenever anybody opens a
       # store. Not a store's: each store sets its own for its orders.
       # The retail assistant's one WhatsApp number, shared by every store that
@@ -137,6 +143,10 @@ services:
       RETAIL_ASSISTANT_PHONE_NUMBER_ID: ${RETAIL_ASSISTANT_PHONE_NUMBER_ID:-}
       RETAIL_ASSISTANT_DISPLAY_NUMBER: ${RETAIL_ASSISTANT_DISPLAY_NUMBER:-}
       RETAIL_ASSISTANT_QUIET_TO_STRANGERS: ${RETAIL_ASSISTANT_QUIET_TO_STRANGERS:-}
+      RETAIL_ASSISTANT_FILE_KEY: ${RETAIL_ASSISTANT_FILE_KEY:-}
+      RETAIL_ASSISTANT_CLAMD_ADDR: ${RETAIL_ASSISTANT_CLAMD_ADDR:-}
+      RETAIL_ASSISTANT_TEMPLATE: ${RETAIL_ASSISTANT_TEMPLATE:-}
+      RETAIL_ASSISTANT_LOGIN_TEMPLATE: ${RETAIL_ASSISTANT_LOGIN_TEMPLATE:-}
       PLATFORM_TELEGRAM_BOT_TOKEN: ${PLATFORM_TELEGRAM_BOT_TOKEN:-}
       PLATFORM_TELEGRAM_CHAT_ID: ${PLATFORM_TELEGRAM_CHAT_ID:-}
       # GOCOMMERCE_ALLOW_PRIVATE_URLS is deliberately not passed through. It

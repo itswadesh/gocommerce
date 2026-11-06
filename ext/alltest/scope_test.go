@@ -153,6 +153,9 @@ func TestEveryModuleTableIsScoped(t *testing.T) {
 		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = current_schema() AND c.relkind = 'r'
 		  AND c.relname NOT IN ('stores', 'store_domains', 'store_members', 'store_counters',
+		                        -- Which stores to look in for a phone at sign-in, before any
+		                        -- store is chosen. It holds no role and no grant (D205).
+		                        'store_phone_invitations',
 		                        'api_key_index', 'superusers', 'superuser_sessions',
 		                        'superuser_password_resets', 'superuser_login_codes', 'gocommerce_migrations',
 		                        -- Which connection runs a report for which store (D84):

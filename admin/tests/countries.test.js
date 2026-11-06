@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COUNTRIES, countryOptions } from "../src/lib/countries.js";
+import { COUNTRIES, countryOptions, currencyOf } from "../src/lib/countries.js";
+
+test("a country says what it spends, and every country on the list has an answer", () => {
+    assert.equal(currencyOf("IN"), "INR");
+    assert.equal(currencyOf("US"), "USD");
+    assert.equal(currencyOf("DE"), "EUR");
+    assert.equal(currencyOf(""), "");
+    const missing = COUNTRIES.filter((c) => c.value !== "AQ" && !currencyOf(c.value)).map((c) => c.value);
+    assert.deepEqual(missing, []);
+});
 
 test("a saved code on the list keeps the list as it is", () => {
     assert.equal(countryOptions("IN"), COUNTRIES);

@@ -224,6 +224,14 @@ type Config struct {
 	// it now lives at most CartTTL + CartRetention, and the shopper's email on
 	// it lives that long too.
 	CartRetention time.Duration
+	// SMSCodesPerDay bounds the sign-in codes texted in any 24 hours: to the
+	// install's operators in total, and to each store's shoppers in total. It
+	// bounds what strangers can run up on an SMS bill. Defaults to 500.
+	SMSCodesPerDay int
+	// SMSCountries are the calling codes an operator's sign-in code may be texted
+	// to, such as "91" and "1" (ParseSMSCountries). A text abroad costs far more
+	// than one at home and is how SMS pumping is paid for. Defaults to India.
+	SMSCountries []string
 	// OrderTTL is how long an unpaid order holds its inventory reservation
 	// before it is cancelled and the stock released. Defaults to 24h.
 	OrderTTL time.Duration
@@ -331,6 +339,12 @@ func (c *Config) applyDefaults() error {
 	// short retention purges soon after abandonment rather than before it.
 	if c.CartRetention <= 0 {
 		c.CartRetention = 30 * 24 * time.Hour
+	}
+	if c.SMSCodesPerDay <= 0 {
+		c.SMSCodesPerDay = 500
+	}
+	if len(c.SMSCountries) == 0 {
+		c.SMSCountries = ParseSMSCountries("")
 	}
 	if c.OrderTTL <= 0 {
 		c.OrderTTL = 24 * time.Hour

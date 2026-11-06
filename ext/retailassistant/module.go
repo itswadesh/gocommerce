@@ -12,7 +12,8 @@
 //
 // Nothing is posted unread. Every document stops at needs_review however well
 // it parsed, and a figure the reader could not find stays null: nothing here
-// guesses an amount, and there is no AI in this package.
+// guesses an amount. A model may read a PDF or a photo through the AI gateway when
+// the store has agreed to that, and what it reads still stops there.
 //
 // The number is shared and the records are not. A message names no store, so
 // the sender decides, and only a number the store's owner named and that then
@@ -26,9 +27,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	"github.com/itswadesh/gocommerce/ext/b2b"
 )
 
 const (
@@ -43,6 +47,8 @@ const (
 	rightRead  gocommerce.Right = "retailassistant.read"
 	rightWrite gocommerce.Right = "retailassistant.write"
 	rightLinks gocommerce.Right = "retailassistant.links"
+	// A cashier sells, and sees nothing of what the shop owes its suppliers.
+	rightCounter gocommerce.Right = "retailassistant.counter"
 )
 
 // Config is the install's one WhatsApp number. It is the platform's rather than
@@ -64,6 +70,22 @@ type Config struct {
 	// them; the address is the server owner's, so an ordinary client is right.
 	BaseURL string
 	Client  *http.Client
+	// FileKey is 32 bytes of base64 that seal documents in the database. Empty,
+	// they are kept in clear behind the store policy.
+	FileKey string
+	// ClamdAddr is a clamd's host:port. Empty, files are not scanned.
+	ClamdAddr string
+	// TemplateName is the Meta-approved template that carries a message outside
+	// WhatsApp's customer-service window: one body variable, in each language a
+	// phone may choose. Empty, such a message is marked undelivered.
+	TemplateName string
+	// LoginTemplate is the Meta-approved authentication template that carries a
+	// panel sign-in code. Empty, sign-in codes go as they did.
+	LoginTemplate string
+	// B2B makes wholesale quotes. Nil, there are none.
+	B2B *b2b.Module
+	// Gateway reads PDFs and photos with a model. Nil, a person enters them.
+	Gateway *aigateway.Module
 	// Poll is how often the worker looks for work; 0 is five seconds.
 	Poll time.Duration
 }
@@ -76,6 +98,10 @@ type Module struct {
 	log    *slog.Logger
 	client *http.Client
 	wake   chan struct{}
+
+	fileKey    []byte
+	fileKeyBad bool
+	tasks      sync.Once
 }
 
 // New constructs the module.
@@ -290,6 +316,80 @@ CREATE INDEX retailassistant_replies_claim ON retailassistant_replies (store_id,
 			"retailassistant_phone_links.code_hash", "retailassistant_documents.content",
 			"retailassistant_supplier_payments.idempotency_key", "retailassistant_supplier_credits.idempotency_key",
 			"retailassistant_payment_allocations.idempotency_key", "retailassistant_replies.dedupe_key"),
+		{ID: "0005_file_handling", SQL: `
+ALTER TABLE retailassistant_documents
+    ADD COLUMN content_sealed boolean NOT NULL DEFAULT false,
+    ADD COLUMN content_removed_at timestamptz;`},
+		{ID: "0006_messaging", SQL: `
+ALTER TABLE retailassistant_phone_links
+    ADD COLUMN language text NOT NULL DEFAULT 'en' CHECK (language IN ('en', 'hi')),
+    ADD COLUMN opted_out_at timestamptz;
+ALTER TABLE retailassistant_replies
+    ADD COLUMN language text NOT NULL DEFAULT 'en';
+CREATE INDEX retailassistant_messages_window ON retailassistant_messages (store_id, sender, received_at DESC);`},
+		{ID: "0007_bank_lines", SQL: `
+CREATE TABLE retailassistant_bank_lines (
+    id                bigserial PRIMARY KEY,
+    line_date         date NOT NULL,
+    narration         text NOT NULL DEFAULT '',
+    reference         text NOT NULL DEFAULT '',
+    amount_minor      bigint NOT NULL CHECK (amount_minor > 0),
+    currency          text NOT NULL,
+    line_hash         text NOT NULL,
+    status            text NOT NULL DEFAULT 'unmatched' CHECK (status IN ('unmatched', 'matched', 'ignored')),
+    payment_id        bigint REFERENCES retailassistant_supplier_payments (id),
+    -- Whether this match is what verified the payment, so undoing it can undo that.
+    verified_by_match boolean NOT NULL DEFAULT false,
+    imported_by       text NOT NULL DEFAULT '',
+    reviewed_by       text NOT NULL DEFAULT '',
+    reviewed_at       timestamptz,
+    created_at        timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0008_bank_store_scope", "retailassistant_bank_lines"),
+		{ID: "0010_wholesale_quotes", SQL: `
+-- What a wholesale quote was worked from, for the audit trail. Lines hold what the
+-- wholesaler paid, which is why they live here and not on ext/b2b's quote.
+CREATE TABLE retailassistant_wholesale_quotes (
+    id              bigserial PRIMARY KEY,
+    document_id     bigint NOT NULL REFERENCES retailassistant_documents (id),
+    company_id      bigint NOT NULL,
+    quote_id        bigint,
+    mode            text NOT NULL,
+    percent_bps     integer NOT NULL,
+    lines           jsonb NOT NULL,
+    below_cost      boolean NOT NULL DEFAULT false,
+    overridden      boolean NOT NULL DEFAULT false,
+    idempotency_key text,
+    created_by      text NOT NULL DEFAULT '',
+    created_at      timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0011_wholesale_store_scope", "retailassistant_wholesale_quotes"),
+		{ID: "0014_counter_sales", SQL: `
+-- How a counter sale was paid, and the key that makes a double press one sale. The
+-- sale itself is an order in core.
+CREATE TABLE retailassistant_counter_sales (
+    id              bigserial PRIMARY KEY,
+    idempotency_key text NOT NULL,
+    order_id        bigint,
+    mode            text NOT NULL CHECK (mode IN ('cash', 'upi', 'credit')),
+    reference       text NOT NULL DEFAULT '',
+    money_seen      boolean NOT NULL DEFAULT false,
+    discount_bps    integer NOT NULL DEFAULT 0,
+    created_by      text NOT NULL DEFAULT '',
+    created_at      timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0015_counter_store_scope", "retailassistant_counter_sales"),
+		{ID: "0016_counter_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_counter_key ON retailassistant_counter_sales (store_id, idempotency_key);`},
+		gocommerce.WithholdFromReports("0017_withhold_counter", "retailassistant_counter_sales.idempotency_key"),
+		{ID: "0012_wholesale_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_wholesale_key ON retailassistant_wholesale_quotes (store_id, idempotency_key) WHERE idempotency_key IS NOT NULL;`},
+		gocommerce.WithholdFromReports("0013_withhold_wholesale",
+			"retailassistant_wholesale_quotes.lines", "retailassistant_wholesale_quotes.idempotency_key"),
+		{ID: "0009_bank_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_bank_lines_hash ON retailassistant_bank_lines (store_id, line_hash);
+CREATE UNIQUE INDEX retailassistant_bank_lines_payment ON retailassistant_bank_lines (store_id, payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX retailassistant_bank_lines_list ON retailassistant_bank_lines (store_id, status, line_date DESC);`},
 	}
 }
 
@@ -307,7 +407,18 @@ func (m *Module) Register(app *gocommerce.App) error {
 	if m.cfg.Poll <= 0 {
 		m.cfg.Poll = 5 * time.Second
 	}
+	m.loadFileKey()
+	if m.cfg.Gateway != nil {
+		var err error
+		m.tasks.Do(func() { err = m.cfg.Gateway.RegisterTask(m.readTask()) })
+		if err != nil {
+			return err
+		}
+	}
 
+	if m.cfg.LoginTemplate != "" {
+		app.RegisterNotifier(gocommerce.ChannelSMS, loginCodes{m})
+	}
 	app.RegisterRight(gocommerce.RightSpec{
 		Right: rightRead, Label: "See supplier accounts",
 		Scope:   "Bills forwarded on WhatsApp, suppliers, what is owed to them and what was paid",
@@ -323,10 +434,30 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Scope:   "Which phones may send documents into this store",
 		Default: nil,
 	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: rightCounter, Label: "Sell at the shop counter",
+		Scope:   "Scanning items and recording a sale, within the discount the owner allows",
+		Default: []string{gocommerce.RoleManager, gocommerce.RoleStaff},
+	})
+	app.RegisterPayment(counterPayment{})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Retail assistant", Icon: "ri-whatsapp-line", Category: "operations", DefaultEnabled: false,
 		Home:        "/dash/retail-assistant",
 		Description: "Forward supplier bills and payment proofs on WhatsApp, review what was read from them, and see what you owe each supplier.",
+		Fields: []gocommerce.PluginField{
+			{Key: "retention_days", Label: "Delete files after this many days", Kind: "number",
+				Help: "Counted from when a document was reviewed. Your supplier accounts stay as they are; only the original files go. Leave empty to keep files. Check with your accountant how long you must keep bills before setting this."},
+			{Key: "morning_summary", Label: "Send a morning summary", Kind: "bool", Default: false,
+				Help: "Around 8 in the morning, India time, each phone that takes confirmations gets what you owe and what is waiting. It may cost a WhatsApp template message a day."},
+			{Key: "counter_discount_limit", Label: "Most discount at the counter (%)", Kind: "number", Default: 0,
+				Help: "The biggest discount a cashier can give on a sale. At 0 no discount can be given."},
+			{Key: "counter_country", Label: "Counter's country code", Kind: "text", Default: "IN",
+				Help: "Where counter sales happen, such as IN. Tax on them is worked out from this."},
+			{Key: "counter_state", Label: "Counter's state", Kind: "text",
+				Help: "Where counter sales happen, written as in your tax rates, such as OD. Tax on them is worked out from this."},
+			{Key: "ai_reading", Label: "Read PDFs and photos with AI", Kind: "bool", Default: false,
+				Help: "Sends each PDF and photo to the AI provider set up in the AI gateway, and fills in the review form from what it reads. You still compare every figure with the file before approving. It uses your AI credit."},
+		},
 	})
 
 	// Meta's callback names no store and cannot be made to, so the address
@@ -341,8 +472,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write := func(pattern string, h http.HandlerFunc) {
 		app.HandleAdminFunc(pattern, m.on(h), rightWrite)
 	}
-	// Not behind the switch: it is how the screen learns the switch's state.
-	app.HandleAdminFunc("GET "+adminBase+"/status", m.handleStatus, rightRead)
+	// Not behind the switch: it is how the screen learns the switch's state. A
+	// cashier's screen asks too, and what it says holds no figures.
+	app.HandleAdminFunc("GET "+adminBase+"/status", m.handleStatus, rightRead, rightCounter)
 
 	app.HandleAdminFunc("GET "+adminBase+"/phone-links", m.on(m.handleListLinks), rightLinks)
 	app.HandleAdminFunc("POST "+adminBase+"/phone-links", m.on(m.handleCreateLink), rightLinks)
@@ -356,6 +488,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/documents/{id}/approve", m.handleApprove)
 	write("POST "+adminBase+"/documents/{id}/reject", m.handleReject)
 	write("POST "+adminBase+"/documents/{id}/retry", m.handleRetry)
+	write("POST "+adminBase+"/documents/{id}/remove-file", m.handleRemoveFile)
+	write("POST "+adminBase+"/documents/{id}/read", m.handleRead)
+	read("GET "+adminBase+"/export/{kind}", m.handleExport)
 
 	read("GET "+adminBase+"/suppliers", m.handleSuppliers)
 	read("GET "+adminBase+"/payables", m.handlePayables)
@@ -370,6 +505,23 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/credits/{id}/reverse", m.handleReverseCredit)
 	write("POST "+adminBase+"/allocations/{id}/reverse", m.handleReverseAllocation)
 	write("POST "+adminBase+"/invoices/{id}/reverse", m.handleReverseInvoice)
+	read("GET "+adminBase+"/invoices/{id}/lines", m.handleInvoiceLines)
+	counter := func(pattern string, h http.HandlerFunc) {
+		app.HandleAdminFunc(pattern, m.on(h), rightCounter)
+	}
+	counter("GET "+adminBase+"/counter/lookup", m.handleLookup)
+	counter("POST "+adminBase+"/counter/barcodes", m.handleLinkBarcode)
+	counter("POST "+adminBase+"/counter/preview", m.handleSalePreview)
+	counter("POST "+adminBase+"/counter/sales", m.handleSale)
+	read("GET "+adminBase+"/insights", m.handleInsights)
+	write("POST "+adminBase+"/wholesale/preview", m.handleWholesalePreview)
+	write("POST "+adminBase+"/wholesale/quotes", m.handleWholesaleQuote)
+	read("GET "+adminBase+"/bank-lines", m.handleBankLines)
+	write("POST "+adminBase+"/bank-statements", m.handleImportStatement)
+	write("POST "+adminBase+"/bank-lines/{id}/match", m.handleMatchLine)
+	write("POST "+adminBase+"/bank-lines/{id}/record", m.handleRecordFromLine)
+	write("POST "+adminBase+"/bank-lines/{id}/ignore", m.handleIgnoreLine)
+	write("POST "+adminBase+"/bank-lines/{id}/undo", m.handleUndoLine)
 	// Receiving goods moves stock, so it takes the inventory right as well.
 	app.HandleAdminFunc("POST "+adminBase+"/invoices/{id}/receive", m.on(m.handleReceive), rightWrite, gocommerce.RightInventoryWrite)
 
@@ -398,10 +550,17 @@ func (m *Module) on(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
+	reading, why := m.aiAvailable(r.Context())
 	gocommerce.Respond(w, http.StatusOK, map[string]any{
+		"wholesale":      m.cfg.B2B != nil,
+		"ai_reading":     reading,
+		"ai_reading_why": why,
 		"enabled":        m.enabled(r.Context()),
 		"channel_ready":  m.channelReady(),
 		"display_number": m.cfg.DisplayNumber,
+		"files_sealed":   m.fileKey != nil,
+		"files_scanned":  m.cfg.ClamdAddr != "",
+		"template_ready": m.cfg.TemplateName != "",
 	})
 }
 
