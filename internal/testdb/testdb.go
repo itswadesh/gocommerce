@@ -97,6 +97,8 @@ func admin(t testing.TB, base string) *sql.DB {
 
 // EnsureRoles creates the engine and reports logins if they do not exist.
 // They are cluster-wide and shared by every concurrently running package.
+// Two packages can both pass the IF NOT EXISTS, and the loser's CREATE ROLE then
+// fails with either condition, depending on when it reaches the catalog index.
 func EnsureRoles(t testing.TB, db *sql.DB) {
 	t.Helper()
 	for _, r := range []struct{ name, pw string }{{EngineRole, EnginePassword}, {ReportsRole, ReportsPassword}} {
@@ -106,7 +108,7 @@ func EnsureRoles(t testing.TB, db *sql.DB) {
 				IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+r.name+`') THEN
 					CREATE ROLE `+r.name+` LOGIN PASSWORD '`+r.pw+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 				END IF;
-			EXCEPTION WHEN duplicate_object THEN
+			EXCEPTION WHEN duplicate_object OR unique_violation THEN
 				NULL;
 			END $$;`); err != nil {
 			t.Fatalf("testdb: create role %s: %v", r.name, err)
