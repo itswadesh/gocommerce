@@ -17,6 +17,7 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import { readablePhone } from "$lib/phone-link.js";
+    import CodeBoxes from "$lib/components/CodeBoxes.svelte";
 
     // number is in E.164. open says any number gets a code. onback goes back to
     // the box.
@@ -91,20 +92,11 @@
     </p>
     <div class="field" class:error={!!error}>
         <label for="phone_code">Code</label>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
+        <CodeBoxes
             id="phone_code"
-            type="text"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="6"
-            minlength="6"
-            required
             autofocus
-            autocomplete="one-time-code"
-            enterkeyhint="go"
-            aria-invalid={!!error}
-            aria-describedby={error ? "phone_refusal" : undefined}
+            invalid={!!error}
+            describedby={error ? "phone_refusal" : undefined}
             bind:value={code}
             oninput={() => (error = "")}
         />

@@ -13,6 +13,7 @@ const login = read("../src/lib/components/Login.svelte");
 const signup = read("../src/routes/admin/auth/signup/+page.svelte");
 const form = read("../src/lib/components/PhoneCodeForm.svelte");
 const account = read("../src/routes/dash/settings/account/+page.svelte");
+const boxes = read("../src/lib/components/CodeBoxes.svelte");
 
 test("a phone is offered only where the install says a code can be sent", () => {
     assert.match(login, /canPhone = !!s\.phone_login/);
@@ -29,9 +30,15 @@ test("where sign-up is shut, the screen does not say a code was sent", () => {
 });
 
 test("a code field is one the phone can fill in", () => {
-    assert.match(form, /autocomplete="one-time-code"/);
-    assert.match(form, /inputmode="numeric"/);
-    assert.match(account, /autocomplete="one-time-code"/);
+    assert.match(boxes, /autocomplete="one-time-code"/);
+    assert.match(boxes, /inputmode="numeric"/);
+    assert.match(form, /<CodeBoxes/);
+    assert.match(account, /<CodeBoxes id="acc-phone-code"/);
+});
+
+test("a pasted code with spaces in it reaches the boxes whole", () => {
+    assert.doesNotMatch(boxes, /maxlength=/);
+    assert.ok(boxes.includes('.replace(/\\D/g, "").slice(0, length)'));
 });
 
 test("signing up with a phone goes on to the create form, as an email does", () => {
