@@ -47,10 +47,10 @@ func ownerWithPhone(t *testing.T, app *gocommerce.App, meta *fakeMeta) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Superusers().RequestOwnPhoneCode(ctx, su.ID, ownerPhone, "203.0.113.9"); err != nil {
+	if err := app.Superusers().RequestOwnPhoneCode(ctx, ownerPhone, "203.0.113.9"); err != nil {
 		t.Fatalf("ask to add a phone: %v", err)
 	}
-	if _, err := app.Superusers().SetOwnPhone(ctx, su.ID, password, ownerPhone, meta.waitFor(t, digits(ownerPhone)).Body); err != nil {
+	if _, err := app.Superusers().SetOwnPhone(ctx, su.ID, password, ownerPhone, meta.waitFor(t, digits(ownerPhone)).Body, ""); err != nil {
 		t.Fatalf("add a phone: %v", err)
 	}
 	meta.mu.Lock()
