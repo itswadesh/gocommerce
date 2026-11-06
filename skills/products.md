@@ -653,10 +653,10 @@ the whole sample shop.
   [inventory](inventory.md) so every change is a delta under a row lock rather
   than an overwrite of a number another request just changed.
 - **Expecting a per-product currency.** There is none: a store has one
-  (D85). It can change only until the store's first order, and a change
-  relabels the store's products and open carts without moving the stored
-  minor units — which is exactly why a currency switch is a business decision,
-  not a migration.
+  (D85). It can change only until an order is paid or sent out (D212), and a
+  change relabels the store's products, open carts and sample orders without
+  moving the stored minor units — which is exactly why a currency switch is a
+  business decision, not a migration. A real unpaid order keeps its currency.
 - **Assuming a draft product 403s.** It 404s. A test asserting 403 is asserting
   an information leak.
 - **Sending an unknown field in a patch.** `DecodeJSON` uses
