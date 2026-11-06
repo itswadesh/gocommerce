@@ -16465,6 +16465,16 @@
                           "name": { "type": "string" },
                           "status": { "type": "string" },
                           "domain": { "type": "string" },
+                          "domains": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "host": { "type": "string" },
+                                "verified": { "type": "boolean" }
+                              }
+                            }
+                          },
                           "legal_name": { "type": "string" },
                           "owners": {
                             "type": "array",

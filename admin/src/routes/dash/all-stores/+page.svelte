@@ -22,7 +22,12 @@
     /** The owner the email dialog is open for. */
     let writingTo = $state(null);
 
-    const shown = $derived(apexOnly ? list.filter((store) => isApexDomain(store.domain)) : list);
+    // Every domain the store has, verified or not: one still being set up is
+    // still the store's own (D225).
+    const hasApex = (store) => isApexDomain(store.domain) || store.domains.some((d) => isApexDomain(d.host));
+    const shown = $derived(apexOnly ? list.filter(hasApex) : list);
+    // Domain is the address the shop answers on; the rest are worth showing too.
+    const otherDomains = (store) => store.domains.filter((d) => d.host !== store.domain);
 
     async function load() {
         loading = true;
@@ -124,11 +129,25 @@
                                     </div>
                                 </td>
                                 <td data-name="Domain">
-                                    {#if store.domain}
-                                        <a class="domain" href="https://{store.domain}" target="_blank" rel="noopener noreferrer">{store.domain}</a>
-                                    {:else}
-                                        —
-                                    {/if}
+                                    <div class="contacts">
+                                        {#if store.domain}
+                                            <a class="domain" href="https://{store.domain}" target="_blank" rel="noopener noreferrer">{store.domain}</a>
+                                        {/if}
+                                        {#each otherDomains(store) as other (other.host)}
+                                            <span class="contact">
+                                                {#if other.verified}
+                                                    <a class="domain" href="https://{other.host}" target="_blank" rel="noopener noreferrer">{other.host}</a>
+                                                {:else}
+                                                    <span>{other.host}</span>
+                                                    <span class="proof">
+                                                        <i class="ri-question-line" aria-hidden="true"></i>
+                                                        Not verified
+                                                    </span>
+                                                {/if}
+                                            </span>
+                                        {/each}
+                                        {#if !store.domain && store.domains.length === 0}—{/if}
+                                    </div>
                                 </td>
                                 <td data-name="Legal name">{store.legal_name || "—"}</td>
                                 <td data-name="Owner">
