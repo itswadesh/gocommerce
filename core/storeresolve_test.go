@@ -297,7 +297,7 @@ func (m *storeSeeingMail) Register(app *App) error {
 // A reset link is a credential for the person everywhere they work. Store B's
 // template and email account are its staff's to read, so on an install with other
 // stores nobody's link goes through them, not even someone's who works in B alone
-// (D211).
+// (D212).
 func TestAResetLinkNeverTravelsThroughAnotherStoresMail(t *testing.T) {
 	mail := &storeSeeingMail{}
 	app := newTestApp(t, mail)

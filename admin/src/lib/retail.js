@@ -68,6 +68,19 @@ export function wholeQuantity(printed) {
     return m && Number(m[1]) > 0 ? m[1] : "";
 }
 
+/** A scan: the same item again is one more of it, and the newest stays on top. */
+export function basketAdd(basket, item) {
+    const found = basket.find((l) => l.variant_id === item.variant_id);
+    if (!found) return [{ ...item, quantity: 1 }, ...basket];
+    return [{ ...found, quantity: found.quantity + 1 }, ...basket.filter((l) => l !== found)];
+}
+
+/** A quantity set by hand. Down to nothing takes the line off. */
+export function basketSet(basket, variantId, quantity) {
+    if (quantity <= 0) return basket.filter((l) => l.variant_id !== variantId);
+    return basket.map((l) => (l.variant_id === variantId ? { ...l, quantity } : l));
+}
+
 /** A name for one press of a money button, so a retry records one thing. */
 export function newKey() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();

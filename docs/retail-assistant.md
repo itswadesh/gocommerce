@@ -21,7 +21,8 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout.
+Not built at the counter: working offline, printing a receipt, batch and expiry, and
+machines such as the NGX SP92TB, whose maker documents no API or export.
 
 ## Setting it up
 
@@ -224,6 +225,31 @@ you owe and what is waiting, once a day around 8 in the morning, India time. Out
 the 24-hour window it needs the template, and each one may cost a WhatsApp message.
 
 Asking questions in plain language on WhatsApp is not built.
+
+## The shop counter
+
+**Orders › Shop counter** is a fast checkout for a phone or tablet. A Bluetooth or USB
+barcode scanner types like a keyboard, so the box stays ready: scan, and the item is on
+the bill. The same item again is one more.
+
+- A sale is an ordinary order, made through the engine's own order path, so it takes
+  stock once, under the same locks as any order. It shows in Orders and Reports. Return
+  it there, and tick restock to put it back on the shelf.
+- The total comes from the engine. Nothing is charged for delivery, and no email is sent.
+- **Choosing UPI is not proof of money.** The sale is paid only if the cashier ticks that
+  they saw it arrive, and otherwise it is recorded as not paid yet. Credit is the same.
+  Mark it paid on the order when the money comes.
+- A cashier's discount is capped by **Most discount at the counter** in the settings, and
+  is 0 until the owner sets it.
+- An unknown barcode asks which product it is, and is saved on that product if the person
+  may change the catalogue.
+- A scanner has not been tried on a real phone. Check one at the shop before relying on it.
+
+Set **Counter's state** and **Counter's country code** in the settings, since tax on a
+counter sale is worked out from where the counter is.
+
+Staff can use the counter through the `retailassistant.counter` right, and see nothing of
+what the shop owes its suppliers.
 
 ## Wholesale quotes
 
