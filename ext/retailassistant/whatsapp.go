@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,11 +160,20 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 	if g := linkCommand.FindStringSubmatch(msg.Text.Body); msg.Type == "text" && g != nil {
 		code = g[1]
 	}
+	// A message with a code is about that code, and STOP must not sign anybody up.
+	var owner int64
+	if code == "" && !(msg.Type == "text" && stopCommand.MatchString(msg.Text.Body)) {
+		var err error
+		if owner, err = m.app.Superusers().ProvedPhoneOwner(ctx, "+"+sender); err != nil {
+			return err
+		}
+	}
 	var (
 		mu     sync.Mutex
 		seen   bool
 		linked []linkedStore
 		proved string
+		joined []string
 	)
 	err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
 		if !m.enabled(ctx) {
@@ -189,12 +199,22 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 				return err
 			}
 		}
+		join := false
+		if owner != 0 && !found && !dup {
+			if join, l, err = m.linkOwnPhone(ctx, sender, owner, msg); err != nil {
+				return err
+			}
+			found = join
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		seen = seen || dup
 		if found {
 			l.id = store
 			linked = append(linked, l)
+		}
+		if join {
+			joined = append(joined, m.storeName(ctx, store))
 		}
 		if ok {
 			proved = store
@@ -210,6 +230,9 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 	case proved != "":
 		m.say(ctx, sender, inBoth("linked", m.storeName(ctx, proved)))
 		return nil
+	case len(joined) > 0 && msg.Type == "text":
+		m.say(ctx, sender, inBoth("linked", strings.Join(joined, ", ")))
+		return nil
 	case len(linked) == 0:
 		// Nothing is kept: a file from a stranger has no store to belong to, and
 		// what is in it says nothing about whose it is.
@@ -218,6 +241,9 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 		}
 		m.say(ctx, sender, inBoth("not_linked"))
 		return nil
+	}
+	if len(joined) > 0 {
+		m.say(ctx, sender, inBoth("linked", strings.Join(joined, ", ")))
 	}
 	lang := linked[0].language
 	if msg.Type == "text" {
@@ -229,17 +255,44 @@ func (m *Module) receive(ctx context.Context, msg inbound) error {
 		return m.selectStore(ctx, sender, g[1], linked, lang)
 	}
 	target, ok := chooseStore(linked)
-	if !ok {
-		var names []string
-		for _, l := range linked {
-			if st, err := m.app.Stores().Get(ctx, l.id); err == nil {
-				names = append(names, st.Slug)
-			}
-		}
-		m.say(ctx, sender, phrase(lang, "several_stores", strings.Join(names, ", ")))
-		return nil
+	if ok {
+		return m.record(gocommerce.WithStore(ctx, target), sender, msg, languageOf(linked, target))
 	}
-	return m.record(gocommerce.WithStore(ctx, target), sender, msg, languageOf(linked, target))
+	primary, slugs, err := m.primaryStore(ctx, linked)
+	if err != nil {
+		return err
+	}
+	storeCtx := gocommerce.WithStore(ctx, primary.ID)
+	if err := m.record(storeCtx, sender, msg, languageOf(linked, primary.ID)); err != nil {
+		return err
+	}
+	// Said once: from here on it is simply the store this phone last chose.
+	if _, err := m.db.ExecContext(storeCtx,
+		`UPDATE retailassistant_phone_links SET selected_at = now() WHERE phone = $1`, sender); err != nil {
+		return err
+	}
+	m.say(ctx, sender, phrase(lang, "primary_store", primary.Name, strings.Join(slugs, ", ")))
+	return nil
+}
+
+// primaryStore is the oldest of a phone's stores: the one its owner opened first,
+// which is also the first the panel lists for them. It also names them all.
+func (m *Module) primaryStore(ctx context.Context, linked []linkedStore) (*gocommerce.Store, []string, error) {
+	var primary *gocommerce.Store
+	var slugs []string
+	for _, l := range linked {
+		st, err := m.app.Stores().Get(ctx, l.id)
+		if err != nil {
+			return nil, nil, err
+		}
+		slugs = append(slugs, st.Slug)
+		if primary == nil || st.CreatedAt.Before(primary.CreatedAt) ||
+			(st.CreatedAt.Equal(primary.CreatedAt) && st.ID < primary.ID) {
+			primary = st
+		}
+	}
+	sort.Strings(slugs)
+	return primary, slugs, nil
 }
 
 func languageOf(linked []linkedStore, store string) string {
@@ -280,8 +333,8 @@ func (m *Module) command(ctx context.Context, sender, body string, linked []link
 	return true, nil
 }
 
-// chooseStore is the one store, or the one this sender last chose. Several with
-// no choice made is no answer: a bill is never posted into a store by guesswork.
+// chooseStore is the one store, or the one this sender last chose. Several with no
+// choice made is for the caller, which takes the primary store and says so (D227).
 func chooseStore(linked []linkedStore) (string, bool) {
 	if len(linked) == 1 {
 		return linked[0].id, true
@@ -359,6 +412,55 @@ func (m *Module) proveLink(ctx context.Context, sender, code, messageID string) 
 		return nil
 	})
 	return proved, err
+}
+
+// linkOwnPhone links a number to this store when the person who proved it with a
+// code works here and may link numbers, so a code on WhatsApp would prove nothing
+// new. A seller's account is left out, since it sees only its own part of a store,
+// and a number the store removed stays removed.
+func (m *Module) linkOwnPhone(ctx context.Context, sender string, owner int64, msg inbound) (bool, linkedStore, error) {
+	var l linkedStore
+	su, err := m.app.Superusers().Get(ctx, owner)
+	if isNotFound(err) {
+		return false, l, nil
+	}
+	if err != nil {
+		return false, l, err
+	}
+	if !su.Has(rightLinks) || su.VendorID != nil {
+		return false, l, nil
+	}
+	linked := false
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		var id int64
+		err := tx.QueryRowContext(ctx, `
+			INSERT INTO retailassistant_phone_links (phone, verified_at, created_by)
+			VALUES ($1, now(), $2)
+			ON CONFLICT (store_id, phone) DO UPDATE
+			SET verified_at = now(), code_hash = NULL, code_expires_at = NULL
+			WHERE retailassistant_phone_links.revoked_at IS NULL
+			RETURNING id, selected_at, language`, sender, su.Contact()).Scan(&id, &l.selected, &l.language)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		linked = true
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO retailassistant_audit (actor, event, entity, entity_id, detail)
+			VALUES ($1, 'phone.linked_by_account', 'phone_link', $2, '{}')`, su.Contact(), id); err != nil {
+			return err
+		}
+		if msg.Type != "text" {
+			return nil // record keeps a file's message, and a redelivery finds it there.
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO retailassistant_messages (provider_message_id, sender, type) VALUES ($1, $2, 'text')
+			ON CONFLICT (store_id, provider_message_id) DO NOTHING`, msg.ID, sender)
+		return err
+	})
+	return linked, l, err
 }
 
 func codeHash(store, phone, code string) string {
@@ -948,4 +1050,9 @@ func (m *Module) handleRevokeLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gocommerce.Respond(w, http.StatusOK, map[string]bool{"revoked": true})
+}
+
+func isNotFound(err error) bool {
+	var e *gocommerce.APIError
+	return errors.As(err, &e) && e.Status == http.StatusNotFound
 }

@@ -38,8 +38,8 @@ export const HINDI = {
         "जुड़े हुए फ़ोन से सप्लायर का बिल दुकान के WhatsApp नंबर पर भेजिए। वह यहाँ जाँच के लिए रुकेगा।",
     "Phones that can send documents": "जो फ़ोन दस्तावेज़ भेज सकते हैं",
     "the store's WhatsApp number": "दुकान के WhatsApp नंबर",
-    "A phone counts once it sends its code to {number}. Files from any other phone are not kept.":
-        "फ़ोन तभी गिना जाता है जब वह अपना कोड {number} पर भेज दे। किसी और फ़ोन की फ़ाइलें नहीं रखी जातीं।",
+    "If you sign in with a phone, just message {number} from it. Add any other phone below and have it send its code. Files from any other phone are not kept.":
+        "अगर आप फ़ोन से साइन इन करते हैं, तो बस उसी फ़ोन से {number} पर मैसेज कीजिए। कोई दूसरा फ़ोन नीचे जोड़िए और उससे उसका कोड भिजवाइए। बाकी फ़ोन की फ़ाइलें नहीं रखी जातीं।",
     "Phone number": "फ़ोन नंबर",
     "Add phone": "फ़ोन जोड़ें",
     "From +{phone}, send": "+{phone} से भेजिए",

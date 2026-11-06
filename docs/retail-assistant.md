@@ -79,13 +79,21 @@ told their number is not linked to a store.
 
 ### 4. Each store
 
-Under **Orders › Supplier bills**, the owner switches the assistant on and adds a
-phone with its country code. The screen shows a code, once. From that phone, send
-`LINK 123456` to the shared number. Until then, nothing from that phone is kept.
+Under **Orders › Supplier bills**, the owner switches the assistant on.
 
-One phone can be linked to several stores. It then has to say which one first, by
-replying `STORE <store's slug>`, and what it sends goes there until it says
-otherwise. Nothing is posted into a store by guesswork.
+A phone someone already signs in with needs nothing more. Any message from it to the
+shared number links it, and a bill sent first is kept, as long as that person proved
+the phone with a code, works in the store and has the right to link numbers. A
+seller's account does not count, and a phone the store removed stays removed.
+
+For any other phone, the owner adds it with its country code. The screen shows a
+code, once. From that phone, send `LINK 123456` to the shared number. Until then,
+nothing from that phone is kept.
+
+One phone can be linked to several stores. What it sends goes to its primary store,
+the oldest of them, and the reply says so once and names the others. Replying
+`STORE <store's slug>` moves it to another store until it says otherwise. Every bill
+still waits for review, and a bill in the wrong store can be rejected there.
 
 Confirmation messages are off until the owner ticks **Send** beside a phone. Within
 23 hours of the phone last writing they go as ordinary text, an hour inside Meta's

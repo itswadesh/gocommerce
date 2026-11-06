@@ -29,9 +29,9 @@ var phrases = map[string]map[string]string{
 		langEnglish: "This number is not linked to a store yet, so nothing you sent was kept. Ask your store's owner to add this number under Retail assistant, then send the code they give you.",
 		langHindi:   "यह नंबर अभी किसी दुकान से नहीं जुड़ा है, इसलिए आपका भेजा हुआ नहीं रखा गया। दुकान के मालिक से कहिए कि वे यह नंबर Retail assistant में जोड़ें, फिर उनका दिया हुआ कोड भेजिए।",
 	},
-	"several_stores": {
-		langEnglish: "This number works for several stores, so nothing you sent was kept. Reply STORE and the store's name, then send it again: %s",
-		langHindi:   "यह नंबर कई दुकानों से जुड़ा है, इसलिए आपका भेजा हुआ नहीं रखा गया। STORE और दुकान का नाम लिखकर भेजिए, फिर दोबारा भेजिए: %s",
+	"primary_store": {
+		langEnglish: "This number works for several stores, so this went to %s, your first. To use another from now on, reply STORE and its name: %s",
+		langHindi:   "यह नंबर कई दुकानों से जुड़ा है, इसलिए यह आपकी पहली दुकान %s में गया। आगे से दूसरी दुकान के लिए STORE और उसका नाम भेजिए: %s",
 	},
 	"store_chosen": {
 		langEnglish: "What you send now goes to %s.",
