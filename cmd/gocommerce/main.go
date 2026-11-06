@@ -639,6 +639,7 @@ environment:
 				QuietToStrangers: envTrue("RETAIL_ASSISTANT_QUIET_TO_STRANGERS"),
 				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
 				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
+				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
 				Gateway:          gateway,
 				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))
