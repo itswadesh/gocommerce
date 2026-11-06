@@ -401,6 +401,7 @@ environment:
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
 		PanelURL:             os.Getenv("GOCOMMERCE_PANEL_URL"),
+		BrandName:            os.Getenv("GOCOMMERCE_BRAND_NAME"),
 		PlatformOwnerPhone:   os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
 		PlatformEmailFrom:    os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
 		PlatformAnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),

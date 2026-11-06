@@ -187,6 +187,7 @@ services:
       # "reserved", "logo_url"}. Unset, the install is one brand made of the
       # two settings above.
       GOCOMMERCE_BRANDS: ${GOCOMMERCE_BRANDS:-}
+      GOCOMMERCE_BRAND_NAME: ${GOCOMMERCE_BRAND_NAME:-ShopNx}
       # A checkout fills the city and state from a PIN code, from India
       # Post's directory built into the engine. Set this only to mount a newer
       # copy of the CSV data.gov.in publishes, or to "off".
