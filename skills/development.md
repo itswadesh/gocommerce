@@ -93,8 +93,8 @@ try), a single-variant mug, a gift card with `track_inventory` off, and a draft
 product. It matches on slug and skips what already exists.
 
 **`.\scripts\seed-fashion.ps1`** — a sample fashion catalogue priced in
-rupees: eleven dresses, ethnic sets and menswear, each in three or four colours
-and every size, with a few sizes sold out or running low. The products are in
+rupees: twenty-four dresses, ethnic sets, tops and menswear, each in one to four
+colours and every size, with a few sizes sold out or running low. The products are in
 [`core/sample/catalogue.json`](../core/sample/catalogue.json), the catalogue a
 new store's sample shop is made from (D159).
 Each colour has one to three photographs of a model, and that colour's variants

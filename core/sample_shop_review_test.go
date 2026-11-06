@@ -177,8 +177,8 @@ func TestTheSampleProductsRoutesStillAnswer(t *testing.T) {
 		Count int `json:"count"`
 	}
 	decodeData(t, do(t, app, http.MethodGet, "/api/admin/sample-products", withAdmin), &count)
-	if count.Count != 11 {
-		t.Fatalf("count = %d, want 11", count.Count)
+	if count.Count != 24 {
+		t.Fatalf("count = %d, want 24", count.Count)
 	}
 	rec := do(t, app, http.MethodDelete, "/api/admin/sample-products", withAdmin)
 	if rec.Code != http.StatusOK {
@@ -188,8 +188,8 @@ func TestTheSampleProductsRoutesStillAnswer(t *testing.T) {
 		Deleted int `json:"deleted"`
 	}
 	decodeData(t, rec, &erased)
-	if erased.Deleted != 11 {
-		t.Fatalf("deleted = %d, want 11", erased.Deleted)
+	if erased.Deleted != 24 {
+		t.Fatalf("deleted = %d, want 24", erased.Deleted)
 	}
 	counts, err := app.SampleShopCounts(context.Background())
 	if err != nil || counts.total() != 0 {

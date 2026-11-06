@@ -20,7 +20,7 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add the sample shop: %v", err)
 	}
-	want := SampleCounts{"products": 11, "categories": 8, "collections": 2, "discounts": 2, "orders": 12, "customers": 6}
+	want := SampleCounts{"products": 24, "categories": 10, "collections": 2, "discounts": 2, "orders": 12, "customers": 6}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
@@ -58,8 +58,8 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 		pictures = append(pictures, p)
 	}
 	rows.Close()
-	if len(pictures) != 8 {
-		t.Fatalf("sample categories with a picture = %d, want all 8", len(pictures))
+	if len(pictures) != 10 {
+		t.Fatalf("sample categories with a picture = %d, want all 10", len(pictures))
 	}
 	for _, p := range pictures {
 		if rec := do(t, app, http.MethodGet, p); !strings.HasPrefix(p, SampleMediaPrefix) || rec.Code != http.StatusOK {
@@ -76,8 +76,8 @@ func TestASampleShopHasEverythingAStoreShows(t *testing.T) {
 	var members int
 	if err := app.DB().QueryRowContext(ctx, `
 		SELECT count(*) FROM product_collections pc JOIN collections c ON c.id = pc.collection_id
-		WHERE c.sample`).Scan(&members); err != nil || members != 9 {
-		t.Fatalf("sample collections hold %d products (%v), want 9", members, err)
+		WHERE c.sample`).Scan(&members); err != nil || members != 22 {
+		t.Fatalf("sample collections hold %d products (%v), want 22", members, err)
 	}
 
 	// A sample discount can only ever take money off a sample product.
@@ -207,7 +207,7 @@ func TestErasingTheSampleShopLeavesTheMerchantsOwn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erase: %v", err)
 	}
-	want := SampleCounts{"products": 11, "categories": 6, "collections": 2, "discounts": 2, "orders": 12}
+	want := SampleCounts{"products": 24, "categories": 8, "collections": 2, "discounts": 2, "orders": 12}
 	for kind, n := range want {
 		if erased[kind] != n {
 			t.Errorf("erased %d %s, want %d (all: %v)", erased[kind], kind, n, erased)
@@ -267,8 +267,8 @@ func TestTheSampleShopOverTheAdminAPI(t *testing.T) {
 		Added SampleCounts `json:"added"`
 	}
 	decodeData(t, rec, &added)
-	if added.Added["products"] != 11 || added.Added["orders"] != 12 {
-		t.Fatalf("added = %v, want 11 products and 12 orders", added.Added)
+	if added.Added["products"] != 24 || added.Added["orders"] != 12 {
+		t.Fatalf("added = %v, want 24 products and 12 orders", added.Added)
 	}
 
 	var counted struct {
@@ -280,8 +280,8 @@ func TestTheSampleShopOverTheAdminAPI(t *testing.T) {
 		t.Fatalf("count as staff = %d: %s", rec.Code, rec.Body)
 	}
 	decodeData(t, rec, &counted)
-	if counted.Counts["products"] != 11 || counted.Total == 0 {
-		t.Fatalf("counts = %+v, want 11 products and a total", counted)
+	if counted.Counts["products"] != 24 || counted.Total == 0 {
+		t.Fatalf("counts = %+v, want 24 products and a total", counted)
 	}
 
 	if rec := do(t, app, http.MethodDelete, "/api/admin/sample-content", bearer(staff)); rec.Code != http.StatusForbidden {

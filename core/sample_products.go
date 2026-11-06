@@ -25,9 +25,9 @@ CREATE INDEX products_sample_idx ON products (store_id) WHERE sample;
 `
 
 // The sample catalogue (D159) is data, not code: core/sample/catalogue.json,
-// which scripts/seed-fashion.ps1 and the photo scripts read as well. Eleven
-// garments, each in three or four colours and every size, filed in a tree of
-// categories and two collections.
+// which scripts/seed-fashion.ps1 and the photo scripts read as well.
+// Twenty-four garments, each in one to four colours and every size, filed in a
+// tree of categories and two collections.
 //
 //go:embed sample/catalogue.json
 var sampleCatalogueFile []byte
