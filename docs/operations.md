@@ -737,6 +737,52 @@ variable named and its value never printed. The key is read from the
 environment only, never from a flag, because a flag is visible to anyone who can
 list the machine's processes.
 
+## Running a store from Telegram
+
+`ext/telegram-alerts` can take orders as well as send them (D209). It is off
+until the store's owner switches it on, separately from the alerts, and a store
+that never does sends and receives what it always did.
+
+To switch it on: make a bot with @BotFather, paste its token under
+Notifications › Setup Telegram, press Start in your private chat with the bot,
+choose that chat with Find my chat, switch the alerts on, then press **Switch
+two-way control on**. The install needs a public HTTPS panel address
+(`GOCOMMERCE_PANEL_URL`, or the brand's), because that is where Telegram sends updates:
+`POST /x/telegram-alerts/webhook?store=<id>`. A reverse proxy must pass
+`/x/` on that host and must not strip the `X-Telegram-Bot-Api-Secret-Token`
+header.
+
+| In the chat | What it does | Safeguard |
+|---|---|---|
+| `/sales`, `/orders`, `/order GC-001042`, `/lowstock`, `/health` | Reads | None needed |
+| Mark paid, Ship under a new order's alert | One tap; Ship records a manual shipment with no tracking number and books no carrier | Safe to repeat: the order's own rules refuse or do nothing |
+| Cancel under a new order's alert | Asks first | Confirm |
+| `/stock SKU 12`, `/stock SKU +5`, `/price SKU 1299.50`, `/ship GC-001042 TRACKING`, `/delivered GC-001042` | Repeats the change and asks | Confirm |
+
+Refunds stay in the panel. On a store with several locations `/stock` changes
+the default location, and says so before it asks.
+
+What holds it together, for whoever is reading a log at 3am:
+
+- **The bot and Find my chat take turns.** Telegram refuses `getUpdates` on a bot
+  with a webhook, so Find my chat is unavailable while two-way control is on. To
+  change chat, switch it off, find the chat, switch it on.
+- **Changing the bot or chat in the settings pauses it**, and the screen says so.
+  A new token for the same bot does not. Switching the alerts off pauses it too.
+- **A bot already wired to another service is refused** rather than cut off.
+- **A switch-off that could not reach Telegram still stops the store obeying.**
+  The webhook left behind gets 401s, and the next Find my chat removes it.
+- **Only one private chat is obeyed.** Anything else, a group included, is
+  dropped with no reply and no row written.
+- **Every change** is in `GET /api/admin/x/telegram-alerts/commands/audit` with
+  the Telegram user id, and in the order's history as `Telegram user <id>`.
+  A row saying `started` is one the process did not live to finish: check the
+  order.
+
+Limits: 30 updates a minute per store, past which they are dropped silently; one
+change waiting per store, and a new question replaces it; a Confirm lasts five
+minutes.
+
 ## Health checks
 
 | Endpoint | Meaning | Use for |
