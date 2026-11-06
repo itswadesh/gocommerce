@@ -458,6 +458,12 @@ func (a *App) logMW(next http.Handler) http.Handler {
 		if re := requestErrorsFrom(r.Context()); re != nil {
 			store = re.store
 		}
+		// Traefik polls this every few seconds, which would bury every other
+		// line. A refused or failed poll is still logged: it means store domains
+		// have stopped updating.
+		if r.URL.Path == TraefikConfigPath && sw.status < http.StatusBadRequest {
+			return
+		}
 		a.log.Info("request",
 			"method", r.Method, "path", r.URL.Path, "status", sw.status,
 			"bytes", sw.bytes, "duration", time.Since(start),
