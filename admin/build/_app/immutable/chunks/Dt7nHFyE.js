@@ -1,0 +1,1 @@
+import{B as n,an as s}from"./Ctpfhdm0.js";function b(o,i,r,f,a){var d=()=>{f(r[o])};r.addEventListener(i,d),a?n(()=>{r[o]=a()}):d(),(r===document.body||r===window||r===document)&&s(()=>{r.removeEventListener(i,d)})}export{b};
