@@ -169,7 +169,7 @@ func IsolatedDSN(t *testing.T) string {
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+engineRole+`') THEN
 				CREATE ROLE `+engineRole+` LOGIN PASSWORD '`+enginePassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 			END IF;
-		EXCEPTION WHEN duplicate_object THEN
+		EXCEPTION WHEN duplicate_object OR unique_violation THEN
 			NULL;
 		END $$;`); err != nil {
 		t.Fatalf("gctest: create the engine role: %v", err)

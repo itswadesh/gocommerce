@@ -82,7 +82,7 @@ func requireDB(t *testing.T) string {
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+testEngineRole+`') THEN
 				CREATE ROLE `+testEngineRole+` LOGIN PASSWORD '`+testEnginePassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 			END IF;
-		EXCEPTION WHEN duplicate_object THEN
+		EXCEPTION WHEN duplicate_object OR unique_violation THEN
 			NULL;
 		END $$;`); err != nil {
 		t.Fatalf("create engine role: %v", err)
@@ -100,7 +100,7 @@ func requireDB(t *testing.T) string {
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '`+testReportsRole+`') THEN
 				CREATE ROLE `+testReportsRole+` LOGIN PASSWORD '`+testReportsPassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 			END IF;
-		EXCEPTION WHEN duplicate_object THEN
+		EXCEPTION WHEN duplicate_object OR unique_violation THEN
 			NULL;
 		END $$;`); err != nil {
 		t.Fatalf("create reports role: %v", err)
