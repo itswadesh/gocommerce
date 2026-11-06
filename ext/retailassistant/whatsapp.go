@@ -552,6 +552,9 @@ func (m *Module) start(ctx context.Context) error {
 				if !m.enabled(ctx) {
 					return nil
 				}
+				if err := m.SummaryPass(ctx, time.Now()); err != nil {
+					return err
+				}
 				return m.RetentionPass(ctx)
 			})
 			if err != nil && !errors.Is(err, context.Canceled) {

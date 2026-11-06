@@ -627,6 +627,13 @@ export const retailAssistant = {
     reverseCredit: (id) => api.post(`${RETAIL}/credits/${id}/reverse`),
     invoiceLines: (id) => api.get(`${RETAIL}/invoices/${id}/lines`),
     receive: (id, body) => api.post(`${RETAIL}/invoices/${id}/receive`, body),
+    insights: () => api.get(`${RETAIL}/insights`),
+    bankLines: (params) => api.get(`${RETAIL}/bank-lines` + query(params)),
+    importStatement: (text) => api.post(`${RETAIL}/bank-statements`, text, { headers: { "Content-Type": "text/csv" } }),
+    matchLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/match`, body),
+    recordFromLine: (id, body) => api.post(`${RETAIL}/bank-lines/${id}/record`, body),
+    ignoreLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/ignore`),
+    undoLine: (id) => api.post(`${RETAIL}/bank-lines/${id}/undo`),
 };
 
 /**

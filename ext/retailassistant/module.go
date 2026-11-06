@@ -319,6 +319,29 @@ ALTER TABLE retailassistant_phone_links
 ALTER TABLE retailassistant_replies
     ADD COLUMN language text NOT NULL DEFAULT 'en';
 CREATE INDEX retailassistant_messages_window ON retailassistant_messages (store_id, sender, received_at DESC);`},
+		{ID: "0007_bank_lines", SQL: `
+CREATE TABLE retailassistant_bank_lines (
+    id                bigserial PRIMARY KEY,
+    line_date         date NOT NULL,
+    narration         text NOT NULL DEFAULT '',
+    reference         text NOT NULL DEFAULT '',
+    amount_minor      bigint NOT NULL CHECK (amount_minor > 0),
+    currency          text NOT NULL,
+    line_hash         text NOT NULL,
+    status            text NOT NULL DEFAULT 'unmatched' CHECK (status IN ('unmatched', 'matched', 'ignored')),
+    payment_id        bigint REFERENCES retailassistant_supplier_payments (id),
+    -- Whether this match is what verified the payment, so undoing it can undo that.
+    verified_by_match boolean NOT NULL DEFAULT false,
+    imported_by       text NOT NULL DEFAULT '',
+    reviewed_by       text NOT NULL DEFAULT '',
+    reviewed_at       timestamptz,
+    created_at        timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0008_bank_store_scope", "retailassistant_bank_lines"),
+		{ID: "0009_bank_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_bank_lines_hash ON retailassistant_bank_lines (store_id, line_hash);
+CREATE UNIQUE INDEX retailassistant_bank_lines_payment ON retailassistant_bank_lines (store_id, payment_id) WHERE payment_id IS NOT NULL;
+CREATE INDEX retailassistant_bank_lines_list ON retailassistant_bank_lines (store_id, status, line_date DESC);`},
 	}
 }
 
@@ -367,6 +390,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Fields: []gocommerce.PluginField{
 			{Key: "retention_days", Label: "Delete files after this many days", Kind: "number",
 				Help: "Counted from when a document was reviewed. Your supplier accounts stay as they are; only the original files go. Leave empty to keep files. Check with your accountant how long you must keep bills before setting this."},
+			{Key: "morning_summary", Label: "Send a morning summary", Kind: "bool", Default: false,
+				Help: "Around 8 in the morning, India time, each phone that takes confirmations gets what you owe and what is waiting. It may cost a WhatsApp template message a day."},
 			{Key: "ai_reading", Label: "Read PDFs and photos with AI", Kind: "bool", Default: false,
 				Help: "Sends each PDF and photo to the AI provider set up in the AI gateway, and fills in the review form from what it reads. You still compare every figure with the file before approving. It uses your AI credit."},
 		},
@@ -417,6 +442,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/allocations/{id}/reverse", m.handleReverseAllocation)
 	write("POST "+adminBase+"/invoices/{id}/reverse", m.handleReverseInvoice)
 	read("GET "+adminBase+"/invoices/{id}/lines", m.handleInvoiceLines)
+	read("GET "+adminBase+"/insights", m.handleInsights)
+	read("GET "+adminBase+"/bank-lines", m.handleBankLines)
+	write("POST "+adminBase+"/bank-statements", m.handleImportStatement)
+	write("POST "+adminBase+"/bank-lines/{id}/match", m.handleMatchLine)
+	write("POST "+adminBase+"/bank-lines/{id}/record", m.handleRecordFromLine)
+	write("POST "+adminBase+"/bank-lines/{id}/ignore", m.handleIgnoreLine)
+	write("POST "+adminBase+"/bank-lines/{id}/undo", m.handleUndoLine)
 	// Receiving goods moves stock, so it takes the inventory right as well.
 	app.HandleAdminFunc("POST "+adminBase+"/invoices/{id}/receive", m.on(m.handleReceive), rightWrite, gocommerce.RightInventoryWrite)
 
