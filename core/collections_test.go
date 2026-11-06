@@ -1063,3 +1063,54 @@ func TestAdminProductsFilterByCollection(t *testing.T) {
 		t.Errorf("an unknown collection returned %d products, want none", len(none))
 	}
 }
+
+// A storefront's collection card reads metadata.image. Without a picture of
+// its own a collection shows its first product on sale, in the merchant's order.
+func TestPublicCollectionsLendTheirFirstProductsPicture(t *testing.T) {
+	app := collectionsApp(t)
+	ctx := context.Background()
+	svc := app.Collections()
+
+	picture := func(p *Product, url string) {
+		t.Helper()
+		item, err := app.MediaLibrary().AddURL(ctx, url, "image", "")
+		if err != nil {
+			t.Fatalf("add media: %v", err)
+		}
+		if err := app.MediaLibrary().SetProductMedia(ctx, p.ID, []int64{item.ID}); err != nil {
+			t.Fatalf("attach media: %v", err)
+		}
+	}
+	first := simpleProduct(t, app, "SKU-COVER-1", 100, 1)
+	second := simpleProduct(t, app, "SKU-COVER-2", 200, 1)
+	picture(first, "/sample-media/2/first.webp")
+	picture(second, "/sample-media/2/second.webp")
+
+	bare := newCollection(t, app, CollectionInput{Title: "Bare"})
+	own := newCollection(t, app, CollectionInput{Title: "Own", Metadata: Metadata{"image": "/own.webp"}})
+	for _, c := range []*Collection{bare, own} {
+		if err := svc.SetCollectionProducts(ctx, c.ID, []int64{second.ID, first.ID}); err != nil {
+			t.Fatalf("set: %v", err)
+		}
+	}
+
+	rec := do(t, app, http.MethodGet, "/api/collections")
+	var list []*Collection
+	decodeData(t, rec, &list)
+	got := map[string]any{}
+	for _, c := range list {
+		got[c.Title] = c.Metadata["image"]
+	}
+	if got["Bare"] != "/sample-media/2/second.webp" || got["Own"] != "/own.webp" {
+		t.Errorf("covers = %v, want the first product's for Bare and its own for Own", got)
+	}
+
+	// Lent, not stored: the panel's copy stays as the merchant left it.
+	stored, err := svc.Get(ctx, bare.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, set := stored.Metadata["image"]; set {
+		t.Errorf("metadata.image was stored: %v", stored.Metadata)
+	}
+}
