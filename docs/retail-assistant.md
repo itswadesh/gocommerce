@@ -22,7 +22,7 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
 Also not built: barcode checkout, wholesale quotes, insights, WhatsApp sign-in,
-template messages, and bank reconciliation.
+and bank reconciliation.
 
 ## Setting it up
 
@@ -47,6 +47,7 @@ through.
 | `RETAIL_ASSISTANT_PHONE_NUMBER_ID` | The shared number's id at Meta |
 | `RETAIL_ASSISTANT_DISPLAY_NUMBER` | The number as people dial it, shown when a store links a phone |
 | `RETAIL_ASSISTANT_QUIET_TO_STRANGERS` | `1` when the number is shared with another service: nobody unlinked gets a reply |
+| `RETAIL_ASSISTANT_TEMPLATE` | Optional. The name of a Meta-approved template for messages outside the 24-hour window (below) |
 | `RETAIL_ASSISTANT_FILE_KEY` | Optional. 32 random bytes in base64 that encrypt new files in the database |
 | `RETAIL_ASSISTANT_CLAMD_ADDR` | Optional. The `host:port` of a ClamAV daemon that scans new files |
 
@@ -85,11 +86,28 @@ One phone can be linked to several stores. It then has to say which one first, b
 replying `STORE <store's slug>`, and what it sends goes there until it says
 otherwise. Nothing is posted into a store by guesswork.
 
-Confirmation messages are off until the owner ticks **Send** beside a phone. They
-are free text, so Meta only delivers them inside its customer-service window after
-the phone last wrote. Outside that window Meta refuses them, and the refusal is
-kept on the message's row. Template messages are not built yet; if you add them,
-their wording has to be approved by Meta first.
+Confirmation messages are off until the owner ticks **Send** beside a phone. Within
+23 hours of the phone last writing they go as ordinary text, an hour inside Meta's
+24-hour window. After that they need a template:
+
+1. In WhatsApp Manager, create a **Utility** template with one variable in its body,
+   such as `Update from your shop assistant: {{1}}`, in English (`en`) and Hindi
+   (`hi`), and wait for Meta to approve both. Choosing the category and getting it
+   approved is yours: Meta may change or reject it.
+2. Set `RETAIL_ASSISTANT_TEMPLATE` to its name.
+
+With no template, a message outside the window is marked undelivered with the reason
+and is not retried.
+
+**Phones and language.** A phone can reply `HINDI` or `ENGLISH` to change the language
+of everything sent to it, or the owner can set it beside the phone. Before a phone is
+linked, replies come in both. **The Hindi is a machine translation that no native
+speaker has reviewed; have one read `ext/retailassistant/messages.go` before showing it
+to shopkeepers.** What a person sees in the panel is still English.
+
+**Stopping.** A phone can reply `STOP`, or `बंद`, to end confirmations in every store
+it is linked to, including any already queued. It can still send bills. An owner cannot
+tick it back on: the phone has to send `START`.
 
 ## Reading PDFs and photos with AI
 
@@ -230,4 +248,5 @@ Then:
 - Meta's real webhook, media download and message sending. The request shapes follow Meta's documentation and `ext/notify-whatsapp`.
 - AI reading against a real model. Its prompt and answer shape have only met a stand-in.
 - Real supplier documents. The reader's labels and columns are a first guess at how Indian bills are laid out, and only real documents will show how far off that is.
-- Hindi. The module's wording is in English and is not yet set up for translation.
+- Meta's real template approval and sending. The request follows Meta's documentation.
+- The Hindi wording with a native speaker, and the panel in Hindi, which is not built.

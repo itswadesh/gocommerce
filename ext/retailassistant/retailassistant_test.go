@@ -38,7 +38,7 @@ type fakeMeta struct {
 	srv   *httptest.Server
 }
 
-type sentMessage struct{ To, Body string }
+type sentMessage struct{ To, Body, Template, Language string }
 
 func (f *fakeMeta) handler(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -51,9 +51,24 @@ func (f *fakeMeta) handler(w http.ResponseWriter, r *http.Request) {
 			Text struct {
 				Body string `json:"body"`
 			} `json:"text"`
+			Template struct {
+				Name     string `json:"name"`
+				Language struct {
+					Code string `json:"code"`
+				} `json:"language"`
+				Components []struct {
+					Parameters []struct {
+						Text string `json:"text"`
+					} `json:"parameters"`
+				} `json:"components"`
+			} `json:"template"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
-		f.sent = append(f.sent, sentMessage{in.To, in.Text.Body})
+		body := in.Text.Body
+		if len(in.Template.Components) > 0 {
+			body = in.Template.Components[0].Parameters[0].Text
+		}
+		f.sent = append(f.sent, sentMessage{in.To, body, in.Template.Name, in.Template.Language.Code})
 		_, _ = w.Write([]byte(`{"messages":[{"id":"wamid.out"}]}`))
 	case strings.HasPrefix(r.URL.Path, "/download/"):
 		data, ok := f.files[strings.TrimPrefix(r.URL.Path, "/download/")]

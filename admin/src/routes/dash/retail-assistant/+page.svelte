@@ -214,6 +214,13 @@
         });
     }
 
+    async function setLanguage(link, language) {
+        await run(async () => {
+            await retailAssistant.updateLink(link.id, { language });
+            links = await retailAssistant.links();
+        });
+    }
+
     async function removeLink(link) {
         await run(async () => {
             await retailAssistant.removeLink(link.id);
@@ -339,6 +346,7 @@
                                 <tr>
                                     <th>Phone</th>
                                     <th class="min-width">State</th>
+                                    <th class="min-width">Language</th>
                                     <th class="min-width">Confirmations</th>
                                     <th class="min-width"><span class="tw:sr-only">Actions</span></th>
                                 </tr>
@@ -350,11 +358,21 @@
                                         <td class="min-width" data-name="State">
                                             <span class="label" class:success={link.verified_at}>{link.verified_at ? "Linked" : "Waiting for the code"}</span>
                                         </td>
+                                        <td class="min-width" data-name="Language">
+                                            <select aria-label="Language for +{link.phone}" value={link.language} disabled={busy} onchange={(e) => setLanguage(link, e.currentTarget.value)}>
+                                                <option value="en">English</option>
+                                                <option value="hi">हिंदी</option>
+                                            </select>
+                                        </td>
                                         <td class="min-width" data-name="Confirmations">
-                                            <label class="retail-check">
-                                                <input type="checkbox" checked={link.notify} disabled={busy || !link.verified_at} onchange={(e) => setNotify(link, e.currentTarget.checked)} />
-                                                <span>Send</span>
-                                            </label>
+                                            {#if link.opted_out}
+                                                <span class="label warning">Sent STOP</span>
+                                            {:else}
+                                                <label class="retail-check">
+                                                    <input type="checkbox" checked={link.notify} disabled={busy || !link.verified_at} onchange={(e) => setNotify(link, e.currentTarget.checked)} />
+                                                    <span>Send</span>
+                                                </label>
+                                            {/if}
                                         </td>
                                         <td class="min-width" data-name="Actions">
                                             <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => removeLink(link)}><span class="txt">Remove</span></button>
@@ -362,7 +380,7 @@
                                     </tr>
                                 {:else}
                                     {#if !loading}
-                                        <tr><td colspan="4"><EmptyState icon="ri-whatsapp-line" title="No phones yet" text="Add the phone you forward bills from." /></td></tr>
+                                        <tr><td colspan="5"><EmptyState icon="ri-whatsapp-line" title="No phones yet" text="Add the phone you forward bills from." /></td></tr>
                                     {/if}
                                 {/each}
                             </tbody>

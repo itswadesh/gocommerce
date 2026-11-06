@@ -72,6 +72,10 @@ type Config struct {
 	FileKey string
 	// ClamdAddr is a clamd's host:port. Empty, files are not scanned.
 	ClamdAddr string
+	// TemplateName is the Meta-approved template that carries a message outside
+	// WhatsApp's customer-service window: one body variable, in each language a
+	// phone may choose. Empty, such a message is marked undelivered.
+	TemplateName string
 	// Gateway reads PDFs and photos with a model. Nil, a person enters them.
 	Gateway *aigateway.Module
 	// Poll is how often the worker looks for work; 0 is five seconds.
@@ -308,6 +312,13 @@ CREATE INDEX retailassistant_replies_claim ON retailassistant_replies (store_id,
 ALTER TABLE retailassistant_documents
     ADD COLUMN content_sealed boolean NOT NULL DEFAULT false,
     ADD COLUMN content_removed_at timestamptz;`},
+		{ID: "0006_messaging", SQL: `
+ALTER TABLE retailassistant_phone_links
+    ADD COLUMN language text NOT NULL DEFAULT 'en' CHECK (language IN ('en', 'hi')),
+    ADD COLUMN opted_out_at timestamptz;
+ALTER TABLE retailassistant_replies
+    ADD COLUMN language text NOT NULL DEFAULT 'en';
+CREATE INDEX retailassistant_messages_window ON retailassistant_messages (store_id, sender, received_at DESC);`},
 	}
 }
 
@@ -443,6 +454,7 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"display_number": m.cfg.DisplayNumber,
 		"files_sealed":   m.fileKey != nil,
 		"files_scanned":  m.cfg.ClamdAddr != "",
+		"template_ready": m.cfg.TemplateName != "",
 	})
 }
 

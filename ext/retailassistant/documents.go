@@ -356,9 +356,9 @@ func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		return m.tell(ctx, tx, "posted:"+strconv.FormatInt(id, 10), sender, fmt.Sprintf(
-			"%s from %s is in your books. You now owe %s %s.",
-			entityWord(entity), d.Supplier.Name, currency, plainAmount(outstanding, currency)))
+		return m.tell(ctx, tx, "posted:"+strconv.FormatInt(id, 10), sender, func(lang string) string {
+			return phrase(lang, "posted_"+entity, d.Supplier.Name, currency, plainAmount(outstanding, currency))
+		})
 	})
 	if err != nil {
 		respondTx(w, r, err, "approve a document")
@@ -366,16 +366,6 @@ func (m *Module) handleApprove(w http.ResponseWriter, r *http.Request) {
 	}
 	m.nudge()
 	gocommerce.Respond(w, http.StatusOK, out)
-}
-
-func entityWord(entity string) string {
-	switch entity {
-	case "invoice":
-		return "A bill"
-	case "credit":
-		return "A credit note"
-	}
-	return "An unverified payment"
 }
 
 func plainAmount(minor int64, currency string) string {
