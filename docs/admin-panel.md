@@ -77,7 +77,7 @@ Inter replaces PocketBase's IBM Plex Sans, so two things follow. PocketBase
 sets `letter-spacing: 0.004em` on the body and its own comment says why — it
 normalises *Plex Sans* between Chrome and Firefox; `gocommerce.css` resets it
 to `normal`, because Inter ships with its own metrics and the extra tracking
-reads loose. And the faces are self-hosted in `admin/static/fonts/inter/`
+reads loose. And the faces are self-hosted in `admin/static/_panel/fonts/inter/`
 rather than linked from Google, because the panel runs under a CSP with
 `font-src 'self'` — and a dashboard should not phone a third party to render
 its own text.
@@ -1248,7 +1248,7 @@ emailed keep working.
   its own test.
 - `/_` and `/_/…` — the panel's previous home, matching PocketBase — redirect
   to `/`, so an old bookmark still works.
-- Hashed assets under `_app/immutable` are cached for a year; `index.html` is
+- Hashed assets under `_panel/immutable` are cached for a year; `index.html` is
   never cached, or a deploy would not reach anyone.
 - A strict CSP locks the panel to its own origin — scripts, styles, fonts and
   fetches. Images are the exception: `img-src` also takes any `http:` or

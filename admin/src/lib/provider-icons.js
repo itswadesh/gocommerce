@@ -16,7 +16,7 @@
  *
  * A carrier on Shipping providers is the exception (D101): it shows its own
  * icon, in its own colours, the way each company publishes it on its own
- * website, saved at 64 pixels under static/images/providers/. Simple Icons
+ * website, saved at 64 pixels under static/_panel/images/providers/. Simple Icons
  * carries one carrier of eleven, and a row of trucks told an owner nothing.
  * They sit on a white plate in both themes, because several are drawn for a
  * white page (NimbusPost's navy, Shippo's black) and vanish on a dark one.
@@ -60,7 +60,7 @@ export const BRAND_MARKS = {
 
 /**
  * Carriers with their own icon, by provider code: the file is
- * static/images/providers/<code>.png, 64 pixels square.
+ * static/_panel/images/providers/<code>.png, 64 pixels square.
  */
 export const CARRIER_LOGOS = [
     "delhivery",
@@ -99,7 +99,7 @@ export const KIND_GLYPHS = {
  * @returns {{ logo: string } | { path: string, wide: boolean } | { glyph: string }}
  */
 export function providerIcon(code, kind) {
-    if (CARRIER_LOGOS.includes(code)) return { logo: `/images/providers/${code}.png` };
+    if (CARRIER_LOGOS.includes(code)) return { logo: `/_panel/images/providers/${code}.png` };
     const mark = BRAND_MARKS[code];
     if (mark) return { path: mark.path, wide: !!mark.wide };
     return { glyph: METHOD_GLYPHS[code] ?? KIND_GLYPHS[kind] ?? "ri-plug-line" };

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
+	"github.com/itswadesh/gocommerce/ext/identity"
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
@@ -201,5 +202,82 @@ func TestACatalogueVariantSaysWhetherItCanBeOrdered(t *testing.T) {
 	}
 	if v := got[f.variant]; !v.InStock || v.Available != 100 {
 		t.Errorf("the widget = %+v; want 100 in stock", v)
+	}
+}
+
+// A storefront decides what to offer from this: a retail shop has no company
+// and shows no trade link, and only a live dealer earns the enquiry form.
+func TestAvailabilityFollowsTheStoresCompaniesAndDealers(t *testing.T) {
+	f := newFixture(t)
+	read := func() availability {
+		t.Helper()
+		rec := f.send(t, http.MethodGet, "/x/b2b/availability", "", nil, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("availability = %d %s", rec.Code, rec.Body)
+		}
+		var a availability
+		gctest.DecodeData(t, rec, &a)
+		return a
+	}
+	if got := read(); !got.Companies || got.Dealers {
+		t.Errorf("one company, no territory = %+v; want companies only", got)
+	}
+	f.dealer(t, "Closed Dealer", StatusClosed, TerritoryInput{Country: "IN", State: "GJ"})
+	if got := read(); got.Dealers {
+		t.Errorf("a closed dealer = %+v; want no dealers", got)
+	}
+	f.dealer(t, "Surat Dealer", StatusActive, TerritoryInput{Country: "IN", State: "MH"})
+	if got := read(); !got.Dealers {
+		t.Errorf("a live dealer = %+v; want dealers", got)
+	}
+}
+
+// A bot that fills the field no person sees is told what a person is told, and
+// nothing is filed for a dealer to chase.
+func TestTheLeadFormsHoneypotFilesNothing(t *testing.T) {
+	f := newFixture(t)
+	rec := f.fileLead(t, "198.51.100.9", map[string]any{"phone": "+91 98765 43210", "website": "http://spam.example"})
+	if rec.Code != http.StatusAccepted || rec.Body.String() != `{"data":{"accepted":true}}` {
+		t.Errorf("honeypot = %d %s; want the same answer a person gets", rec.Code, rec.Body)
+	}
+	leads, total, err := f.b2b.Leads(context.Background(), LeadQuery{Limit: 10})
+	if err != nil || total != 0 || len(leads) != 0 {
+		t.Errorf("leads = %+v, total %d (%v); want none", leads, total, err)
+	}
+}
+
+// One setting serves every store: an invitation links to the store's own host,
+// and a store with no address yet gets the token alone rather than a link to a
+// literal {domain}.
+func TestAnInvitationLinksToTheStoresOwnHost(t *testing.T) {
+	const setting = "https://{domain}/portal/invitation?token={token}"
+	invite := func(cfg gocommerce.Config) (string, *gocommerce.App) {
+		t.Helper()
+		mail := &gctest.RecordingNotifier{}
+		accounts := identity.New(identity.Config{})
+		mod := New(Config{Accounts: accounts, InviteURL: setting})
+		app := gctest.NewWithConfig(t, cfg, mailModule{rec: mail}, accounts, mod)
+		ctx := gocommerce.WithStore(context.Background(), app.DefaultStore())
+		mod.notifyInvitation(ctx, &Company{Name: "Surat Gold"}, "buyer@example.test", RoleBuyer, "owner", "tok")
+		all := mail.All()
+		if len(all) != 1 {
+			t.Fatalf("sent %d, want one invitation", len(all))
+		}
+		return all[0].Data["invite_url"], app
+	}
+
+	if got, _ := invite(gocommerce.Config{}); got != "" {
+		t.Errorf("no address yet: invite_url = %q, want none", got)
+	}
+
+	got, app := invite(gocommerce.Config{Brands: []gocommerce.Brand{
+		{Name: "Alpha", PanelURL: "https://admin.alpha.test", BaseDomain: "alpha.test"},
+	}})
+	var slug string
+	if err := app.DB().QueryRow(`SELECT slug FROM stores WHERE id = $1`, app.DefaultStore()).Scan(&slug); err != nil {
+		t.Fatal(err)
+	}
+	if want := "https://" + slug + ".alpha.test/portal/invitation?token=tok"; got != want {
+		t.Errorf("invite_url = %q, want %q", got, want)
 	}
 }
