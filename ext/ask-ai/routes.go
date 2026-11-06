@@ -284,7 +284,9 @@ func keepLinks(links []Link, allowed map[string]string, k *masker) []Link {
 // file turns what the model suggested into a proposal in the queue, or says why
 // not. Nothing is written to the store here.
 func (m *Module) file(ctx context.Context, su *gocommerce.Superuser, p *modelProposal, k *masker) (*ProposalView, string) {
-	if p == nil {
+	// "none" rather than a null proposal, so the schema asks for no nullable
+	// object, which only some providers' structured output takes.
+	if p == nil || p.Action == noProposal {
 		return nil, ""
 	}
 	if p.Action != actionKind {
