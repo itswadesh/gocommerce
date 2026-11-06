@@ -183,6 +183,9 @@ environment:
   GOCOMMERCE_SMS_CODES_PER_DAY
                     the codes texted in 24 hours, to operators in total
                     and to each store's shoppers in total; unset, 500
+  GOCOMMERCE_SMS_COUNTRIES
+                    the calling codes an operator's sign-in code may be texted
+                    to, comma-separated, such as 91,1; unset or unreadable, 91
   RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
   RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,
   RETAIL_ASSISTANT_DISPLAY_NUMBER
@@ -399,6 +402,7 @@ environment:
 			n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("GOCOMMERCE_SMS_CODES_PER_DAY")))
 			return n
 		}(),
+		SMSCountries: gocommerce.ParseSMSCountries(os.Getenv("GOCOMMERCE_SMS_COUNTRIES")),
 		// Whether the addresses a store sets may reach the server's own
 		// network: the same kind of choice about who this install is for, read
 		// as a word for the same reason as the demo switch.

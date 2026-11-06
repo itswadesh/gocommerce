@@ -86,6 +86,35 @@ func MaskPhoneIn(text, phone string) string {
 	return strings.ReplaceAll(text, strings.TrimPrefix(phone, "+"), masked)
 }
 
+// ParseSMSCountries reads a comma-separated list of calling codes. Anything it
+// cannot read gives India alone: a typo in a spending limit should neither stop
+// the engine nor open the install to every country.
+func ParseSMSCountries(list string) []string {
+	india := []string{"91"}
+	var out []string
+	for _, code := range strings.Split(list, ",") {
+		code = strings.TrimPrefix(strings.TrimSpace(code), "+")
+		if len(code) < 1 || len(code) > 3 || code[0] == '0' || strings.Trim(code, "0123456789") != "" {
+			return india
+		}
+		out = append(out, code)
+	}
+	return out
+}
+
+// checkSMSCountry refuses a number this install does not text codes to. About the
+// number that was typed and not who holds it, so it says nothing about accounts.
+func (s *Superusers) checkSMSCountry(phone string) error {
+	for _, code := range s.app.cfg.SMSCountries {
+		// Calling codes are prefix-free: no code begins another.
+		if strings.HasPrefix(phone, "+"+code) {
+			return nil
+		}
+	}
+	return &APIError{Status: http.StatusConflict, Code: "sms_country",
+		Message: "this install does not text sign-in codes to that country; sign in with your email"}
+}
+
 func phoneUnavailable() *APIError {
 	return &APIError{Status: http.StatusConflict, Code: "sms_unavailable",
 		Message: "this install cannot text a sign-in code to that number; sign in with your email"}
@@ -107,7 +136,7 @@ func phoneCodeHash(phone, code string) string {
 
 // ownCodeHash is phoneCodeHash for a code asked for from inside an account, to
 // add an address to it. That person named the address, so what proves an address
-// to them must not sign anybody in to it (D210).
+// to them must not sign anybody in to it (D211).
 func ownCodeHash(identity, code string) string {
 	return hashToken("operator-link:" + identity + ":" + code)
 }
@@ -275,6 +304,9 @@ func (s *Superusers) RequestPhoneCode(ctx context.Context, phone, clientIP strin
 	if err != nil {
 		return err
 	}
+	if err := s.checkSMSCountry(phone); err != nil {
+		return err
+	}
 	if s.app.cfg.Demo || !s.phoneCanReach(ctx, phone) {
 		return phoneUnavailable()
 	}
@@ -292,6 +324,9 @@ func (s *Superusers) RequestPhoneCode(ctx context.Context, phone, clientIP strin
 func (s *Superusers) RequestOwnPhoneCode(ctx context.Context, phone, clientIP string) error {
 	phone, err := NormalizePhone(phone)
 	if err != nil {
+		return err
+	}
+	if err := s.checkSMSCountry(phone); err != nil {
 		return err
 	}
 	if !s.phoneCanReach(ctx, phone) {

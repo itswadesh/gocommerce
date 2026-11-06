@@ -656,7 +656,7 @@ func TestADisabledPhoneCannotSignUpAgain(t *testing.T) {
 
 // A store's provider account is its staff's to read, and this code opens an
 // account. So on an install that hosts several stores no code goes on a store's
-// channel, whoever the person is (D210).
+// channel, whoever the person is (D211).
 func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 	sms := &smsStub{}
 	app := newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}}, sms)

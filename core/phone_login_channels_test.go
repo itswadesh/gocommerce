@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// What a code or a reset may travel on, and what proving an address ends (D210).
+// What a code or a reset may travel on, and what proving an address ends (D211).
 
 const (
 	theirPhone = "+919876511111"
@@ -539,6 +539,47 @@ func TestAnAccountWithNoPasswordIsNotTheFastAnswer(t *testing.T) {
 	}
 	if known < unknown/3 {
 		t.Fatalf("an account with no password answers in %v, no account in %v", known/3, unknown/3)
+	}
+}
+
+func TestOperatorCodesGoOnlyToTheInstallsCountries(t *testing.T) {
+	const abroad = "+14155550100"
+	app, sms, _ := openInstall(t)
+	in := signedUp(t, app, "someone@example.com", "a-long-enough-password")
+	st := openStore(t, app, in.Token)
+	refused := func(r interface{ Result() *http.Response }, what string) {
+		t.Helper()
+		if got := r.Result().StatusCode; got != http.StatusConflict {
+			t.Errorf("%s = %d, want 409", what, got)
+		}
+	}
+	refused(askPhoneCode(t, app, abroad), "sign-in code")
+	refused(do(t, app, http.MethodPost, "/api/admin/me/phone/code", bearer(in.Token), header("X-Store", st),
+		jsonBody(t, map[string]string{"phone": abroad})), "own code")
+	var rows int
+	if err := app.db.QueryRowContext(context.Background(), `SELECT count(*) FROM superuser_login_codes`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	app.superusers.waitForResetDelivery(5 * time.Second)
+	if rows != 0 || len(sms.notes()) != 0 {
+		t.Errorf("%d rows stored and %d texts sent for a refused country", rows, len(sms.notes()))
+	}
+
+	app.cfg.SMSCountries = ParseSMSCountries("91, +1")
+	mustAsk(t, app, abroad)
+	if sms.lastCode(t, app, abroad) == "" {
+		t.Error("an allowed country got no code")
+	}
+}
+
+func TestAnUnreadableCountryListMeansIndia(t *testing.T) {
+	for _, in := range []string{"", "91,", "india", "1,x", "0", "1234"} {
+		if got := ParseSMSCountries(in); len(got) != 1 || got[0] != "91" {
+			t.Errorf("%q = %v", in, got)
+		}
+	}
+	if got := ParseSMSCountries(" 91, +1 "); len(got) != 2 || got[0] != "91" || got[1] != "1" {
+		t.Errorf("list = %v", got)
 	}
 }
 

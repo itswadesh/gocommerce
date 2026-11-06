@@ -14,7 +14,7 @@ import (
 )
 
 // On the real module: a store that sets its own Twilio account in the panel still
-// gets no operator's code on it, where the install hosts other stores (D210).
+// gets no operator's code on it, where the install hosts other stores (D211).
 func TestAStoresOwnAccountCarriesNoOperatorsCode(t *testing.T) {
 	s := &stub{}
 	srv := gctest.StubHTTP(t, s.handler)

@@ -130,6 +130,9 @@ services:
       # The sign-in codes texted in 24 hours, to operators in total and to each
       # store's shoppers in total. Unset, 500.
       GOCOMMERCE_SMS_CODES_PER_DAY: ${GOCOMMERCE_SMS_CODES_PER_DAY:-}
+      # The calling codes an operator's sign-in code may be texted to, such as
+      # 91,1. Unset or unreadable, 91.
+      GOCOMMERCE_SMS_COUNTRIES: ${GOCOMMERCE_SMS_COUNTRIES:-}
       # The install owner's own bot and chat, told whenever anybody opens a
       # store. Not a store's: each store sets its own for its orders.
       # The retail assistant's one WhatsApp number, shared by every store that
