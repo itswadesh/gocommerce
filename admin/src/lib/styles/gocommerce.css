@@ -694,7 +694,9 @@ th.col-field-type-number {
 /* --------------------------------------------------------------- save bar */
 
 /*
- * SaveBar.svelte, fixed across the top of the window, over the app header.
+ * SaveBar.svelte, fixed at the top of a phone's window and at the foot of a
+ * desktop's (see the rule further down, near the page rail). The history below
+ * is why it is the shape it is.
  *
  * A centred pill rather than a full-width strip, which is Shopify's shape: its
  * save bar sits in the middle of the top bar and covers it, so it reads as one
@@ -5173,13 +5175,38 @@ button.media-check {
 }
 
 /*
- * The save bar was centred over the app header, which no longer exists. It
- * keeps its place at the top of the page — now the content column, so it is
- * offset by the rail rather than by the window.
+ * On a desktop the save bar sits at the foot of the content column, offset by
+ * the rail. At the top it hid the page header's buttons, Mark paid among them
+ * (D223). The page gets room to scroll clear of it, and a bulk action bar, which
+ * lives in the same spot, stands on top of it.
  */
 @media (min-width: 769px) {
     .save-bar {
         left: 228px;
+        top: auto;
+        bottom: var(--spacing);
+    }
+    .page-content:has(.save-bar:not([hidden])) {
+        /* The bar, its gap, and the sticky footer's -16px margin. */
+        padding-bottom: 88px;
+    }
+    body:has(.save-bar:not([hidden])) .bulkbar {
+        bottom: calc(var(--spacing) + 56px);
+    }
+    .recovery-editor .save-bar[hidden] {
+        transform: translateY(8px);
+    }
+}
+/* Apart, so it cannot undo the reduced-motion rule that stops the entrance. */
+@media (min-width: 769px) and (prefers-reduced-motion: no-preference) {
+    .save-bar {
+        animation-name: saveBarRise;
+    }
+}
+@keyframes saveBarRise {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
     }
 }
 
