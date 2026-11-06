@@ -49,6 +49,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/invoices"
 	"github.com/itswadesh/gocommerce/ext/klaviyo"
 	"github.com/itswadesh/gocommerce/ext/layouts"
+	"github.com/itswadesh/gocommerce/ext/mcp"
 	metacapi "github.com/itswadesh/gocommerce/ext/meta-capi"
 	metalpricing "github.com/itswadesh/gocommerce/ext/metal-pricing"
 	"github.com/itswadesh/gocommerce/ext/navigation"
@@ -275,6 +276,7 @@ environment:
 		withWebhooks = fs.Bool("webhooks", false, "install the webhooks module: POST this store's events to endpoints you register")
 		withSearch   = fs.Bool("meilisearch", false, "install the meilisearch module: a search index kept in step with the catalogue (MEILI_HOST, MEILI_API_KEY, MEILI_SEARCH_KEY, or the Plugins screen)")
 		withKlaviyo  = fs.Bool("klaviyo", false, "install the klaviyo module: orders and abandoned carts as Klaviyo events (KLAVIYO_PRIVATE_KEY, KLAVIYO_PUBLIC_KEY, or the Plugins screen)")
+		withMCP      = fs.Bool("mcp", false, "install the MCP module: the store as tools for an AI agent at /api/admin/x/mcp, each tool under the rights it needs")
 		withMetaCAPI = fs.Bool("meta-capi", false, "install the Meta Conversions API module idle: each store switches it on under Plugins with its access token, and its purchases reach Meta from the server as well as from the pixel")
 		withFeeds    = fs.Bool("feeds", false, "install the feeds module: Google Merchant and Meta catalogue feeds at /x/feeds/ (STOREFRONT_URL, or its screen in the panel)")
 		withSitemaps = fs.Bool("sitemaps", false, "install the sitemaps module: the storefront's sitemap at /x/sitemaps/sitemap.xml (STOREFRONT_URL, or its screen in the panel)")
@@ -527,6 +529,9 @@ environment:
 			modules = append(modules, klaviyo.New(klaviyo.Config{
 				PrivateKey: os.Getenv("KLAVIYO_PRIVATE_KEY"), PublicKey: os.Getenv("KLAVIYO_PUBLIC_KEY"),
 			}))
+		}
+		if *withMCP {
+			modules = append(modules, mcp.New(mcp.Config{ServerName: "gocommerce"}))
 		}
 		if *withMetaCAPI {
 			modules = append(modules, metacapi.New(metacapi.Config{}))

@@ -52,6 +52,8 @@ services:
       - -banners
       - -layouts
       - -wishlist
+      - -klaviyo
+      - -mcp
       - -customizer
       - -gateways
       - -carriers
