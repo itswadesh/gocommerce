@@ -16446,7 +16446,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every store on the install, newest first, suspended ones included, with how to reach its owners and how many products and orders it has. Only for the person whose proved phone number is GOCOMMERCE_PLATFORM_OWNER_PHONE; everybody else, the static admin token included, is refused.",
+        "description": "Every store on the install, the most recently active first and then those with no activity, newest first, suspended ones included, with how to reach its owners and how many products and orders it has. Only for the person whose proved phone number is GOCOMMERCE_PLATFORM_OWNER_PHONE; everybody else, the static admin token included, is refused.",
         "responses": {
           "200": {
             "description": "Every store.",

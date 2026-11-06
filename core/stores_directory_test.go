@@ -55,6 +55,13 @@ func TestTheInstallOwnerSeesEveryStoreWithItsOwnersAndCounts(t *testing.T) {
 		}
 	}
 
+	// The older store has done something and the newer one nothing, so the
+	// older one leads until the newer one acts, below.
+	if _, err := app.db.ExecContext(WithStore(context.Background(), app.DefaultStore()),
+		`INSERT INTO admin_audit (action, entity_type, entity_id, summary) VALUES ('store.update', 'store', '1', 'Renamed the store')`); err != nil {
+		t.Fatal(err)
+	}
+
 	if !directoryAllowed(t, app, tok) {
 		t.Fatal("the install's owner is told they may not see the list")
 	}
@@ -88,15 +95,14 @@ func TestTheInstallOwnerSeesEveryStoreWithItsOwnersAndCounts(t *testing.T) {
 	if found.LastActivity != "" || found.LastActivityAt != nil {
 		t.Fatalf("activity = %q at %v, want none yet", found.LastActivity, found.LastActivityAt)
 	}
-	if list[0].ID != other {
-		t.Fatalf("first store = %+v, want the newest", list[0])
+	if list[0].ID != app.DefaultStore() {
+		t.Fatalf("first store = %+v, want the one with activity ahead of the one with none", list[0])
 	}
 	if found.CreatedAt.IsZero() {
 		t.Fatal("the store has no creation time")
 	}
-	last := list[len(list)-1]
-	if last.ID != app.DefaultStore() || len(last.Owners) == 0 || last.Owners[0].Phone != directoryPhone || !last.Owners[0].PhoneVerified {
-		t.Fatalf("last store = %+v, want the default store owned by the proved number", last)
+	if first := list[0]; len(first.Owners) == 0 || first.Owners[0].Phone != directoryPhone || !first.Owners[0].PhoneVerified {
+		t.Fatalf("first store = %+v, want it owned by the proved number", first)
 	}
 
 	// Whichever log holds the newest thing names the activity, and an address
@@ -111,7 +117,7 @@ func TestTheInstallOwnerSeesEveryStoreWithItsOwnersAndCounts(t *testing.T) {
 		VALUES ('product.update', 'product', '1', 'Renamed a product')`); err != nil {
 		t.Fatal(err)
 	}
-	if got := fetch(); got.LastActivity != "Renamed a product" || got.LastActivityAt == nil {
+	if got := fetch(); got.ID != other || got.LastActivity != "Renamed a product" || got.LastActivityAt == nil {
 		t.Fatalf("after staff acted: %q at %v", got.LastActivity, got.LastActivityAt)
 	}
 	if _, err := app.db.ExecContext(ctx, `INSERT INTO outbox_events (event_id, event_name, aggregate_type, aggregate_id, payload)
