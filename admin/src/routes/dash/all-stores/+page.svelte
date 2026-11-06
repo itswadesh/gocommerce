@@ -139,6 +139,7 @@
                                 <td data-name="Store">
                                     <div class="row-name row-name-stacked">
                                         <span class="txt-bold">{store.name || store.slug}</span>
+                                        <span class="txt-hint store-id">{store.id}</span>
                                         <span class="txt-hint">
                                             {store.slug}{#if store.status !== "active"} · {store.status}{/if}
                                         </span>
@@ -240,6 +241,12 @@
         flex: 0 0 auto;
         width: auto;
         margin: 0;
+    }
+    /* Copied into a script or a support ticket, so one click selects all of it. */
+    .store-id {
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+        user-select: all;
     }
     .store-total {
         margin-left: 0.35em;
