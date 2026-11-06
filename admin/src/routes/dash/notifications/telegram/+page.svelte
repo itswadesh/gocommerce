@@ -15,6 +15,12 @@
      * credential); finding the chat, the test, and the alerts' switches and
      * wording are the module's own (alerts.write). A manager reads alerts.read
      * and sees everything without a control that would refuse them.
+     *
+     * Two-way control is its own card under the steps, because it is its own
+     * decision and its own right (alerts.commands): the alerts go on as they
+     * were until somebody presses it. While it is on, the bot's messages go to
+     * the store's webhook and Telegram will not list its chats, so Find my chat
+     * says that rather than failing (D216).
      */
     import { base } from "$app/paths";
     import { can, telegram } from "$lib/api.js";
@@ -63,15 +69,19 @@
         const filter = stateFilter;
         loading = true;
         try {
-            const [p, a, d] = await Promise.all([
+            const [p, a, d, c, log] = await Promise.all([
                 seesBot ? telegram.plugin() : Promise.resolve(null),
                 telegram.alerts(),
                 telegram.deliveries({ state: filter, limit: 10 }),
+                telegram.commands(),
+                telegram.commandsAudit({ limit: 5 }),
             ]);
             if (mine !== latest) return;
             plugin = p;
             alerts = a ?? [];
             deliveries = d?.data ?? [];
+            commands = c;
+            commandChanges = log?.data ?? [];
         } catch (err) {
             if (mine === latest) toast.error(err);
         } finally {
@@ -113,6 +123,7 @@
             plugin = await telegram.savePlugin({ settings: { bot_token: value } });
             tokenDraft = "";
             toast.success("Bot token saved");
+            await reloadCommands();
         } catch (err) {
             tokenProblem = err?.message ?? String(err);
         } finally {
@@ -151,6 +162,7 @@
             plugin = await telegram.savePlugin({ settings: { chat_id: value } });
             chatDraft = "";
             toast.success(title ? `Alerts will go to ${title}` : "Chat saved");
+            await reloadCommands();
         } catch (err) {
             chatProblem = err?.message ?? String(err);
         } finally {
@@ -190,6 +202,7 @@
         try {
             plugin = await telegram.savePlugin({ enabled: next });
             toast.success(next ? "Telegram alerts on" : "Telegram alerts off");
+            await reloadCommands();
         } catch (err) {
             plugin = { ...plugin, enabled: !next };
             toast.error(err);
@@ -197,6 +210,64 @@
             switching = false;
         }
     }
+
+    // ------------------------------------------------- two-way control
+
+    const switchesCommands = $derived(can("alerts.commands"));
+    let commands = $state(null); // null until the engine has said
+    let commandChanges = $state([]);
+    let turning = $state(false);
+    let commandsProblem = $state("");
+    let commandsNote = $state("");
+
+    const commandsLabel = $derived(
+        !commands?.on
+            ? { label: "Off", cls: "" }
+            : commands.paused
+              ? { label: "Paused", cls: "warning" }
+              : { label: "On", cls: "success" },
+    );
+
+    // Quietly: a settings change has already answered for itself.
+    async function reloadCommands() {
+        try {
+            commands = await telegram.commands();
+        } catch {
+            /* the card keeps what it last knew until the next load */
+        }
+    }
+
+    async function toggleCommands() {
+        if (turning || !commands) return;
+        const next = !commands.on;
+        turning = true;
+        commandsProblem = "";
+        commandsNote = "";
+        try {
+            commands = await telegram.setCommands(next);
+            commandChanges = (await telegram.commandsAudit({ limit: 5 }))?.data ?? [];
+            if (next) chats = null;
+            if (commands.webhook_left) {
+                commandsNote = "Switched off, and the bot obeys nothing. Telegram could not be told just now, so Find my chat will finish the job when you next use it.";
+            }
+            toast.success(next ? "Two-way control on. Check your chat with the bot." : "Two-way control off");
+        } catch (err) {
+            commandsProblem = err?.message ?? String(err);
+        } finally {
+            turning = false;
+        }
+    }
+
+    const changeLabels = {
+        "commands.on": "Two-way control switched on",
+        "commands.off": "Two-way control switched off",
+        "order.mark_paid": "Marked paid",
+        "order.ship": "Shipped",
+        "order.cancel": "Cancelled",
+        "order.deliver": "Marked delivered",
+        "variant.stock": "Stock changed",
+        "variant.price": "Price changed",
+    };
 
     // ------------------------------------------------------- the alerts
 
@@ -410,14 +481,20 @@
                                 type="button"
                                 class="btn secondary"
                                 class:loading={finding}
-                                disabled={!writable || !tokenSaved || finding}
-                                title={tokenSaved ? "" : "Save the bot token first"}
+                                disabled={!writable || !tokenSaved || finding || !!commands?.on}
+                                title={commands?.on ? "Switch two-way control off to find a chat" : tokenSaved ? "" : "Save the bot token first"}
                                 onclick={findChats}
                             >
                                 <i class="ri-search-line" aria-hidden="true"></i>
                                 <span class="txt">Find my chat</span>
                             </button>
                         </div>
+                        {#if commands?.on}
+                            <p class="txt-hint txt-sm" transition:rise>
+                                While two-way control is on, Telegram hands this bot's messages to your store and
+                                cannot list its chats. Switch it off below to choose another chat.
+                            </p>
+                        {/if}
                         {#if chats}
                             {#if chats.length}
                                 <ul class="tg-chats" transition:rise>
@@ -518,6 +595,78 @@
                     </section>
                 </div>
             {/if}
+
+            <section class="card tg-step tg-two-way m-b-base" class:done={commands?.on && !commands.paused}>
+                <div class="tg-intro">
+                    <h3 class="tg-step-title">Run your store from this chat</h3>
+                    {#if commands}
+                        <span class="label {commandsLabel.cls}">{commandsLabel.label}</span>
+                    {/if}
+                </div>
+                <p class="txt-hint txt-sm">
+                    Ask the bot for today's sales, recent orders, low stock or store health. Tap Mark paid, Ship or
+                    Cancel on a new order's alert. Change stock or a price, or ship or deliver an order, and tap
+                    Confirm in the chat. Only your own private chat with the bot is obeyed; a group never is. Refunds
+                    stay here in the panel. Separate from the alerts: nothing changes until you switch it on.
+                </p>
+                {#if !commands}
+                    <span class="skeleton-loader" aria-hidden="true"></span>
+                {:else}
+                    {#if commands.paused}
+                        <p class="tg-result" role="status" transition:rise>
+                            <i class="ri-pause-circle-line" aria-hidden="true"></i><span>{commands.paused}</span>
+                        </p>
+                    {:else if commands.on}
+                        <p class="tg-state" transition:rise>
+                            <i class="ri-chat-check-line" aria-hidden="true"></i>
+                            <span>Obeying chat <code>{commands.chat_id}</code>. Send the bot /help to see what it can do.</span>
+                        </p>
+                    {:else if commands.blocker}
+                        <p class="tg-state" transition:rise>
+                            <i class="ri-information-line" aria-hidden="true"></i><span>{commands.blocker}</span>
+                        </p>
+                    {/if}
+                    <div class="tg-row">
+                        <button
+                            type="button"
+                            class="btn"
+                            class:secondary={commands.on}
+                            class:loading={turning}
+                            disabled={!switchesCommands || turning || (!commands.on && !!commands.blocker)}
+                            title={switchesCommands ? "" : "Your role cannot switch this"}
+                            onclick={toggleCommands}
+                        >
+                            <span class="txt">{commands.on ? "Switch two-way control off" : "Switch two-way control on"}</span>
+                        </button>
+                    </div>
+                    {#if commandsProblem}
+                        <p class="tg-result" role="alert" transition:rise>
+                            <i class="ri-error-warning-line" aria-hidden="true"></i><span>{commandsProblem}</span>
+                        </p>
+                    {/if}
+                    {#if commandsNote}
+                        <p class="tg-result" role="status" transition:rise>
+                            <i class="ri-information-line" aria-hidden="true"></i><span>{commandsNote}</span>
+                        </p>
+                    {/if}
+                    {#if commandChanges.length}
+                        <div class="txt-bold txt-sm">Latest changes</div>
+                        <ul class="tg-changes">
+                            {#each commandChanges as c (c.id)}
+                                <li>
+                                    <span class="tg-change-text">
+                                        {changeLabels[c.action] ?? c.action}{#if c.arguments?.order_number || c.arguments?.sku}: {c.arguments.order_number ?? c.arguments.sku}{/if}
+                                        {#if c.outcome === "error"}<span class="label sm danger">Refused</span>{/if}
+                                    </span>
+                                    <span class="txt-hint txt-sm" title={formatDate(c.created_at)}>
+                                        {c.telegram_user_id ? `Telegram user ${c.telegram_user_id}, ` : ""}{relativeTime(c.created_at)}
+                                    </span>
+                                </li>
+                            {/each}
+                        </ul>
+                    {/if}
+                {/if}
+            </section>
 
             <h2 class="tw:mt-10 tw:text-2xl tw:font-semibold tw:tracking-tight">Alerts</h2>
             <p class="txt-hint m-b-base">
@@ -876,6 +1025,27 @@
     .tg-manual summary:hover,
     .tg-manual summary:focus-visible {
         color: var(--txtPrimaryColor);
+    }
+    .tg-two-way {
+        margin-bottom: var(--baseSpacing);
+    }
+    .tg-changes {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .tg-changes li {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 2px 12px;
+        overflow-wrap: anywhere;
+    }
+    .tg-change-text {
+        min-width: 0;
     }
     .tg-alerts {
         display: flex;
