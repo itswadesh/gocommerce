@@ -736,7 +736,7 @@ list the machine's processes.
 
 ## Running a store from Telegram
 
-`ext/telegram-alerts` can take orders as well as send them (D209). It is off
+`ext/telegram-alerts` can take orders as well as send them (D210). It is off
 until the store's owner switches it on, separately from the alerts, and a store
 that never does sends and receives what it always did.
 

@@ -547,6 +547,9 @@ export const telegram = {
     test: () => api.post(`${TELEGRAM}/test`, {}),
     deliveries: (params) => api.get(`${TELEGRAM}/deliveries` + query(params)),
     retry: (id) => api.post(`${TELEGRAM}/deliveries/${id}/retry`, {}),
+    commands: () => api.get(`${TELEGRAM}/commands`),
+    setCommands: (on) => api.post(`${TELEGRAM}/commands`, { on }),
+    commandsAudit: (params) => api.get(`${TELEGRAM}/commands/audit` + query(params)),
 };
 
 /**
