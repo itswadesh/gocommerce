@@ -74,6 +74,14 @@ type Config struct {
 	// both, no such message is sent.
 	PlatformBotToken string
 	PlatformChatID   string
+	// PlatformWebhookURL is told as JSON whenever somebody opens a store: what
+	// was an external automation's job, such as a Zap posting to Telegram. It is
+	// as good as a password, so it comes from the environment and is never
+	// logged. Empty, nothing is posted.
+	PlatformWebhookURL string
+	// PlatformWebhookBaseDomain narrows that to one brand's stores, named by its
+	// domain. Empty means every brand's.
+	PlatformWebhookBaseDomain string
 	// BaseURL replaces https://api.telegram.org. Tests set it; nothing else
 	// should.
 	BaseURL string
@@ -238,6 +246,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 		app.Subscribe(gocommerce.EventStoreCreated, m.onStoreCreated)
 	case m.cfg.PlatformBotToken != "" || m.cfg.PlatformChatID != "":
 		m.log.Warn("telegram alerts: new stores are not announced: the platform's bot token and chat id are only useful together")
+	}
+
+	m.cfg.PlatformWebhookURL = strings.TrimSpace(m.cfg.PlatformWebhookURL)
+	if m.cfg.PlatformWebhookURL != "" {
+		app.Subscribe(gocommerce.EventStoreCreated, m.onStoreCreatedWebhook)
 	}
 
 	const base = "/api/admin/x/telegram-alerts"

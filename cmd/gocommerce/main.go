@@ -194,6 +194,9 @@ environment:
   PLATFORM_TELEGRAM_BOT_TOKEN, PLATFORM_TELEGRAM_CHAT_ID
                     with -telegram, the install owner's bot and chat, told
                     whenever anybody opens a store
+  PLATFORM_STORE_WEBHOOK_URL, PLATFORM_STORE_WEBHOOK_BASE_DOMAIN
+                    with -telegram, an automation posted to as JSON whenever
+                    somebody opens a store, on that domain's brand if one is named
   GOCOMMERCE_PLATFORM_OWNER_PHONE
                     the one person who may read every store's owners and
                     counts in the panel, once a code has proved the number
@@ -598,8 +601,10 @@ environment:
 			// The two here are the install owner's own bot and chat, for news
 			// of a new store; a store's order alerts still use only its own.
 			modules = append(modules, telegramalerts.New(telegramalerts.Config{
-				PlatformBotToken: os.Getenv("PLATFORM_TELEGRAM_BOT_TOKEN"),
-				PlatformChatID:   os.Getenv("PLATFORM_TELEGRAM_CHAT_ID"),
+				PlatformWebhookURL:        os.Getenv("PLATFORM_STORE_WEBHOOK_URL"),
+				PlatformWebhookBaseDomain: os.Getenv("PLATFORM_STORE_WEBHOOK_BASE_DOMAIN"),
+				PlatformBotToken:          os.Getenv("PLATFORM_TELEGRAM_BOT_TOKEN"),
+				PlatformChatID:            os.Getenv("PLATFORM_TELEGRAM_CHAT_ID"),
 			}))
 		}
 		// Gateways and carriers install idle: nothing in Config, everything on
