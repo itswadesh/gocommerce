@@ -673,6 +673,23 @@ func (s *Superusers) writeOwnPhone(ctx context.Context, id int64, phone, summary
 	return su, nil
 }
 
+// ProvedPhoneOwner is who proved phone, in E.164, with a code, or 0. Somebody shut
+// out of the install is nobody. It says nothing about any store: Get, bound to a
+// store, says whether they belong there and what they may do.
+func (s *Superusers) ProvedPhoneOwner(ctx context.Context, phone string) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id FROM superusers
+		WHERE phone = $1 AND phone_proved_at IS NOT NULL AND disabled_at IS NULL`, phone).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, Internalf(err, "find a phone's owner")
+	}
+	return id, nil
+}
+
 // SetDisabled shuts a person out of the whole install, or lets them back. It
 // names a person rather than a store's member, so it is the command line's and
 // not any store's: one store must not lock somebody out of another.
