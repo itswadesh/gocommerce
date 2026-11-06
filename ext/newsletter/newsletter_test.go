@@ -43,10 +43,20 @@ func TestAnAddressSignsUpLeavesAndIsListed(t *testing.T) {
 	if err := app.DB().QueryRowContext(ctx, `SELECT token FROM newsletter_subscriptions WHERE email = 'ann@example.com'`).Scan(&tok); err != nil {
 		t.Fatal(err)
 	}
-	if left := gctest.Request(t, app, http.MethodGet, "/x/newsletter/unsubscribe?token="+tok, nil); left.Code != http.StatusOK {
+	// Fetching the link changes nothing: mail scanners fetch every link.
+	if fetched := gctest.Request(t, app, http.MethodGet, "/x/newsletter/unsubscribe?token="+tok, nil); fetched.Code == http.StatusOK {
+		t.Errorf("a GET = %d, want it refused", fetched.Code)
+	}
+	still := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/newsletter/subscriptions?status=subscribed", nil)
+	var kept []Subscription
+	gctest.DecodeData(t, still, &kept)
+	if len(kept) != 1 {
+		t.Fatalf("after a GET: %+v, want Ann still subscribed", kept)
+	}
+	if left := gctest.Request(t, app, http.MethodPost, "/x/newsletter/unsubscribe", map[string]string{"token": tok}); left.Code != http.StatusOK {
 		t.Errorf("unsubscribe = %d: %s", left.Code, left.Body)
 	}
-	if unknown := gctest.Request(t, app, http.MethodGet, "/x/newsletter/unsubscribe?token=nope", nil); unknown.Code != http.StatusOK {
+	if unknown := gctest.Request(t, app, http.MethodPost, "/x/newsletter/unsubscribe", map[string]string{"token": "nope"}); unknown.Code != http.StatusOK {
 		t.Errorf("unknown token = %d, want the same quiet 200", unknown.Code)
 	}
 	// Fresh variables per decode: json.Unmarshal reuses a slice's elements,
@@ -69,7 +79,7 @@ func TestAnAddressSignsUpLeavesAndIsListed(t *testing.T) {
 	// The export is what a mailing tool reads; the delete is for a request
 	// to be forgotten.
 	csv := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/newsletter/subscriptions.csv", nil)
-	if csv.Code != http.StatusOK || !strings.HasPrefix(csv.Body.String(), "email,name,source,status,subscribed_at,unsubscribed_at\nann@example.com,Ann,checkout,subscribed,") {
+	if csv.Code != http.StatusOK || !strings.HasPrefix(csv.Body.String(), "email,name,source,status,subscribed_at,unsubscribed_at,unsubscribe_url\nann@example.com,Ann,checkout,subscribed,") {
 		t.Errorf("export = %d:\n%s", csv.Code, csv.Body)
 	}
 	added := gctest.AdminRequest(t, app, http.MethodPost, "/api/admin/x/newsletter/subscriptions", SubscribeInput{Email: "bob@example.com"})
@@ -126,5 +136,36 @@ func TestAnAgentReadsSubscribersMaskedAndCannotSearchTheAddress(t *testing.T) {
 	}
 	if n := found("ann"); n != 1 {
 		t.Errorf("an agent searching by name found %d, want 1", n)
+	}
+}
+
+// The export is the only way a mailing tool can reach each address's link, and
+// the link it gives must work for that address alone.
+func TestTheExportCarriesEachAddresssOwnUnsubscribeLink(t *testing.T) {
+	app := gctest.NewWithConfig(t, gocommerce.Config{BaseDomain: "shops.example.com"}, New(Config{}))
+	for _, email := range []string{"ann@example.com", "bob@example.com"} {
+		gctest.Request(t, app, http.MethodPost, "/x/newsletter/subscribe", SubscribeInput{Email: email})
+	}
+	var tok string
+	if err := app.DB().QueryRowContext(context.Background(),
+		`SELECT token FROM newsletter_subscriptions WHERE email = 'ann@example.com'`).Scan(&tok); err != nil {
+		t.Fatal(err)
+	}
+	export := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/newsletter/subscriptions.csv", nil).Body.String()
+	var annRow string
+	for _, row := range strings.Split(export, "\n") {
+		if strings.HasPrefix(row, "ann@example.com,") {
+			annRow = row
+		}
+	}
+	if !strings.Contains(annRow, ".shops.example.com/newsletter/unsubscribe?token="+tok) {
+		t.Fatalf("Ann's row = %q, want her link on the store's own address", annRow)
+	}
+	if strings.Count(export, tok) != 1 {
+		t.Fatalf("Ann's token appears %d times:\n%s", strings.Count(export, tok), export)
+	}
+	// And the JSON list, which more people can read, still carries no token.
+	if list := gctest.AdminRequest(t, app, http.MethodGet, "/api/admin/x/newsletter/subscriptions", nil).Body.String(); strings.Contains(list, tok) {
+		t.Fatalf("the list leaked a token: %s", list)
 	}
 }

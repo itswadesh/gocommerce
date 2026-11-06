@@ -285,10 +285,10 @@ URLs at `/portal/reset-password?token={token}` and
 `/portal/confirm-email?token={token}`. On a platform, write `{domain}` for the
 host and one setting serves every store: it is the store's primary domain, else
 `<slug>.<base domain>`, filled in when the email is written. `docker-compose.yml`
-sets all three this way (D231).
+sets all three this way (D233).
 
 **On a host the storefront serves,** the storefront forwards what the portal
-needs to the engine, so no proxy rule is involved (D231): `/portal`, the panel's
+needs to the engine, so no proxy rule is involved (D233): `/portal`, the panel's
 files under `/_panel`, `/x/b2b`, `/x/identity`, and the few public `/api` routes
 the portal reads. It names the store by the visitor's host and never forwards
 `/api/admin` or `/internal`. A new portal screen that calls another `/api` route

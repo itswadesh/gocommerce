@@ -181,6 +181,12 @@
         {#if !missing && readable}
             <!-- The feature's switch and settings live here, beside it (D132). -->
             <FeatureSwitch pluginKey="newsletter" />
+            {#if exports}
+                <p class="txt-hint m-b-sm">
+                    Sending from another tool? Every email needs an unsubscribe link. Use each person's
+                    <code>unsubscribe_url</code> from the CSV export.
+                </p>
+            {/if}
         {/if}
 
         {#if !readable}

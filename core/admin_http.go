@@ -150,7 +150,7 @@ func serveAdminPanel(w http.ResponseWriter, r *http.Request, frames []string) {
 	}
 	// A tab opened before the panel's files moved to /_panel still polls here
 	// for a new version. Answering keeps it noticing and reloading, instead of
-	// failing on its next chunk (D231).
+	// failing on its next chunk (D233).
 	if name == "_app/version.json" {
 		name = "_panel/version.json"
 	}

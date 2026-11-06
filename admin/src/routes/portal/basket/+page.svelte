@@ -86,7 +86,7 @@
     /*
      * A bag from the storefront. Its checkout cannot place a company's order,
      * so it sends the buyer here with the bag's token in the address's fragment
-     * (D231). The lines move: they go into this basket at the buyer's prices
+     * (D233). The lines move: they go into this basket at the buyer's prices
      * and leave the bag, so pressing the storefront's button twice cannot
      * double them. A line that won't go stays in the bag and is listed here. A
      * line with a design on it is the shopper's own work, which a line by SKU

@@ -122,7 +122,7 @@ services:
       # a password-reset link. Unset, a reset email carries only a code.
       GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
       # Where emails send a store's buyers and shoppers. {domain} is each
-      # store's own address, so one setting serves every store (D231). The
+      # store's own address, so one setting serves every store (D233). The
       # storefront forwards /portal to this engine and has its own account
       # screens; a store with neither address nor domain gets a code instead.
       GOCOMMERCE_B2B_INVITE_URL: ${GOCOMMERCE_B2B_INVITE_URL:-https://{domain}/portal/invitation?token={token}}

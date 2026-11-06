@@ -32,15 +32,19 @@ func TestTheFeedsCarryEveryActiveVariant(t *testing.T) {
 		t.Fatalf("draft: %v", err)
 	}
 
-	// Off: nothing to fetch. On without an address: refused, and told what
-	// to set — a feed that is on and empty is how a new store gets lost.
+	// Off: nothing to fetch. On with no address of the store's own and none
+	// typed: the fetch is refused and says what to set, because a feed that is
+	// on and empty is how a new store gets lost.
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("feed while off = %d", rec.Code)
 	}
 	on := true
-	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err == nil ||
-		!strings.Contains(err.Error(), "Storefront URL") {
-		t.Fatalf("switching feeds on without a storefront = %v, want it refused naming the setting", err)
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil); rec.Code != http.StatusConflict ||
+		!strings.Contains(rec.Body.String(), "storefront URL") {
+		t.Fatalf("feed with no address = %d: %s, want it refused naming the setting", rec.Code, rec.Body)
 	}
 	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on,
 		Settings: map[string]any{"storefront_url": "https://shop.example", "brand": "House"}}); err != nil {
@@ -191,5 +195,23 @@ func TestTheStatusCountsWhatTheFeedActuallyHolds(t *testing.T) {
 	rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil)
 	if n := strings.Count(rec.Body.String(), "<item>"); n != got.Items {
 		t.Errorf("the feed carries %d items and the status claims %d", n, got.Items)
+	}
+}
+
+// Switching a feed on is the one step: its links use the store's own address
+// unless the store typed another.
+func TestAFeedUsesTheStoresOwnAddressWithNoneTyped(t *testing.T) {
+	app := gctest.NewWithConfig(t, gocommerce.Config{BaseDomain: "shops.example.com"}, New(Config{}))
+	live := gctest.CreateProduct(t, app, "FD-LIVE", 1000, 1)
+	on := true
+	if _, err := app.Plugins().Update(context.Background(), pluginKey, gocommerce.PluginPatch{Enabled: &on}); err != nil {
+		t.Fatal(err)
+	}
+	feed := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil)
+	if feed.Code != http.StatusOK {
+		t.Fatalf("feed = %d: %s", feed.Code, feed.Body)
+	}
+	if want := ".shops.example.com/products/" + live.Slug; !strings.Contains(feed.Body.String(), want) {
+		t.Errorf("feed = %s, want a link ending %s", feed.Body, want)
 	}
 }

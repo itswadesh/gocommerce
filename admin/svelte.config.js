@@ -26,7 +26,7 @@ export default {
         // Not SvelteKit's default _app: the trade portal (D77) also opens on a
         // store's own host, in front of a storefront that is a SvelteKit app
         // and owns /_app there. static/ keeps its files under the same name, so
-        // one prefix is all a store's host has to forward (D231).
+        // one prefix is all a store's host has to forward (D233).
         appDir: "_panel",
 
         // SvelteKit emits one inline bootstrap script that it will not let us
