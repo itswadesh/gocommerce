@@ -375,6 +375,14 @@ export const stores = {
     async mine() {
         return (await api.get("/api/stores/my")) ?? [];
     },
+    /** directory is every store on the install, for its owner alone (D215). */
+    async directory() {
+        return (await api.get("/api/stores/directory")) ?? [];
+    },
+    /** directoryAllowed says whether this person may open it. */
+    async directoryAllowed() {
+        return !!(await api.get("/api/stores/directory/allowed"))?.allowed;
+    },
     /** invitations are the stores asking this person to join, by their phone. */
     async invitations() {
         return (await api.get("/api/stores/invitations")) ?? [];

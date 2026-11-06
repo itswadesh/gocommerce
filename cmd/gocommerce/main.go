@@ -194,6 +194,9 @@ environment:
   PLATFORM_TELEGRAM_BOT_TOKEN, PLATFORM_TELEGRAM_CHAT_ID
                     with -telegram, the install owner's bot and chat, told
                     whenever anybody opens a store
+  GOCOMMERCE_PLATFORM_OWNER_PHONE
+                    the one person who may read every store's owners and
+                    counts in the panel, once a code has proved the number
   GOCOMMERCE_ALLOW_PRIVATE_URLS
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
@@ -391,8 +394,9 @@ environment:
 		// Env only, like the demo account: where the panel is reached is a fact
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
-		PanelURL: os.Getenv("GOCOMMERCE_PANEL_URL"),
-		Brands:   brands,
+		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
+		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
+		Brands:             brands,
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),

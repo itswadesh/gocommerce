@@ -48,6 +48,7 @@
 import { can, canAny } from "$lib/session.svelte.js";
 import { hasModule } from "$lib/modules.svelte.js";
 import { moduleScreens } from "$lib/screens.svelte.js";
+import { myStores } from "$lib/stores.svelte.js";
 
 export const NAV = [
     {
@@ -57,6 +58,16 @@ export const NAV = [
         exact: true,
         accent: "indigo",
         keywords: "dashboard overview sales revenue analytics",
+    },
+    // The install's owner alone (D215): no right says it, because a role belongs
+    // to one store and this crosses all of them.
+    {
+        href: "/dash/all-stores",
+        label: "All stores",
+        icon: "ri-store-3-line",
+        platformOwner: true,
+        accent: "indigo",
+        keywords: "platform stores owners tenants directory merchants",
     },
     {
         href: "/dash/orders",
@@ -390,13 +401,20 @@ export const NAV = [
  * is: the section is the way to the child.
  */
 export function visibleNav(items = NAV) {
-    const reachable = (item) =>
-        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     return withModuleScreens(items)
         .filter((item) => reachable(item) || (item.children ?? []).some(reachable))
         .map((item) =>
             item.children ? { ...item, children: item.children.filter(reachable) } : item,
         );
+}
+
+function reachable(item) {
+    return (
+        (!item.module || hasModule(item.module)) &&
+        (!item.right || can(item.right)) &&
+        (!item.anyRight || canAny(...item.anyRight)) &&
+        (!item.platformOwner || myStores.platformOwner)
+    );
 }
 
 /**
@@ -434,8 +452,6 @@ function withModuleScreens(items) {
  * A child borrows its section's icon and accent, since it has none of its own.
  */
 export function flatNav(items = NAV) {
-    const reachable = (item) =>
-        (!item.module || hasModule(item.module)) && (!item.right || can(item.right)) && (!item.anyRight || canAny(...item.anyRight));
     const out = [];
     for (const item of visibleNav(items)) {
         if (reachable(item)) out.push(item);
