@@ -108,7 +108,7 @@ each file to make with its prompt. `node build-sample.mjs` there shrinks the
 whole set into `core/sample/2/`, the sample shop's photographs, which are
 committed and built into the engine. A colour without its files gets no
 pictures, and a later run attaches them. Pass `-SetCurrency` to switch a store that sells
-in another currency to INR, which works only before its first order. Without
+in another currency to INR, which works only until an order is paid or sent out. Without
 `-Draft` it is for dev and demo stores only: the struck-through MRPs and low
 stock are made up. With `-Draft` it can go into a live store unseen: products
 are created as drafts, existing ones are never re-published, and no category or
