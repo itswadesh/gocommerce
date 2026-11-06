@@ -9,6 +9,7 @@ import (
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	ads "github.com/itswadesh/gocommerce/ext/ads"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	askai "github.com/itswadesh/gocommerce/ext/ask-ai"
 	b2b "github.com/itswadesh/gocommerce/ext/b2b"
 	banners "github.com/itswadesh/gocommerce/ext/banners"
 	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
@@ -82,6 +83,7 @@ func everyModule() []gocommerce.Module {
 		gateway,
 		photoproducts.New(photoproducts.Config{Gateway: gateway}),
 		catalogai.New(catalogai.Config{Gateway: gateway}),
+		askai.New(askai.Config{Gateway: gateway}),
 		ads.New(ads.Config{Gateway: gateway}),
 		accounts,
 		b2b.New(b2b.Config{Accounts: accounts}),

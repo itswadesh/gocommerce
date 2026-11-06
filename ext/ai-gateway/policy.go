@@ -23,6 +23,10 @@ const (
 	DataMessageBodies DataClass = "message_bodies"
 	// DataDocuments is PDFs and images sent as files.
 	DataDocuments DataClass = "documents"
+	// DataStoreFacts is what a store has set up, none of it a person's: its
+	// trading name, country, currency and timezone, which setup steps are done
+	// and which screens exist. Never its contact details or address.
+	DataStoreFacts DataClass = "store_facts"
 )
 
 // Policy is which classes of data may leave the store, as the owner set it
@@ -34,6 +38,7 @@ type Policy struct {
 	ContactDetails bool `json:"contact_details"`
 	MessageBodies  bool `json:"message_bodies"`
 	Documents      bool `json:"documents"`
+	StoreFacts     bool `json:"store_facts"`
 }
 
 // Allows reports whether a class may leave.
@@ -49,6 +54,8 @@ func (p Policy) Allows(c DataClass) bool {
 		return p.MessageBodies
 	case DataDocuments:
 		return p.Documents
+	case DataStoreFacts:
+		return p.StoreFacts
 	}
 	// A class this gateway does not know is not one the owner allowed.
 	return false
@@ -157,7 +164,7 @@ func render(req Request, task *Task, p Policy) (rendered, error) {
 		}
 		out.req.Messages = append(out.req.Messages, Message{Role: m.Role, Text: b.String()})
 	}
-	for _, c := range []DataClass{DataCatalogue, DataOrderLines, DataContactDetails, DataMessageBodies, DataDocuments} {
+	for _, c := range []DataClass{DataCatalogue, DataOrderLines, DataContactDetails, DataMessageBodies, DataDocuments, DataStoreFacts} {
 		if dropped[c] {
 			out.dropped = append(out.dropped, string(c))
 		}
