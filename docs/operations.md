@@ -520,6 +520,12 @@ passes the browser's header on unchanged lets a shopper choose the address
 they are counted as. List proxies only: a listed address can claim to be
 anybody.
 
+`docker-compose.yml` tells the storefront to read the shopper's address from the
+proxy in front of it (`ADDRESS_HEADER`, `XFF_DEPTH`), and the storefront replaces
+`X-Forwarded-For` with it. List the storefront service here and the trade portal's
+sign-ins and the dealer form count each shopper apart (D231). Behind a CDN as well,
+set `STOREFRONT_XFF_DEPTH=2`.
+
 ### Several brands
 
 One install — one database, one deployment — can answer under several names,

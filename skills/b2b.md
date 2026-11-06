@@ -283,7 +283,30 @@ emails at it — `GOCOMMERCE_B2B_INVITE_URL=https://shop.example.com/portal/invi
 and, unless a storefront handles accounts, the identity reset and confirmation
 URLs at `/portal/reset-password?token={token}` and
 `/portal/confirm-email?token={token}`. On a platform, write `{domain}` for the
-host and one setting serves every store.
+host and one setting serves every store: it is the store's primary domain, else
+`<slug>.<base domain>`, filled in when the email is written. `docker-compose.yml`
+sets all three this way (D231).
+
+**On a host the storefront serves,** the storefront forwards what the portal
+needs to the engine, so no proxy rule is involved (D231): `/portal`, the panel's
+files under `/_panel`, `/x/b2b`, `/x/identity`, and the few public `/api` routes
+the portal reads. It names the store by the visitor's host and never forwards
+`/api/admin` or `/internal`. A new portal screen that calls another `/api` route
+must add it to the list in svelte-commerce's `src/lib/server/trade-portal.ts`,
+or it will answer 404 there and work on the panel's host.
+
+**What a storefront offers** comes from `GET /x/b2b/availability`, which needs
+no session: `companies` (a company that is not closed, so a trade link serves
+somebody) and `dealers` (one covering a territory, so an enquiry can reach it).
+The module is on for every store of an install, so this is the per-store signal.
+The dealer form's `website` field is a honeypot: filled in, it is answered 202
+and nothing is filed.
+
+**A storefront bag.** A confirmed buyer's public checkout is refused with
+`company_checkout_required`. Svelte Commerce says so before the buyer gets that
+far and links to `/portal/basket#cart=<bag's token>`; the portal moves the bag's
+lines into the buyer's basket at today's prices. Lines it cannot take stay in the
+bag and are listed; so do lines carrying a shopper's own design.
 
 What a buyer sees follows their role, because the routes above already refuse
 the rest: every member orders — typed, pasted, uploaded as a CSV, or from the

@@ -1452,6 +1452,39 @@
         }
       }
     },
+    "/x/b2b/availability": {
+      "get": {
+        "tags": [
+          "b2b"
+        ],
+        "summary": "What a storefront may offer for this store",
+        "description": "No session. `companies`: the store has a company that is not closed, so a trade link serves somebody. `dealers`: such a company covers a territory, so a dealer enquiry can reach one.",
+        "operationId": "b2bAvailability",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "What this store offers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["companies", "dealers"],
+                      "properties": {
+                        "companies": { "type": "boolean" },
+                        "dealers": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/x/b2b/leads": {
       "get": {
         "tags": [
@@ -5200,6 +5233,10 @@
             "type": "string",
             "maxLength": 100,
             "description": "Where on the storefront it was sent from, in the storefront's own words."
+          },
+          "website": {
+            "type": "string",
+            "description": "A honeypot: a field no person sees. Filled in, the answer is the same and nothing is filed."
           }
         }
       },

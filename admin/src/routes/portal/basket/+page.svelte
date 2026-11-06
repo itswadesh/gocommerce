@@ -14,8 +14,9 @@
      * colours, icons, headings and next steps.
      */
     import { onMount } from "svelte";
-    import { afterNavigate } from "$app/navigation";
+    import { afterNavigate, replaceState } from "$app/navigation";
     import { base } from "$app/paths";
+    import { page } from "$app/state";
     import { formatMoney } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import {
@@ -31,6 +32,7 @@
     } from "$lib/trade.svelte.js";
     import PortalPage from "../PortalPage.svelte";
     import CheckoutDetails from "../CheckoutDetails.svelte";
+    import RejectedLines from "../RejectedLines.svelte";
 
     let cart = $state(null);
     let loading = $state(true);
@@ -81,7 +83,53 @@
         }
     }
 
-    onMount(load);
+    /*
+     * A bag from the storefront. Its checkout cannot place a company's order,
+     * so it sends the buyer here with the bag's token in the address's fragment
+     * (D231). The lines move: they go into this basket at the buyer's prices
+     * and leave the bag, so pressing the storefront's button twice cannot
+     * double them. A line that won't go stays in the bag and is listed here. A
+     * line with a design on it is the shopper's own work, which a line by SKU
+     * cannot carry, so it stays there too and the buyer is told.
+     */
+    let moved = $state(null);
+
+    async function carryBag() {
+        const bag = /^#cart=([\w-]+)$/.exec(page.url.hash)?.[1];
+        if (!bag) return;
+        replaceState(page.url.pathname, page.state);
+        try {
+            await loadBasket();
+            if (bag === trade.basket.token) return;
+            const from = await tradeApi.get(`/api/carts/${encodeURIComponent(bag)}`);
+            if (from.status === "converted") return;
+            const items = from.line_items ?? [];
+            const plain = items.filter((l) => !Object.keys(l.metadata ?? {}).length);
+            let rejected = [];
+            if (plain.length) {
+                const fill = await tradeApi.post("/x/b2b/cart/lines", {
+                    ...(trade.basket.token ? { cart_id: trade.basket.token } : {}),
+                    lines: plain.map((l) => ({ variant_id: l.variant_id, quantity: l.quantity })),
+                });
+                noteBasket(fill.cart);
+                rejected = fill.rejected ?? [];
+                const stay = new Set(rejected.map((r) => r.variant_id));
+                for (const l of plain) {
+                    if (!stay.has(l.variant_id)) {
+                        await tradeApi.delete(`/api/carts/${encodeURIComponent(bag)}/line-items/${l.id}`);
+                    }
+                }
+            }
+            moved = { count: plain.length - rejected.length, rejected, kept: items.length - plain.length };
+        } catch (err) {
+            if (!err.handled) toast.error(`Your bag stayed in the shop. ${explain(err)}`);
+        }
+    }
+
+    onMount(async () => {
+        await carryBag();
+        await load();
+    });
 
     /* "Your basket" in the navigation means the basket, even from the answer
        to the last checkout: a link to the page already open does not remount
@@ -270,6 +318,21 @@
                 </div>
             </div>
         </section>
+    {/if}
+
+    {#if moved}
+        <div class="alert m-b-base portal-notice" role="status">
+            <p>
+                {#if moved.count}
+                    {moved.count === 1 ? "1 line" : `${moved.count} lines`} from your bag {moved.count === 1 ? "is" : "are"} here, at {company.name}'s prices.
+                {/if}
+                {#if moved.rejected.length}These stayed in your bag in the shop:{/if}
+                {#if moved.kept}
+                    {moved.kept === 1 ? "1 line" : `${moved.kept} lines`} with your own design stayed in your bag in the shop. Add {moved.kept === 1 ? "it" : "them"} here by product code, or ask us.
+                {/if}
+            </p>
+            <RejectedLines rejected={moved.rejected} />
+        </div>
     {/if}
 
     {#if failure}

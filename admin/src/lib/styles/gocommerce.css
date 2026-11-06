@@ -9052,6 +9052,20 @@ kbd + kbd {
     flex-wrap: wrap;
     gap: 8px;
 }
+/* PocketBase turns a header button into its icon below 550px. A buyer has to
+   read what an action does: a tick is no way to be asked to place an order, and
+   display:none takes the button's name from a screen reader as well. */
+@media (max-width: 550px) {
+    .portal-actions .btn:not(.circle) {
+        min-height: 44px;
+        padding: 5px 14px;
+        aspect-ratio: auto;
+        border-radius: var(--borderRadius);
+    }
+    .portal-actions .btn:not(.circle) i + .txt {
+        display: inline;
+    }
+}
 .portal-intro {
     max-width: 72ch;
 }

@@ -71,7 +71,7 @@ test("every carrier module has its own logo, and each logo its file", () => {
     assert.deepEqual([...carriers].filter((c) => !CARRIER_LOGOS.includes(c)), []);
     assert.deepEqual(CARRIER_LOGOS.filter((c) => !carriers.has(c)), []);
     for (const code of CARRIER_LOGOS) {
-        const file = fileURLToPath(new URL(`../static/images/providers/${code}.png`, import.meta.url));
+        const file = fileURLToPath(new URL(`../static/_panel/images/providers/${code}.png`, import.meta.url));
         const png = readFileSync(file);
         assert.equal(png.subarray(1, 4).toString(), "PNG", code);
         // 64 by 64: twice the size it is drawn at, and no more.
@@ -80,8 +80,8 @@ test("every carrier module has its own logo, and each logo its file", () => {
 });
 
 test("a provider gets its logo, then its mark, then its method's glyph, then its kind's", () => {
-    assert.deepEqual(providerIcon("delhivery", "shipping"), { logo: "/images/providers/delhivery.png" });
-    assert.deepEqual(providerIcon("usps", "shipping"), { logo: "/images/providers/usps.png" });
+    assert.deepEqual(providerIcon("delhivery", "shipping"), { logo: "/_panel/images/providers/delhivery.png" });
+    assert.deepEqual(providerIcon("usps", "shipping"), { logo: "/_panel/images/providers/usps.png" });
     assert.deepEqual(providerIcon("stripe", "payments"), { path: BRAND_MARKS.stripe.path, wide: false });
     assert.deepEqual(providerIcon("cod", "payments"), { glyph: "ri-hand-coin-line" });
     assert.deepEqual(providerIcon("manual", "shipping"), { glyph: "ri-box-3-line" });

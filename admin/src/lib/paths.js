@@ -27,7 +27,7 @@ const RENAMED = [
 // Returning null for these is what keeps the redirect from looping.
 const STAYS = [
     "/dash", "/admin", "/select-store", "/stores", "/portal",
-    "/_app", "/images", "/fonts", "/favicon.svg", "/theme.js", "/api",
+    "/_panel", "/api",
     // The engine's own pages beside the panel: the API reference and liveness.
     "/docs", "/doc", "/health",
 ];

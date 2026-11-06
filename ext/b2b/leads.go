@@ -251,6 +251,8 @@ type LeadInput struct {
 	// Source is where on the storefront it was sent from, in the storefront's
 	// own words: "product-page", "find-a-dealer".
 	Source string `json:"source"`
+	// Website is a honeypot: a field no person sees.
+	Website string `json:"website"`
 }
 
 // LeadQuery narrows a list of leads.

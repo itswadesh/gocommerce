@@ -79,7 +79,7 @@
     function frames(stack) {
         return (stack ?? "").split("\n").map((line) => ({
             line,
-            mine: /gocommerce|\/_app\//.test(line) && !/\/runtime\/|net\/http/.test(line),
+            mine: /gocommerce|\/_panel\//.test(line) && !/\/runtime\/|net\/http/.test(line),
         }));
     }
 

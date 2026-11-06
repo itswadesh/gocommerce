@@ -943,8 +943,8 @@ func (m *Module) RequestReset(ctx context.Context, email string) error {
 		"reset_token":        token,
 		"expires_in_minutes": strconv.Itoa(int(m.cfg.ResetTTL / time.Minute)),
 	}
-	if m.cfg.ResetURL != "" {
-		data["reset_url"] = strings.ReplaceAll(m.cfg.ResetURL, "{token}", token)
+	if link := m.app.StoreLink(ctx, m.cfg.ResetURL, token); link != "" {
+		data["reset_url"] = link
 	}
 	if err := m.notify(ctx, gocommerce.Notification{
 		Event: EventPasswordReset, Channel: gocommerce.ChannelEmail, To: c.Email, Language: m.language(ctx), Data: data,
@@ -1097,8 +1097,8 @@ func (m *Module) RequestVerification(ctx context.Context, customerID int64) erro
 		"verify_token":       token,
 		"expires_in_minutes": strconv.Itoa(int(m.cfg.VerifyTTL / time.Minute)),
 	}
-	if m.cfg.VerifyURL != "" {
-		data["verify_url"] = strings.ReplaceAll(m.cfg.VerifyURL, "{token}", token)
+	if link := m.app.StoreLink(ctx, m.cfg.VerifyURL, token); link != "" {
+		data["verify_url"] = link
 	}
 	// Sent after the commit, never inside it: a mail vendor that takes four
 	// seconds must not hold the account's row for four seconds.

@@ -121,6 +121,13 @@ services:
       # Where the panel is reached, e.g. https://shop.example.com: the base of
       # a password-reset link. Unset, a reset email carries only a code.
       GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
+      # Where emails send a store's buyers and shoppers. {domain} is each
+      # store's own address, so one setting serves every store (D231). The
+      # storefront forwards /portal to this engine and has its own account
+      # screens; a store with neither address nor domain gets a code instead.
+      GOCOMMERCE_B2B_INVITE_URL: ${GOCOMMERCE_B2B_INVITE_URL:-https://{domain}/portal/invitation?token={token}}
+      GOCOMMERCE_IDENTITY_RESET_URL: ${GOCOMMERCE_IDENTITY_RESET_URL:-https://{domain}/auth/reset-password?token={token}}
+      GOCOMMERCE_IDENTITY_VERIFY_URL: ${GOCOMMERCE_IDENTITY_VERIFY_URL:-https://{domain}/auth/verify?token={token}}
       # Where the storefront below forwards to the engine (svelte-commerce's
       # /backend). Cart reminders link through it, so a shopper sees the
       # shop's domain, not the panel's. Empty links to the panel.
@@ -279,6 +286,13 @@ services:
       - gocommerce
     environment:
       PORT: "3000"
+      # The shopper's address, from the proxy that reaches this service (Caddy
+      # or Traefik, each of which writes it last). The storefront forwards it
+      # to the engine, which counts sign-ins and enquiries against it once
+      # GOCOMMERCE_TRUSTED_PROXIES lists this service. Behind a CDN too, raise
+      # the depth by one.
+      ADDRESS_HEADER: X-Forwarded-For
+      XFF_DEPTH: ${STOREFRONT_XFF_DEPTH:-1}
       # The engine on this compose network, for server-side rendering and for
       # the shopper's API calls, which reach it through the storefront's own
       # /backend path because the engine answers no CORS. Not the public
