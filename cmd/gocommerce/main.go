@@ -443,6 +443,8 @@ environment:
 			return v
 		}
 		var modules []gocommerce.Module
+		// B2B is handed to the retail assistant, further down.
+		var trade *b2b.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
 		if *withAI || *withPhotos || *withCatAI || *withAds {
@@ -478,10 +480,11 @@ environment:
 			})
 			modules = append(modules, accounts)
 			if *withB2B {
-				modules = append(modules, b2b.New(b2b.Config{
+				trade = b2b.New(b2b.Config{
 					Accounts:  accounts,
 					InviteURL: env("GOCOMMERCE_B2B_INVITE_URL"),
-				}))
+				})
+				modules = append(modules, trade)
 			}
 		}
 		if *withWebhooks {
@@ -640,6 +643,7 @@ environment:
 				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
 				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
 				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
+				B2B:              trade,
 				Gateway:          gateway,
 				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))

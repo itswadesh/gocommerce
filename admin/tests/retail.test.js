@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { aiReadable, isMismatch, moneyNote, newKey, statusOf, wholeQuantity } from "../src/lib/retail.js";
+import { aiReadable, isMismatch, moneyNote, newKey, ruleExample, statusOf, wholeQuantity } from "../src/lib/retail.js";
+
+test("the two pricing rules say different prices", () => {
+    assert.match(ruleExample("markup", 20), /₹120\.00/);
+    assert.match(ruleExample("margin", 20), /₹125\.00/);
+    assert.match(ruleExample("margin", 100), /under 100/);
+    assert.equal(ruleExample("markup", NaN), "");
+});
 
 test("only a PDF or a picture goes to a model", () => {
     assert.equal(aiReadable("application/pdf"), true);
