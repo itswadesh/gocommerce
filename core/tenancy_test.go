@@ -67,7 +67,7 @@ func storeTables(t *testing.T, app *App) []string {
 	t.Helper()
 	global := map[string]bool{"stores": true, "store_domains": true, "store_members": true, "store_phone_invitations": true,
 		"store_counters": true, "api_key_index": true, "superusers": true,
-		"superuser_sessions": true, "superuser_password_resets": true, "superuser_login_codes": true, "gocommerce_migrations": true,
+		"superuser_sessions": true, "superuser_password_resets": true, "superuser_login_codes": true, "superuser_email_verifications": true, "gocommerce_migrations": true,
 		// Which store a reports connection runs for, by backend pid. It is how
 		// the reports policy is keyed on something a query cannot set, so it
 		// must not itself be read through gocommerce.store_id; the reports

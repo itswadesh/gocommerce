@@ -200,6 +200,9 @@ environment:
   GOCOMMERCE_PLATFORM_OWNER_PHONE
                     the one person who may read every store's owners and
                     counts in the panel, once a code has proved the number
+  GOCOMMERCE_PLATFORM_EMAIL_FROM
+                    the sender of the email that person sends a store's owner
+                    to verify an address; ANTHROPIC_API_KEY writes its first version
   GOCOMMERCE_ALLOW_PRIVATE_URLS
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
@@ -397,9 +400,12 @@ environment:
 		// Env only, like the demo account: where the panel is reached is a fact
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
-		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
-		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
-		Brands:             brands,
+		PanelURL:             os.Getenv("GOCOMMERCE_PANEL_URL"),
+		PlatformOwnerPhone:   os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
+		PlatformEmailFrom:    os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
+		PlatformAnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
+		PlatformAIModel:      os.Getenv("AI_PLATFORM_SMALL_MODEL"),
+		Brands:               brands,
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),

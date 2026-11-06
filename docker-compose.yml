@@ -152,6 +152,7 @@ services:
       PLATFORM_STORE_WEBHOOK_URL: ${PLATFORM_STORE_WEBHOOK_URL:-}
       PLATFORM_STORE_WEBHOOK_BASE_DOMAIN: ${PLATFORM_STORE_WEBHOOK_BASE_DOMAIN:-shopnx.in}
       GOCOMMERCE_PLATFORM_OWNER_PHONE: ${GOCOMMERCE_PLATFORM_OWNER_PHONE:-}
+      GOCOMMERCE_PLATFORM_EMAIL_FROM: ${GOCOMMERCE_PLATFORM_EMAIL_FROM:-hi@shopnx.in}
       # GOCOMMERCE_ALLOW_PRIVATE_URLS is deliberately not passed through. It
       # lets the addresses a store sets — webhook endpoints, provider base
       # URLs — reach this server's own network, which is wrong wherever people

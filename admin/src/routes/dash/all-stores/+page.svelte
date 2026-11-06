@@ -11,12 +11,15 @@
     import { titled } from "$lib/brand.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
+    import OwnerEmailDialog from "$lib/components/OwnerEmailDialog.svelte";
 
     let loading = $state(true);
     let refused = $state(false);
     let failed = $state("");
     let list = $state([]);
     let apexOnly = $state(false);
+    /** The owner the email dialog is open for. */
+    let writingTo = $state(null);
 
     const shown = $derived(apexOnly ? list.filter((store) => isApexDomain(store.domain)) : list);
 
@@ -125,6 +128,17 @@
                                             <div class="contacts">
                                                 {#if owner.phone}{@render contact(`tel:${owner.phone}`, owner.phone, owner.phone_verified)}{/if}
                                                 {#if owner.email}{@render contact(`mailto:${owner.email}`, owner.email, owner.email_verified)}{/if}
+                                                {#if owner.email && !owner.email_verified}
+                                                    <button
+                                                        type="button"
+                                                        class="btn sm secondary verify"
+                                                        aria-label="Write to {owner.email} to verify it"
+                                                        onclick={() => (writingTo = { superuser_id: owner.id, store_id: store.id, email: owner.email, store: store.name || store.slug })}
+                                                    >
+                                                        <i class="ri-mail-send-line" aria-hidden="true"></i>
+                                                        <span class="txt">Verify email</span>
+                                                    </button>
+                                                {/if}
                                             </div>
                                         {:else}
                                             —
@@ -154,7 +168,12 @@
     </div>
 </div>
 
+<OwnerEmailDialog target={writingTo} onclose={() => (writingTo = null)} />
+
 <style>
+    .verify {
+        align-self: flex-start;
+    }
     .apex-filter {
         margin-bottom: 12px;
     }

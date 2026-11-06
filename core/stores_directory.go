@@ -16,6 +16,8 @@ import (
 // DirectoryOwner is how to reach one owner of a store. A person has an email,
 // a phone or both (D191), and no name: the engine does not ask for one.
 type DirectoryOwner struct {
+	// ID is what the email to this owner is addressed by (D221).
+	ID    int64  `json:"id"`
 	Email string `json:"email"`
 	Phone string `json:"phone"`
 	// EmailVerified and PhoneVerified say a code or an emailed link proved the
@@ -149,7 +151,7 @@ func (a *App) storeDirectory(ctx context.Context) ([]DirectoryStore, error) {
 
 func (a *App) storeOwners(ctx context.Context) (map[string][]DirectoryOwner, error) {
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT m.store_id, coalesce(su.email, ''), coalesce(su.phone, ''),
+		SELECT m.store_id, su.id, coalesce(su.email, ''), coalesce(su.phone, ''),
 			coalesce(su.email = su.email_proved, false),
 			su.phone IS NOT NULL AND su.phone_proved_at IS NOT NULL
 		FROM store_members m JOIN superusers su ON su.id = m.superuser_id
@@ -162,7 +164,7 @@ func (a *App) storeOwners(ctx context.Context) (map[string][]DirectoryOwner, err
 	for rows.Next() {
 		var id string
 		var o DirectoryOwner
-		if err := rows.Scan(&id, &o.Email, &o.Phone, &o.EmailVerified, &o.PhoneVerified); err != nil {
+		if err := rows.Scan(&id, &o.ID, &o.Email, &o.Phone, &o.EmailVerified, &o.PhoneVerified); err != nil {
 			return nil, Internalf(err, "scan store owner")
 		}
 		out[id] = append(out[id], o)

@@ -272,3 +272,23 @@ func TestACustomerIsWrittenToInTheirLanguage(t *testing.T) {
 		t.Errorf("English = %q", got)
 	}
 }
+
+// A message somebody wrote goes as written, from the address it names.
+func TestAWrittenMessageGoesAsWrittenFromItsOwnAddress(t *testing.T) {
+	s := &stub{}
+	server := gctest.StubHTTP(t, s.handler)
+	mod := New(Config{APIKey: "re_test", BaseURL: server.URL, From: "orders@example.com"})
+	gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true}, mod)
+	err := mod.Notify(context.Background(), gocommerce.Notification{
+		Event: "anything", Channel: gocommerce.ChannelEmail, To: "owner@example.com",
+		From: "hi@platform.example", Subject: "A subject", Body: "A body",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := s.all()
+	if len(messages) != 1 || messages[0].From != "hi@platform.example" ||
+		messages[0].Subject != "A subject" || messages[0].Body != "A body" {
+		t.Fatalf("messages = %+v", messages)
+	}
+}

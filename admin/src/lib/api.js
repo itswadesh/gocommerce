@@ -383,6 +383,14 @@ export const stores = {
     async directoryAllowed() {
         return !!(await api.get("/api/stores/directory/allowed"))?.allowed;
     },
+    /** ownerEmailDraft has a model write the email asking an owner to verify (D221). */
+    async ownerEmailDraft(target) {
+        return await api.post("/api/stores/directory/email-draft", target);
+    },
+    /** ownerEmailSend sends it, adding the link. */
+    async ownerEmailSend(message) {
+        return await api.post("/api/stores/directory/email-send", message);
+    },
     /** invitations are the stores asking this person to join, by their phone. */
     async invitations() {
         return (await api.get("/api/stores/invitations")) ?? [];
