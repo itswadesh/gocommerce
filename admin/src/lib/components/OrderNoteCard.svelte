@@ -7,18 +7,14 @@
      * that file at once.
      *
      * `cardActions` is the parent's snippet, passed in rather than duplicated —
-     * the same shape Drawer takes its header and footer in. The Save button
-     * inside it is `type="submit" form={formID}`, which resolves across the
-     * component boundary because the `form` attribute names a form anywhere in
-     * the document, so Save keeps one definition and stays in the same place
-     * under every card that edits in place.
+     * the same shape Drawer takes its header and footer in, so Cancel stays in
+     * the same place under every card that edits in place.
      */
-    let { note = "", editing = false, onedit, onsave, cardActions } = $props();
+    let { note = "", draft = $bindable(""), editing = false, onedit, cardActions } = $props();
 
-    /* The draft is the card's, not the parent's: the parent needs nothing back
-       until Save, and it re-seeds from the saved note each time the card opens
-       so an abandoned edit does not survive as a suggestion. */
-    let draft = $state("");
+    /* The parent's save bar reads the draft, and it is re-seeded from the saved
+       note each time the card opens so an abandoned edit does not survive as a
+       suggestion. */
     $effect(() => {
         if (editing) draft = note;
     });
@@ -38,7 +34,7 @@
     </div>
 
     {#if editing}
-        <form id="notes-form" onsubmit={(e) => (e.preventDefault(), onsave(draft))}>
+        <form id="notes-form" onsubmit={(e) => e.preventDefault()}>
             <!-- `aria-label` rather than a `<label>`, for the reason
                  TokenInput gives: a visible one here would put the word "Note"
                  directly under the card titled NOTE, saying the same thing
@@ -56,7 +52,7 @@
                 and saving it sends them nothing.
             </div>
         </form>
-        {@render cardActions("notes-form", "Note saved")}
+        {@render cardActions()}
     {:else if note}
         <p class="order-note">{note}</p>
     {:else}

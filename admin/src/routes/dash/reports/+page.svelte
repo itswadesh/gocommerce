@@ -25,8 +25,8 @@
     import { formatDate } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
     import Confirm from "$lib/components/Confirm.svelte";
-    import DirtyGuard from "$lib/components/DirtyGuard.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     const readable = $derived(can("reports.read"));
@@ -46,6 +46,9 @@
     let sql = $state("");
     let result = $state(null);
     let error = $state("");
+    // What the three boxes were opened or saved with. Not `editing` alone: a
+    // new report opens on the example query, which nobody has typed.
+    let baseline = $state({ name: "", description: "", sql: "" });
 
     const EXAMPLE = `SELECT p.title,
        sum(l.quantity) AS units,
@@ -60,9 +63,9 @@ ORDER BY units DESC`;
 
     const dirty = $derived(
         writable &&
-            (sql.trim() !== (editing?.sql ?? "") ||
-                name.trim() !== (editing?.name ?? "") ||
-                description.trim() !== (editing?.description ?? "")),
+            (sql.trim() !== baseline.sql.trim() ||
+                name.trim() !== baseline.name.trim() ||
+                description.trim() !== baseline.description.trim()),
     );
 
     $effect(() => {
@@ -97,6 +100,7 @@ ORDER BY units DESC`;
         name = report?.name ?? "";
         description = report?.description ?? "";
         sql = report?.sql ?? "";
+        baseline = { name, description, sql };
         result = null;
         error = "";
         // A saved report runs on open. Somebody choosing "Orders by status"
@@ -110,6 +114,7 @@ ORDER BY units DESC`;
     function blank() {
         open(null);
         sql = EXAMPLE;
+        baseline.sql = EXAMPLE;
     }
 
     /* Running an unsaved query is reports.write, because it is writing a
@@ -136,8 +141,14 @@ ORDER BY units DESC`;
         }
     }
 
+    function discard() {
+        ({ name, description, sql } = baseline);
+    }
+
     async function save() {
-        if (saving || !name.trim()) return;
+        if (saving) return;
+        // The bar has no disabled state, so a report that cannot go says why.
+        if (!name.trim() || !sql.trim()) return toast.error(name.trim() ? "A report needs a query." : "Give the report a name first.");
         saving = true;
         try {
             const body = { name: name.trim(), description: description.trim(), sql };
@@ -145,6 +156,10 @@ ORDER BY units DESC`;
                 ? await request("PATCH", `/api/admin/reports/custom/${editing.id}`, { body })
                 : await request("POST", "/api/admin/reports/custom", { body });
             editing = out;
+            name = out.name;
+            description = out.description ?? "";
+            sql = out.sql;
+            baseline = { name, description, sql };
             toast.success(out.name + " saved");
             await load();
         } catch (err) {
@@ -190,13 +205,10 @@ ORDER BY units DESC`;
 
 <svelte:head><title>{titled("Reports")}</title></svelte:head>
 
-<DirtyGuard
-    dirty={dirty && !!sql.trim()}
-    message="The query has not been saved. Leave and lose it?"
-/>
-
 <div class="page page-reports shopify-skin">
     <div class="page-content">
+        <SaveBar {dirty} {saving} saveLabel={editing ? "Save" : "Save as new"} onsave={save} ondiscard={discard} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item feed-title">Reports</div>
@@ -330,17 +342,6 @@ ORDER BY units DESC`;
                                 <i class="ri-play-line" aria-hidden="true"></i>
                                 <span class="txt">Run</span>
                             </button>
-                            {#if writable}
-                                <button
-                                    type="button"
-                                    class="btn sm secondary"
-                                    class:loading={saving}
-                                    disabled={saving || !name.trim() || !sql.trim()}
-                                    onclick={save}
-                                >
-                                    <span class="txt">{editing ? "Save" : "Save as new"}</span>
-                                </button>
-                            {/if}
                             {#if result}
                                 <button type="button" class="btn sm transparent secondary" onclick={download}>
                                     <i class="ri-download-2-line" aria-hidden="true"></i>

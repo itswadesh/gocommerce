@@ -23,6 +23,7 @@
     import { copyText } from "$lib/clipboard.js";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
     import NoAccess from "$lib/components/NoAccess.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import Select from "$lib/components/Select.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
@@ -98,8 +99,17 @@
 
     const saved = (key) => plugin?.settings?.[key] === MASK;
 
+    // A secret's box starts empty and empty means "keep it", so any text in
+    // one is a change; the two IDs are compared as saveAccount sends them.
+    const dirty = $derived(
+        draft.phone_number_id.trim() !== (plugin?.settings?.phone_number_id ?? "") ||
+            draft.waba_id.trim() !== (plugin?.settings?.waba_id ?? "") ||
+            codCancel !== !!plugin?.settings?.cod_cancel ||
+            SECRETS.some((k) => draft[k].trim()),
+    );
+
     async function saveAccount(e) {
-        e.preventDefault();
+        e?.preventDefault();
         if (saving) return;
         saving = true;
         const settings = { phone_number_id: draft.phone_number_id.trim(), waba_id: draft.waba_id.trim(), cod_cancel: codCancel };
@@ -274,6 +284,8 @@
 
 <div class="page page-notify-setup page-whatsapp shopify-skin">
     <div class="page-content tw:bg-background tw:text-foreground">
+        <SaveBar dirty={dirty && seesAccount && setsAccount} {saving} onsave={saveAccount} ondiscard={fillDraft} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Notifications</div>
@@ -339,9 +351,6 @@
                             Off, the order stays as it is and is listed below as asked to cancel, for you to call the shopper.
                         </p>
                         <div class="wa-wide wa-actions">
-                            <button type="submit" class="btn" class:loading={saving} disabled={!setsAccount || saving}>
-                                <span class="txt">Save connection</span>
-                            </button>
                             {#if plugin}
                                 <div class="field wa-check">
                                     <input type="checkbox" class="switch" id="wa-enabled" checked={enabled} disabled={!setsAccount || switching} onchange={toggleEnabled} />
