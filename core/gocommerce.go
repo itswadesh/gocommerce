@@ -177,10 +177,6 @@ type Config struct {
 	// PlatformEmailFrom is the sender of the email that person sends a store's
 	// owner to verify an address (D221). The email provider must accept it.
 	PlatformEmailFrom string
-	// PlatformAnthropicKey and PlatformAIModel write that email's first version.
-	// Without the key, the person writes it themselves.
-	PlatformAnthropicKey string
-	PlatformAIModel      string
 	// Brands are the names this install answers under, each with its own
 	// admin domain and base domain (brands.go, D114). Empty, the install is
 	// one brand made of PanelURL and BaseDomain, called DefaultBrandName. Set,
@@ -409,9 +405,6 @@ func (c *Config) applyDefaults() error {
 // App is the composed engine: configuration, database, HTTP surface and the
 // modules wired into it.
 type App struct {
-	// ownerDraftHost replaces the model's address. Tests set it; nothing else should.
-	ownerDraftHost string
-
 	cfg Config
 	db  *sql.DB
 	// secrets are Config.SecretsKey and SecretsKeyPrevious, decoded once.

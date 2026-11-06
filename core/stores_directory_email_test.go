@@ -1,17 +1,16 @@
 package gocommerce
 
 import (
-	"encoding/json"
-	"io"
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
-// ownerEmailApp has an install owner, a store owned by somebody else, recorded
-// mail and a stand-in for the model.
-func ownerEmailApp(t *testing.T) (app *App, rec *recordingNotifier, tok string, target ownerEmailTarget, asked *string) {
+// ownerEmailApp has an install owner, a store owned by somebody else, and recorded
+// mail.
+func ownerEmailApp(t *testing.T) (app *App, rec *recordingNotifier, tok string, target ownerEmailTarget) {
 	t.Helper()
 	dsn := requireDB(t)
 	rec = &recordingNotifier{}
@@ -19,22 +18,11 @@ func ownerEmailApp(t *testing.T) (app *App, rec *recordingNotifier, tok string, 
 	cfg.PanelURL = "https://panel.example"
 	cfg.PlatformOwnerPhone = directoryPhone
 	cfg.PlatformEmailFrom = "hi@platform.example"
-	cfg.PlatformAnthropicKey = "test-key"
 	app, err := New(cfg, &notifyModule{rec: rec})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
-
-	asked = new(string)
-	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		*asked = string(raw)
-		words, _ := json.Marshal(map[string]string{"subject": "Please confirm your email", "body": "Hello.\n\n{{verify_link}}\n\nThe team"})
-		_ = json.NewEncoder(w).Encode(map[string]any{"content": []map[string]string{{"type": "text", "text": string(words)}}})
-	}))
-	t.Cleanup(model.Close)
-	app.ownerDraftHost = model.URL
 
 	tok = directoryOwner(t, app, "me@example.com", true)
 	store := addTestStore(t, app, "someone-elses")
@@ -44,26 +32,23 @@ func ownerEmailApp(t *testing.T) (app *App, rec *recordingNotifier, tok string, 
 	if err := app.db.QueryRow(`SELECT id FROM superusers WHERE email = 'seller@example.com'`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	return app, rec, tok, ownerEmailTarget{SuperuserID: id, StoreID: store}, asked
+	return app, rec, tok, ownerEmailTarget{SuperuserID: id, StoreID: store}
 }
 
 func TestTheInstallOwnerSendsAnEmailThatVerifiesTheAddress(t *testing.T) {
-	app, rec, tok, target, asked := ownerEmailApp(t)
+	app, rec, tok, target := ownerEmailApp(t)
 
 	rec1 := do(t, app, http.MethodPost, "/api/stores/directory/email-draft", jsonBody(t, target), bearer(tok))
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("draft = %d: %s", rec1.Code, rec1.Body)
 	}
-	var draft struct{ From, To, Subject, Body, Problem string }
+	var draft struct{ From, To, Subject, Body string }
 	decodeData(t, rec1, &draft)
-	if draft.From != "hi@platform.example" || draft.To != "seller@example.com" || draft.Subject == "" || draft.Problem != "" {
+	if draft.From != "hi@platform.example" || draft.To != "seller@example.com" || draft.Subject == "" {
 		t.Fatalf("draft = %+v", draft)
 	}
 	if !strings.Contains(draft.Body, ownerVerifyPlaceholder) || strings.Contains(draft.Body, "http") {
 		t.Fatalf("draft body = %q, want the mark and no live link", draft.Body)
-	}
-	if strings.Contains(*asked, "seller@example.com") || !strings.Contains(*asked, "someone-elses") {
-		t.Fatalf("the model was asked %s, want the store and not the person", *asked)
 	}
 
 	send := map[string]any{"superuser_id": target.SuperuserID, "store_id": target.StoreID, "subject": "Edited subject", "body": draft.Body}
@@ -91,6 +76,23 @@ func TestTheInstallOwnerSendsAnEmailThatVerifiesTheAddress(t *testing.T) {
 	}
 	token, _, _ := strings.Cut(note.Body[at+len(prefix):], "\n")
 
+	// The list shows what went out, until the address is verified, without the link.
+	shown := func() *OwnerEmailSent {
+		t.Helper()
+		owners, err := app.storeOwners(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return owners[target.StoreID][0].EmailSent
+	}
+	sent := shown()
+	if sent == nil || sent.Subject != "Edited subject" || sent.Email != "seller@example.com" || sent.SentAt.IsZero() {
+		t.Fatalf("the list shows %+v", sent)
+	}
+	if !strings.Contains(sent.Body, ownerVerifyLinkShown) || strings.Contains(sent.Body, token) || strings.Contains(sent.Body, "http") {
+		t.Fatalf("the kept copy = %q, want it without the link", sent.Body)
+	}
+
 	proved := func() bool {
 		t.Helper()
 		var yes bool
@@ -109,6 +111,9 @@ func TestTheInstallOwnerSendsAnEmailThatVerifiesTheAddress(t *testing.T) {
 	if !proved() {
 		t.Fatal("the link did not prove the address")
 	}
+	if got := shown(); got != nil {
+		t.Fatalf("the list still shows the email after verifying: %+v", got)
+	}
 	if got := do(t, app, http.MethodPost, "/api/stores/verify-email", jsonBody(t, map[string]string{"token": token})); got.Code != http.StatusBadRequest {
 		t.Fatalf("second use = %d, want 400", got.Code)
 	}
@@ -118,7 +123,7 @@ func TestTheInstallOwnerSendsAnEmailThatVerifiesTheAddress(t *testing.T) {
 }
 
 func TestALinkDoesNotProveAnAddressTheAccountHasLeft(t *testing.T) {
-	app, _, _, target, _ := ownerEmailApp(t)
+	app, _, _, target := ownerEmailApp(t)
 	token, err := app.newOwnerEmailToken(t.Context(), target.SuperuserID, "seller@example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +137,7 @@ func TestALinkDoesNotProveAnAddressTheAccountHasLeft(t *testing.T) {
 }
 
 func TestOnlyTheInstallOwnerCanWriteToAStoresOwner(t *testing.T) {
-	app, rec, _, target, _ := ownerEmailApp(t)
+	app, rec, _, target := ownerEmailApp(t)
 	other := signInAs(t, app, "another@example.com", RoleOwner)
 	send := map[string]any{"superuser_id": target.SuperuserID, "store_id": target.StoreID, "subject": "s", "body": "b"}
 	for path, body := range map[string]any{"email-draft": target, "email-send": send} {
@@ -156,7 +161,7 @@ func TestOnlyTheInstallOwnerCanWriteToAStoresOwner(t *testing.T) {
 
 // The routes take ids, so they must not reach a person the store does not belong to.
 func TestAStoresOwnerIsTheOnlyPersonThatStoreCanBeWrittenAbout(t *testing.T) {
-	app, _, tok, target, _ := ownerEmailApp(t)
+	app, _, tok, target := ownerEmailApp(t)
 	var me int64
 	if err := app.db.QueryRow(`SELECT id FROM superusers WHERE email = 'me@example.com'`).Scan(&me); err != nil {
 		t.Fatal(err)
@@ -167,18 +172,38 @@ func TestAStoresOwnerIsTheOnlyPersonThatStoreCanBeWrittenAbout(t *testing.T) {
 	}
 }
 
-// With no key the screen still opens, with the reason, and the owner can write it.
-func TestTheDraftSaysWhyWhenTheModelCannotWriteIt(t *testing.T) {
-	app, _, tok, target, _ := ownerEmailApp(t)
-	app.cfg.PlatformAnthropicKey = ""
-	got := do(t, app, http.MethodPost, "/api/stores/directory/email-draft", jsonBody(t, target), bearer(tok))
-	if got.Code != http.StatusOK {
-		t.Fatalf("draft = %d: %s", got.Code, got.Body)
+// An owner who moves to another address has not been asked about that one.
+func TestTheSentEmailIsNotShownForAnAddressTheAccountHasLeft(t *testing.T) {
+	app, _, tok, target := ownerEmailApp(t)
+	send := map[string]any{"superuser_id": target.SuperuserID, "store_id": target.StoreID, "subject": "Confirm", "body": "Hello {{verify_link}}"}
+	if got := do(t, app, http.MethodPost, "/api/stores/directory/email-send", jsonBody(t, send), bearer(tok)); got.Code != http.StatusOK {
+		t.Fatalf("send = %d: %s", got.Code, got.Body)
 	}
-	var draft struct{ From, To, Subject, Problem string }
-	decodeData(t, got, &draft)
-	if draft.Problem == "" || draft.Subject != "" || draft.To != "seller@example.com" {
-		t.Fatalf("draft = %+v", draft)
+	if _, err := app.db.Exec(`UPDATE superusers SET email = 'moved@example.com' WHERE id = $1`, target.SuperuserID); err != nil {
+		t.Fatal(err)
+	}
+	owners, err := app.storeOwners(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := owners[target.StoreID][0].EmailSent; got != nil {
+		t.Fatalf("shown for the new address: %+v", got)
+	}
+}
+
+func TestTheOwnerEmailsWordsNeedNoModel(t *testing.T) {
+	subject, body := ownerEmailWords("Saffron\r\nBcc: x@example.com", "ShopNx")
+	if strings.ContainsAny(subject, "\r\n") {
+		t.Fatalf("subject = %q, want one line", subject)
+	}
+	if !strings.Contains(body, ownerVerifyPlaceholder) || !strings.Contains(body, "The ShopNx team") || !strings.Contains(body, "7 days") {
+		t.Fatalf("body = %q", body)
+	}
+	if _, body := ownerEmailWords("Saffron", ""); !strings.Contains(body, "The team") || strings.Contains(body, " on .") {
+		t.Fatalf("no brand: body = %q", body)
+	}
+	if subject, _ := ownerEmailWords(strings.Repeat("é", 200), "ShopNx"); !utf8.ValidString(subject) || len(subject) > ownerEmailMaxSubject {
+		t.Fatalf("long name: %d bytes, valid %v", len(subject), utf8.ValidString(subject))
 	}
 }
 

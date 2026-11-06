@@ -2,8 +2,8 @@
     /**
      * The email asking a store's owner to verify their address (D221).
      *
-     * A model writes the first version and the install's owner may change any of
-     * it before sending. The live link is the engine's to add as it sends, so all
+     * The words are fixed and the install's owner may change any of them before
+     * sending (D225). The live link is the engine's to add as it sends, so all
      * this screen ever holds is the mark showing where it will go.
      *
      * A native <dialog>: focus stays inside, Escape closes it and the page behind
@@ -14,12 +14,12 @@
     import { toast } from "$lib/toast.svelte.js";
 
     /** target is { superuser_id, store_id, email, store }, or null while closed. */
-    let { target = null, onclose } = $props();
+    let { target = null, onclose, onsent } = $props();
 
     const MARK = "{{verify_link}}";
 
     let dialog = $state(null);
-    let writing = $state(false);
+    let loading = $state(false);
     let sending = $state(false);
     let problem = $state("");
     let from = $state("");
@@ -27,7 +27,7 @@
     let body = $state("");
 
     const ids = $derived(target ? { superuser_id: target.superuser_id, store_id: target.store_id } : null);
-    const canSend = $derived(!writing && !sending && subject.trim() !== "" && body.trim() !== "");
+    const canSend = $derived(!loading && !sending && subject.trim() !== "" && body.trim() !== "");
 
     $effect(() => {
         if (!target || !dialog) return;
@@ -36,25 +36,22 @@
             body = "";
             problem = "";
             dialog.showModal();
-            write();
+            loadDraft();
         });
     });
 
-    async function write() {
-        writing = true;
+    async function loadDraft() {
+        loading = true;
         problem = "";
         try {
             const draft = await stores.ownerEmailDraft(ids);
             from = draft.from;
-            problem = draft.problem ?? "";
-            if (draft.body) {
-                subject = draft.subject;
-                body = draft.body;
-            }
+            subject = draft.subject;
+            body = draft.body;
         } catch (err) {
-            problem = err?.message || "The email could not be written.";
+            problem = err?.message || "The email could not be opened.";
         } finally {
-            writing = false;
+            loading = false;
         }
     }
 
@@ -66,6 +63,7 @@
         try {
             const result = await stores.ownerEmailSend({ ...ids, subject, body });
             toast.success(`Sent to ${result.sent_to}`);
+            onsent?.(result.email_sent);
             dialog.close();
         } catch (err) {
             // The provider's reason belongs beside the button that was pressed.
@@ -90,11 +88,11 @@
 
         <div class="field">
             <label for="owner-email-subject">Subject</label>
-            <input id="owner-email-subject" type="text" maxlength="200" bind:value={subject} disabled={writing || sending} />
+            <input id="owner-email-subject" type="text" maxlength="200" bind:value={subject} disabled={loading || sending} />
         </div>
         <div class="field">
             <label for="owner-email-body">Message</label>
-            <textarea id="owner-email-body" rows="10" maxlength="5000" bind:value={body} disabled={writing || sending} placeholder={writing ? "Writing…" : ""}></textarea>
+            <textarea id="owner-email-body" rows="10" maxlength="5000" bind:value={body} disabled={loading || sending}></textarea>
         </div>
         <p class="txt-hint hint">The verification link goes where {MARK} is. It works once, for 7 days.</p>
 
@@ -103,10 +101,6 @@
         {/if}
 
         <div class="actions">
-            <button type="button" class="btn transparent secondary" disabled={writing || sending} onclick={write}>
-                <i class="ri-sparkling-line" class:busy={writing} aria-hidden="true"></i>
-                <span class="txt">{writing ? "Writing…" : "Write again"}</span>
-            </button>
             <span class="gap"></span>
             <button type="button" class="btn transparent secondary" disabled={sending} onclick={() => dialog.close()}>
                 <span class="txt">Cancel</span>
@@ -186,22 +180,10 @@
     .gap {
         flex: 1;
     }
-    .busy {
-        display: inline-block;
-        animation: owner-email-pulse 900ms ease-in-out infinite;
-    }
-    @keyframes owner-email-pulse {
-        50% {
-            opacity: 0.35;
-        }
-    }
     @media (prefers-reduced-motion: reduce) {
         .owner-email {
             transition: none;
             transform: none;
-        }
-        .busy {
-            animation: none;
         }
     }
 </style>

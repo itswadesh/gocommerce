@@ -16475,7 +16475,18 @@
                                 "email": { "type": "string" },
                                 "phone": { "type": "string" },
                                 "email_verified": { "type": "boolean" },
-                                "phone_verified": { "type": "boolean" }
+                                "phone_verified": { "type": "boolean" },
+                                "email_sent": {
+                                  "type": "object",
+                                  "description": "The email last sent asking them to verify, with the link taken out. Present only until the address is verified.",
+                                  "properties": {
+                                    "email": { "type": "string" },
+                                    "from": { "type": "string" },
+                                    "subject": { "type": "string" },
+                                    "body": { "type": "string" },
+                                    "sent_at": { "type": "string", "format": "date-time" }
+                                  }
+                                }
                               }
                             }
                           },
@@ -16506,13 +16517,13 @@
         "tags": [
           "stores"
         ],
-        "summary": "Write the email asking a store's owner to verify their address",
+        "summary": "The email asking a store's owner to verify their address",
         "security": [
           {
             "adminToken": []
           }
         ],
-        "description": "A model writes a subject and message for the install's owner to read and change, with {{verify_link}} where the link will go. When the model cannot help, the answer is still 200, with the reason in problem and empty words. Only for the install's owner.",
+        "description": "A fixed subject and message for the install's owner to read and change, with {{verify_link}} where the link will go. Only for the install's owner.",
         "requestBody": {
           "required": true,
           "content": {
@@ -16542,8 +16553,7 @@
                         "from": { "type": "string" },
                         "to": { "type": "string" },
                         "subject": { "type": "string" },
-                        "body": { "type": "string" },
-                        "problem": { "type": "string" }
+                        "body": { "type": "string" }
                       }
                     }
                   }
@@ -16598,7 +16608,8 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "sent_to": { "type": "string" }
+                        "sent_to": { "type": "string" },
+                        "email_sent": { "type": "object", "description": "The copy the list shows until the address is verified, with the link taken out." }
                       }
                     }
                   }
