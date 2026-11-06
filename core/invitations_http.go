@@ -31,6 +31,8 @@ func (a *App) mountTeamRoutes() {
 	a.HandleAdminFunc("POST /api/admin/me/phone/code", a.handleRequestMyPhoneCode)
 	a.HandleAdminFunc("PUT /api/admin/me/phone", a.handleSetMyPhone)
 	a.HandleAdminFunc("DELETE /api/admin/me/phone", a.handleRemoveMyPhone)
+	a.HandleAdminFunc("POST /api/admin/me/email/code", a.handleRequestMyEmailCode)
+	a.HandleAdminFunc("PUT /api/admin/me/email", a.handleSetMyEmail)
 
 	// Ending somebody else's sessions is an act of team management, and the one
 	// thing an owner wants before removing an account or reducing a role.

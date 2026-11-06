@@ -118,8 +118,15 @@ func coreMigrations() []Migration {
 		{ID: "0100_discount_free_shipping", SQL: migration0100DiscountFreeShipping},
 		{ID: "0101_superuser_phone", SQL: migration0101SuperuserPhone},
 		{ID: "0102_operator_phone_login", SQL: migration0102OperatorPhoneLogin},
+		{ID: "0103_login_codes_identity", SQL: migration0103LoginCodesIdentity},
 	}
 }
+
+// M103 — a code can now prove an email on an account as well as a phone (D195),
+// so what it is keyed by is no longer only a phone.
+const migration0103LoginCodesIdentity = `
+ALTER TABLE superuser_login_codes RENAME COLUMN phone TO identity;
+`
 
 // M102 — signing in with a code texted to a phone (D193). phone_proved_at says
 // a code proved the number. A number given at sign-up is not proved (D191), so

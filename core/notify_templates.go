@@ -649,6 +649,15 @@ If you are reading it, the store's email provider is set up and order emails wil
 		Body:        `{{.code}} is your code to see order {{.order_number}}. It works for {{.expires_in_minutes}} minutes.`,
 	},
 	{
+		Channel: ChannelEmail, Event: EventLoginCode, Title: "Email confirmation code",
+		Description: "To somebody adding this email to their panel account. The code works for ten minutes.",
+		Variables:   []string{"code", "store_name", "expires_in_minutes"},
+		Subject:     "{{.code}} is your {{with .store_name}}{{.}} {{end}}code",
+		Body: `Your code to add this email to your account is {{.code}}. It works once, for {{.expires_in_minutes}} minutes.
+
+If you did not ask for it, you can ignore this email.`,
+	},
+	{
 		Channel: ChannelSMS, Event: EventLoginCode, Title: "Sign-in code",
 		Description: "To a shopper signing in with their phone, or an operator signing in to the panel. The code works for ten minutes.",
 		Variables:   []string{"code", "store_name", "expires_in_minutes", "domain"},

@@ -168,7 +168,7 @@ func TestACodeIsRandomStoredHashedAndNeverAnswered(t *testing.T) {
 	}
 	var hash, whole string
 	if err := app.db.QueryRowContext(context.Background(),
-		`SELECT code_hash, r::text FROM superuser_login_codes r WHERE phone = $1`, knownPhone).Scan(&hash, &whole); err != nil {
+		`SELECT code_hash, r::text FROM superuser_login_codes r WHERE identity = $1`, knownPhone).Scan(&hash, &whole); err != nil {
 		t.Fatal(err)
 	}
 	if hash != phoneCodeHash(knownPhone, first) {
@@ -252,7 +252,7 @@ func TestAnExpiredCodeIsRefused(t *testing.T) {
 	var left time.Duration
 	var expires time.Time
 	if err := app.db.QueryRowContext(context.Background(),
-		`SELECT expires_at FROM superuser_login_codes WHERE phone = $1`, knownPhone).Scan(&expires); err != nil {
+		`SELECT expires_at FROM superuser_login_codes WHERE identity = $1`, knownPhone).Scan(&expires); err != nil {
 		t.Fatal(err)
 	}
 	if left = time.Until(expires); left > 11*time.Minute || left < 9*time.Minute {
@@ -347,13 +347,13 @@ func TestWrongCodesAtOnceGetOnlyFiveTries(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = app.superusers.spendPhoneCode(context.Background(), knownPhone, otherCode(code))
+			_, _ = app.superusers.spendLoginCode(context.Background(), knownPhone, otherCode(code))
 		}()
 	}
 	wg.Wait()
 	var attempts int
 	if err := app.db.QueryRowContext(context.Background(),
-		`SELECT attempts FROM superuser_login_codes WHERE phone = $1`, knownPhone).Scan(&attempts); err != nil {
+		`SELECT attempts FROM superuser_login_codes WHERE identity = $1`, knownPhone).Scan(&attempts); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != phoneCodeAttempts {
@@ -504,7 +504,7 @@ func TestTheAnswersAreTheSameForAKnownPhoneAndAnUnknownOne(t *testing.T) {
 			t.Errorf("%s wrong code = %d %s, known phone %d %s", phone, rec.Code, rec.Body, wrong.Code, wrong.Body)
 		}
 		if _, err := app.db.ExecContext(context.Background(),
-			`UPDATE superuser_login_codes SET code_hash = $2 WHERE phone = $1`, phone, phoneCodeHash(phone, "654321")); err != nil {
+			`UPDATE superuser_login_codes SET code_hash = $2 WHERE identity = $1`, phone, phoneCodeHash(phone, "654321")); err != nil {
 			t.Fatal(err)
 		}
 		rec = sendPhoneCode(t, app, phone, "654321")
@@ -640,7 +640,7 @@ func TestADisabledPhoneCannotSignUpAgain(t *testing.T) {
 	}
 	mustAsk(t, app, knownPhone)
 	if _, err := app.db.ExecContext(context.Background(),
-		`UPDATE superuser_login_codes SET code_hash = $2 WHERE phone = $1`, knownPhone, phoneCodeHash(knownPhone, "654321")); err != nil {
+		`UPDATE superuser_login_codes SET code_hash = $2 WHERE identity = $1`, knownPhone, phoneCodeHash(knownPhone, "654321")); err != nil {
 		t.Fatal(err)
 	}
 	assertWrongCode(t, sendPhoneCode(t, app, knownPhone, "654321"))
@@ -940,7 +940,7 @@ func TestAClosedInstallMakesNoAccountFromAPhone(t *testing.T) {
 		t.Fatalf("%d texts to a number with no account, on a closed install", n)
 	}
 	if _, err := app.db.ExecContext(context.Background(),
-		`UPDATE superuser_login_codes SET code_hash = $2 WHERE phone = $1`, unknownPhone, phoneCodeHash(unknownPhone, "654321")); err != nil {
+		`UPDATE superuser_login_codes SET code_hash = $2 WHERE identity = $1`, unknownPhone, phoneCodeHash(unknownPhone, "654321")); err != nil {
 		t.Fatal(err)
 	}
 	assertWrongCode(t, sendPhoneCode(t, app, unknownPhone, "654321"))

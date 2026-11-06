@@ -267,6 +267,8 @@ export const auth = {
     /** requestMyPhoneCode texts a code to a number the signed-in person wants to add. */
     requestMyPhoneCode: (phone) => api.post("/api/admin/me/phone/code", { phone }),
     setMyPhone: (phone, code, current_password) => api.put("/api/admin/me/phone", { phone, code, current_password }),
+    requestMyEmailCode: (email) => api.post("/api/admin/me/email/code", { email }),
+    setMyEmail: (email, code) => api.put("/api/admin/me/email", { email, code }),
     removeMyPhone: (current_password) => api.delete("/api/admin/me/phone", { body: { current_password } }),
 
     /**
