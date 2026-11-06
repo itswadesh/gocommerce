@@ -382,6 +382,14 @@ export const NAV = [
             { href: "/dash/data/import", label: "Import", right: "data.import", keywords: "csv shopify upload taxonomy products orders" },
         ],
     },
+    // No right: anybody in a store may need help.
+    {
+        href: "/dash/support",
+        label: "Support",
+        icon: "ri-customer-service-2-line",
+        accent: "emerald",
+        keywords: "help whatsapp contact chat",
+    },
 ];
 
 /**
