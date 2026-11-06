@@ -118,6 +118,7 @@ commands:
     gocommerce superuser update <email> <password>
     gocommerce superuser list
     gocommerce superuser disable|enable <email or phone>
+    gocommerce superuser phone <email or old phone> <new phone>
 
   taxonomy usage:
     gocommerce taxonomy import            Shopify's standard taxonomy (embedded),
@@ -1058,9 +1059,18 @@ func superuserCmd(ctx context.Context, app *gocommerce.App, args []string) error
 		return nil
 	}
 
+	if len(args) == 3 && args[0] == "phone" {
+		if err := sus.ChangePhone(ctx, args[1], args[2]); err != nil {
+			return err
+		}
+		fmt.Printf("%s now signs in with %s; their sessions were signed out
+", args[1], args[2])
+		return nil
+	}
+
 	if len(args) < 3 || (args[0] != "create" && args[0] != "update") {
 		return errors.New(
-			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list  |  gocommerce superuser disable|enable <email or phone>")
+			"usage: gocommerce superuser create|update <email> <password> [role]  |  gocommerce superuser list  |  gocommerce superuser disable|enable <email or phone>  |  gocommerce superuser phone <email or old phone> <new phone>")
 	}
 	action, email, password := args[0], args[1], args[2]
 	// The role is optional and defaults to owner, so a script that has always

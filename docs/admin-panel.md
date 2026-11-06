@@ -1099,6 +1099,10 @@ install's SMS provider, unless the person works in the store the request reached
 and no other: a store's provider account is its owner's to read, and the code
 opens every store the person works in.
 
+`gocommerce superuser phone <email or old phone> <new phone>` is what support runs
+for someone who lost their SIM: it moves them to the new number and signs them
+out everywhere (D197).
+
 `gocommerce superuser disable <email or phone>` shuts a person out of the whole
 install, by any way of signing in, and ends their sessions. `enable` lets them
 back. It has no screen, because one store must not lock somebody out of another.
