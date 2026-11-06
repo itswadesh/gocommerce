@@ -121,8 +121,24 @@ func coreMigrations() []Migration {
 		{ID: "0103_login_codes_identity", SQL: migration0103LoginCodesIdentity},
 		{ID: "0104_phone_invitations", SQL: migration0104PhoneInvitations},
 		{ID: "0105_superuser_email_proved", SQL: migration0105SuperuserEmailProved},
+		{ID: "0106_superuser_email_verifications", SQL: migration0106SuperuserEmailVerifications},
 	}
 }
+
+// M106 — a link emailed to a store's owner, proving their address (D221). The
+// hash, as with a reset, so a read of this table opens nothing. The address the
+// link went to is kept, because it proves that address and no later one. No
+// store_id: a person belongs to no store, and a report's login is not granted a
+// table without one.
+const migration0106SuperuserEmailVerifications = `
+CREATE TABLE superuser_email_verifications (
+    token_hash   text        PRIMARY KEY,
+    superuser_id bigint      NOT NULL REFERENCES superusers (id) ON DELETE CASCADE,
+    email        text        NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    expires_at   timestamptz NOT NULL
+);
+`
 
 // M105 — which email a person has proved is theirs, so the install owner's list
 // can say so (D218). The address rather than a time, because an account's email

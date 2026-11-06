@@ -16471,6 +16471,7 @@
                             "items": {
                               "type": "object",
                               "properties": {
+                                "id": { "type": "integer" },
                                 "email": { "type": "string" },
                                 "phone": { "type": "string" },
                                 "email_verified": { "type": "boolean" },
@@ -16497,6 +16498,164 @@
           "403": {
             "description": "The caller is not the install's owner."
           }
+        }
+      }
+    },
+    "/api/stores/directory/email-draft": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Write the email asking a store's owner to verify their address",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "A model writes a subject and message for the install's owner to read and change, with {{verify_link}} where the link will go. When the model cannot help, the answer is still 200, with the reason in problem and empty words. Only for the install's owner.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["superuser_id", "store_id"],
+                "properties": {
+                  "superuser_id": { "type": "integer" },
+                  "store_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "from": { "type": "string" },
+                        "to": { "type": "string" },
+                        "subject": { "type": "string" },
+                        "body": { "type": "string" },
+                        "problem": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "No valid credential." },
+          "403": { "description": "The caller is not the install's owner." },
+          "404": { "description": "That person does not own that store." },
+          "409": { "description": "The address is already verified." }
+        }
+      }
+    },
+    "/api/stores/directory/email-send": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Send the email asking a store's owner to verify their address",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "Adds a one-time link, in place of {{verify_link}} or after the message when that was removed, and sends from GOCOMMERCE_PLATFORM_EMAIL_FROM. Only for the install's owner.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["superuser_id", "store_id", "subject", "body"],
+                "properties": {
+                  "superuser_id": { "type": "integer" },
+                  "store_id": { "type": "string" },
+                  "subject": { "type": "string" },
+                  "body": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The email was handed to the provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sent_to": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "The subject or message is missing or too long." },
+          "401": { "description": "No valid credential." },
+          "403": { "description": "The caller is not the install's owner." },
+          "404": { "description": "That person does not own that store." },
+          "409": { "description": "The address is already verified, or this install cannot send it yet." },
+          "502": { "description": "The email provider did not send it." }
+        }
+      }
+    },
+    "/api/stores/verify-email": {
+      "post": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Spend an emailed verification link",
+        "description": "Sent by the page the link opens, never by the link itself, because mail scanners fetch links. The token is the credential.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token"],
+                "properties": {
+                  "token": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The address is verified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "verified": { "type": "boolean" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "The link has expired or was already used." }
         }
       }
     },

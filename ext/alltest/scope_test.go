@@ -157,7 +157,7 @@ func TestEveryModuleTableIsScoped(t *testing.T) {
 		                        -- store is chosen. It holds no role and no grant (D205).
 		                        'store_phone_invitations',
 		                        'api_key_index', 'superusers', 'superuser_sessions',
-		                        'superuser_password_resets', 'superuser_login_codes', 'gocommerce_migrations',
+		                        'superuser_password_resets', 'superuser_login_codes', 'superuser_email_verifications', 'gocommerce_migrations',
 		                        -- Which connection runs a report for which store (D84):
 		                        -- the record that scopes reports, so no one store's.
 		                        'report_runs',
