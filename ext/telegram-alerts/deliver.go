@@ -98,6 +98,7 @@ type pending struct {
 	eventName string
 	text      string
 	attempts  int
+	orderID   int64
 }
 
 // DeliverPass sends one batch of this store's alerts and returns how many it
@@ -122,7 +123,7 @@ func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 		    available_at = now() + make_interval(secs => $2)
 		FROM claimed
 		WHERE d.id = claimed.id
-		RETURNING d.id, d.event_name, d.text, d.attempts`,
+		RETURNING d.id, d.event_name, d.text, d.attempts, coalesce(d.order_id, 0)`,
 		deliverBatch, visibility.Seconds())
 	if err != nil {
 		return 0, fmt.Errorf("claim telegram alerts: %w", err)
@@ -130,7 +131,7 @@ func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 	var batch []pending
 	for rows.Next() {
 		var p pending
-		if err := rows.Scan(&p.id, &p.eventName, &p.text, &p.attempts); err != nil {
+		if err := rows.Scan(&p.id, &p.eventName, &p.text, &p.attempts, &p.orderID); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -146,7 +147,7 @@ func (m *Module) DeliverPass(ctx context.Context) (int, error) {
 	// halfway through a batch.
 	b := m.bot(ctx)
 	for _, p := range batch {
-		err := m.sendTo(ctx, b, p.text)
+		err := m.sendButtons(ctx, b, p.text, m.alertButtons(ctx, b, p))
 		if err == nil {
 			if markErr := m.markDelivered(ctx, p.id); markErr != nil {
 				return len(batch), markErr

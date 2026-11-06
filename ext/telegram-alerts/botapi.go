@@ -156,17 +156,26 @@ func scrubText(token, s string) string {
 // error and an alert that never arrived. Link previews are off, so an order
 // link does not unfold the panel's sign-in page into the chat.
 func (m *Module) sendTo(ctx context.Context, b bot, text string) error {
+	return m.sendButtons(ctx, b, text, nil)
+}
+
+// sendButtons is sendTo with buttons under the message, when there are any.
+func (m *Module) sendButtons(ctx context.Context, b bot, text string, buttons *inlineKeyboard) error {
 	if b.token == "" {
 		return &telegramError{missing: "token"}
 	}
 	if b.chat == "" {
 		return &telegramError{missing: "chat"}
 	}
-	return m.call(ctx, b.token, "sendMessage", map[string]any{
+	payload := map[string]any{
 		"chat_id":              b.chat,
 		"text":                 text,
 		"link_preview_options": map[string]bool{"is_disabled": true},
-	}, nil)
+	}
+	if buttons != nil {
+		payload["reply_markup"] = buttons
+	}
+	return m.call(ctx, b.token, "sendMessage", payload, nil)
 }
 
 // failure is a Bot API error as a response: the settings' fault is a 400, and
@@ -245,10 +254,36 @@ func chatsFrom(updates []map[string]json.RawMessage) []Chat {
 // owner picks theirs rather than hunting for a number. getUpdates without an
 // offset confirms nothing, so asking twice gives the same answer, and Telegram
 // keeps an update for a day — a message sent this morning is still there.
+//
+// A bot with a webhook set cannot use getUpdates: Telegram answers 409. So the
+// two take turns rather than share. With two-way control on, the webhook owns
+// the bot and this says so without asking Telegram. With it off, this asks as
+// it always did, and if a webhook of this store's own is still in the way,
+// because removing it failed when two-way control was switched off, it is
+// removed now. Anybody else's webhook is left alone and explained, as it was.
 func (m *Module) handleChats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	row, err := m.commandsRow(ctx)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if row != nil {
+		gocommerce.RespondError(w, r, gocommerce.Conflictf(
+			"Two-way control is on, so Telegram hands this bot's messages to your store and cannot list its chats. Switch two-way control off, find the chat, and switch it on again."))
+		return
+	}
+	token := m.bot(ctx).token
 	var updates []map[string]json.RawMessage
-	if err := m.call(ctx, m.bot(ctx).token, "getUpdates", map[string]int{"limit": 100, "timeout": 0}, &updates); err != nil {
+	askChats := func() error {
+		return m.call(ctx, token, "getUpdates", map[string]int{"limit": 100, "timeout": 0}, &updates)
+	}
+	err = askChats()
+	var te *telegramError
+	if errors.As(err, &te) && te.status == http.StatusConflict && m.removeOwnWebhook(ctx, token) {
+		err = askChats()
+	}
+	if err != nil {
 		gocommerce.RespondError(w, r, m.failure("find the chat", err))
 		return
 	}
