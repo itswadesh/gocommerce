@@ -27,6 +27,14 @@ func TestTheSitemapListsWhatIsLive(t *testing.T) {
 		t.Fatalf("fill collection: %v", err)
 	}
 
+	// On by default, but this store has no address yet, so it says what it needs.
+	if rec := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); rec.Code != http.StatusConflict {
+		t.Errorf("sitemap with no address = %d, want 409", rec.Code)
+	}
+	off := false
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("sitemap while off = %d", rec.Code)
 	}
@@ -133,6 +141,10 @@ func TestEverySitemapPointsAtAStylesheetThatIsServed(t *testing.T) {
 // second between switching the plugin on and the first fetch.
 func TestTheStylesheetIsServedWhetherOrNotTheSitemapIs(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
+	off := false
+	if _, err := app.Plugins().Update(context.Background(), pluginKey, gocommerce.PluginPatch{Enabled: &off}); err != nil {
+		t.Fatal(err)
+	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("the sitemap should be off: %d", rec.Code)
 	}
@@ -146,4 +158,21 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// A hosted store has a subdomain, and nobody should have to type it in or know
+// to switch this on before search engines can find its products.
+func TestAStoreHasASitemapOnItsOwnAddressWithNothingSet(t *testing.T) {
+	app := gctest.NewWithConfig(t, gocommerce.Config{BaseDomain: "shops.example.com"}, New(Config{}))
+	live := gctest.CreateProduct(t, app, "SM-LIVE", 1000, 1)
+	if index := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); index.Code != http.StatusOK {
+		t.Fatalf("index = %d: %s", index.Code, index.Body)
+	}
+	products := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/products.xml", nil)
+	if products.Code != http.StatusOK {
+		t.Fatalf("products = %d: %s", products.Code, products.Body)
+	}
+	if want := ".shops.example.com/products/" + live.Slug + "</loc>"; !strings.Contains(products.Body.String(), want) {
+		t.Errorf("products = %s, want a link ending %s", products.Body, want)
+	}
 }

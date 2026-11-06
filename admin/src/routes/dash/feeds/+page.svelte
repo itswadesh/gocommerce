@@ -53,6 +53,10 @@
     let tab = $state("google");
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
+    // An install answers for many stores, so a Merchant Center or Meta fetch has
+    // to say which one; it holds no session and no store of its own (D232).
+    const storeQuery = $derived(myStores.current?.slug ? `?store=${encodeURIComponent(myStores.current.slug)}` : "");
+    const feedURL = (path) => origin + path + storeQuery;
 
     /*
      * An unset storefront URL starts as the store's own address: `domain` is
@@ -438,15 +442,15 @@
                                     <span class="txt-bold">{link.label}</span>
                                     <span class="txt-hint txt-sm">{link.hint}</span>
                                 </div>
-                                <a class="feed-link-url txt-code" href={origin + link.path} target="_blank" rel="noreferrer"
-                                    >{origin}{link.path}</a
+                                <a class="feed-link-url txt-code" href={feedURL(link.path)} target="_blank" rel="noreferrer"
+                                    >{feedURL(link.path)}</a
                                 >
                                 <div class="feed-link-actions">
-                                    <button type="button" class="btn sm secondary" onclick={() => copy(origin + link.path)}>
+                                    <button type="button" class="btn sm secondary" onclick={() => copy(feedURL(link.path))}>
                                         <i class="ri-file-copy-line" aria-hidden="true"></i>
                                         <span class="txt">Copy</span>
                                     </button>
-                                    <a class="btn sm transparent secondary" href={origin + link.path} target="_blank" rel="noreferrer">
+                                    <a class="btn sm transparent secondary" href={feedURL(link.path)} target="_blank" rel="noreferrer">
                                         <i class="ri-external-link-line" aria-hidden="true"></i>
                                         <span class="txt">Open</span>
                                     </a>

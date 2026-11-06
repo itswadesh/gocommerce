@@ -23,6 +23,7 @@
      * real work, and that is what the bar shows. A bar animating through a
      * number the code invented would be worse than no bar.
      */
+    import { myStores } from "$lib/stores.svelte.js";
     import { can, request } from "$lib/api.js";
     import { activateNote, filled } from "$lib/plugin-ready.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
@@ -78,6 +79,12 @@
     );
 
     const origin = $derived(typeof window === "undefined" ? "" : window.location.origin);
+    // A search engine trusts a sitemap only for its own host, so the address to
+    // hand it is the shop's, which the bundled storefront serves (D232). Only the
+    // scan below reads through this panel's own origin.
+    const shop = $derived(myStores.current?.domain ? `https://${myStores.current.domain}` : "");
+    const indexURL = $derived(shop ? `${shop}/sitemap.xml` : origin + INDEX);
+    const fileURL = (path) => (shop || origin) + path;
     const percent = $derived(total === 0 ? 0 : Math.round((done / total) * 100));
 
     $effect(() => {
@@ -441,14 +448,14 @@
                         </button>
                     </div>
                     <div class="map-index">
-                        <a class="txt-code map-index-url" href={origin + INDEX} target="_blank" rel="noreferrer"
-                            >{origin}{INDEX}</a
+                        <a class="txt-code map-index-url" href={indexURL} target="_blank" rel="noreferrer"
+                            >{indexURL}</a
                         >
-                        <button type="button" class="btn sm secondary" onclick={() => copy(origin + INDEX)}>
+                        <button type="button" class="btn sm secondary" onclick={() => copy(indexURL)}>
                             <i class="ri-file-copy-line" aria-hidden="true"></i>
                             <span class="txt">Copy</span>
                         </button>
-                        <a class="btn sm transparent secondary" href={origin + INDEX} target="_blank" rel="noreferrer">
+                        <a class="btn sm transparent secondary" href={indexURL} target="_blank" rel="noreferrer">
                             <i class="ri-external-link-line" aria-hidden="true"></i>
                             <span class="txt">Open</span>
                         </a>
@@ -510,13 +517,13 @@
                                 <div class="map-row" class:is-bad={!f.ok}>
                                     <div class="txt-bold">{f.name}</div>
                                     <div class="map-url">
-                                        <a href={origin + f.path} target="_blank" rel="noreferrer" class="txt-code"
+                                        <a href={fileURL(f.path)} target="_blank" rel="noreferrer" class="txt-code"
                                             >{f.path}</a
                                         >
                                         <button
                                             type="button"
                                             class="btn sm transparent secondary map-copy"
-                                            onclick={() => copy(origin + f.path)}
+                                            onclick={() => copy(fileURL(f.path))}
                                             aria-label="Copy {f.name} address"
                                         >
                                             <i class="ri-file-copy-line" aria-hidden="true"></i>
