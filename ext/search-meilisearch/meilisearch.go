@@ -404,7 +404,7 @@ func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err
 			if p.Status == gocommerce.ProductActive {
 				active[id] = true
 			}
-			if !full && !p.UpdatedAt.After(since) {
+			if !full && !changedSince(p, since) {
 				continue
 			}
 			if p.Status != gocommerce.ProductActive {
@@ -452,6 +452,21 @@ func (m *Module) Sync(ctx context.Context, full bool) (indexed, removed int, err
 		removed = len(stale)
 	}
 	return indexed, removed, nil
+}
+
+// changedSince is whether a product's document is out of date. Its variants
+// count: a document holds their prices, and a price edit leaves the product row
+// alone.
+func changedSince(p *gocommerce.Product, since time.Time) bool {
+	if p.UpdatedAt.After(since) {
+		return true
+	}
+	for _, v := range p.Variants {
+		if v.UpdatedAt.After(since) {
+			return true
+		}
+	}
+	return false
 }
 
 // --------------------------------------------------------------- document

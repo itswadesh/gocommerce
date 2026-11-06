@@ -220,6 +220,10 @@ func (c *Catalog) SetOptions(ctx context.Context, productID int64, in OptionSet)
 		// points at them. Retire the doomed variants, release the survivors'
 		// references, and only then rebuild.
 
+		if err := touchProduct(ctx, tx, productID); err != nil {
+			return err
+		}
+
 		// 1. Decide each existing variant's fate by whether its combination
 		//    still exists in the new matrix.
 		//

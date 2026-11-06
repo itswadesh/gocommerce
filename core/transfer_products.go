@@ -702,8 +702,8 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 		return fail(fmt.Errorf("weight_unit must be g, kg, oz or lb, got %q", weightUnit))
 	}
 
-	var variantID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM variants WHERE sku = $1`, sku).Scan(&variantID)
+	var variantID, wasProduct int64
+	err = tx.QueryRowContext(ctx, `SELECT id, product_id FROM variants WHERE sku = $1`, sku).Scan(&variantID, &wasProduct)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		price, err := row.int64("price_minor")
@@ -739,6 +739,11 @@ func (t *Transfer) importVariantRow(ctx context.Context, tx *sql.Tx, productID i
 		}
 		// A SKU is store-wide, so the row's product is where it lives now.
 		set("product_id", productID)
+		if wasProduct != productID {
+			if err := touchProduct(ctx, tx, wasProduct); err != nil {
+				return 0, err
+			}
+		}
 		if row.has("barcode") {
 			set("barcode", nullString(row.get("barcode")))
 		}
