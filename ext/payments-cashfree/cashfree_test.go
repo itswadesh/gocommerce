@@ -125,6 +125,7 @@ type cashfreeStub struct {
 	created  []map[string]any
 	headers  http.Header
 	payments map[string]string // cf order id → the JSON array GET .../payments answers
+	statuses map[string]string // cf order id → the order_status GET /orders/{id} answers; ACTIVE if absent
 	refunds  []map[string]any
 	refundTo []string
 	answer   string // the refund_status POST .../refunds answers with; "timeout" answers 504
@@ -164,7 +165,7 @@ func (s *cashfreeStub) lastRefund() (map[string]any, string) {
 
 func newStub(t *testing.T) (*cashfreeStub, *httptest.Server) {
 	t.Helper()
-	stub := &cashfreeStub{payments: map[string]string{}, answer: "SUCCESS"}
+	stub := &cashfreeStub{payments: map[string]string{}, statuses: map[string]string{}, answer: "SUCCESS"}
 	server := gctest.StubHTTP(t, func(w http.ResponseWriter, r *http.Request) {
 		stub.calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
@@ -195,6 +196,12 @@ func newStub(t *testing.T) (*cashfreeStub, *httptest.Server) {
 			stub.headers = r.Header.Clone()
 			fmt.Fprintf(w, `{"cf_order_id":"2149460581","created_at":"2026-10-22T10:00:00+05:30","customer_details":{"customer_id":%q,"customer_phone":"9999999999"},"entity":"order","order_amount":%s,"order_currency":"INR","order_id":%q,"order_status":"ACTIVE","payment_session_id":"session_test_%d","order_tags":null}`,
 				in["customer_details"].(map[string]any)["customer_id"], in["order_amount"], in["order_id"], len(stub.created))
+		case r.Method == http.MethodGet && len(parts) == 2 && parts[0] == "orders":
+			status, ok := stub.statuses[parts[1]]
+			if !ok {
+				status = "ACTIVE"
+			}
+			fmt.Fprintf(w, `{"order_id":%q,"order_status":%q,"payment_session_id":"session_reopened"}`, parts[1], status)
 		case r.Method == http.MethodGet && len(parts) == 3 && parts[0] == "orders" && parts[2] == "payments":
 			stub.reads.Add(1)
 			list, ok := stub.payments[parts[1]]
