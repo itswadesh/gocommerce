@@ -136,7 +136,7 @@ func phoneCodeHash(phone, code string) string {
 
 // ownCodeHash is phoneCodeHash for a code asked for from inside an account, to
 // add an address to it. That person named the address, so what proves an address
-// to them must not sign anybody in to it (D212).
+// to them must not sign anybody in to it (D213).
 func ownCodeHash(identity, code string) string {
 	return hashToken("operator-link:" + identity + ":" + code)
 }

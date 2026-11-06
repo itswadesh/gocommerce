@@ -15,8 +15,8 @@
     import { safeNext } from "$lib/paths.js";
     import { takeStoreName } from "$lib/store-name.js";
     import { toast } from "$lib/toast.svelte.js";
-    import { CURRENCIES } from "$lib/currencies.js";
-    import { COUNTRIES } from "$lib/countries.js";
+    import { currencyOptions } from "$lib/currencies.js";
+    import { COUNTRIES, currencyOf } from "$lib/countries.js";
     import Select from "$lib/components/Select.svelte";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import { titled } from "$lib/brand.svelte.js";
@@ -74,12 +74,14 @@
         name = suggestion.name;
         slugTouched = false;
     }
-    // What the store sells in; empty is the install's. It can be changed on
-    // Store settings until the first order.
-    let currency = $state("");
     // Where the store is: its country on Store settings, and what its default
     // shipping zone covers. A guess from the browser's region to start with.
     let country = $state(browserCountry());
+    // What the store sells in: what the country spends until somebody chooses,
+    // and the install's when there is neither. It can be changed on Store
+    // settings until an order is paid or sent out.
+    let pickedCurrency = $state("");
+    const currency = $derived(pickedCurrency || currencyOf(country));
     // Off unless asked: a sample nobody wanted is something to clean up (D94, D96).
     let sampleContent = $state(false);
 
@@ -237,10 +239,10 @@
             <div class="col-12">
                 <div class="field">
                     <label for="store_currency">Currency</label>
-                    <Select id="store_currency" bind:value={currency} options={CURRENCIES} placeholder="The install's default" />
+                    <Select id="store_currency" bind:value={() => currency, (code) => (pickedCurrency = code)} options={currencyOptions(currency)} placeholder="The install's default" />
                 </div>
                 <div class="link-hint m-t-5">
-                    <small>What the store sells in. You can change it until the first order.</small>
+                    <small>What the store sells in. You can change it until an order is paid or sent out.</small>
                 </div>
             </div>
             <div class="col-12">

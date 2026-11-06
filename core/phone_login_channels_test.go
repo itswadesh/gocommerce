@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// What a code or a reset may travel on, and what proving an address ends (D212).
+// What a code or a reset may travel on, and what proving an address ends (D213).
 
 const (
 	theirPhone = "+919876511111"

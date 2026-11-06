@@ -33,6 +33,7 @@
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
     import StoreImages from "$lib/components/StoreImages.svelte";
     import Select from "$lib/components/Select.svelte";
+    import SaveBar from "$lib/components/SaveBar.svelte";
     import { countryOptions } from "$lib/countries.js";
     import { currencyOptions } from "$lib/currencies.js";
     import { languageName, languageOptions } from "$lib/languages.js";
@@ -104,8 +105,8 @@
             kind: "select",
             hint: "What \"today\" means on an invoice and in a report. Empty is UTC.",
         },
-        // The store's own currency (D85): chosen until its first order, then
-        // fixed, because changing it would change what every order means.
+        // The store's own currency (D85): chosen until an order is paid or sent
+        // out, then fixed, because changing it would change what that order means.
         { key: "currency", label: "Currency", kind: "select" },
     ];
 
@@ -376,6 +377,8 @@
 <div class="page page-settings shopify-skin">
 
     <div class="page-content full-height tw:bg-background tw:text-foreground">
+        <SaveBar dirty={dirty && editable} {saving} onsave={saveProfile} ondiscard={() => (draft = { ...profile })} />
+
         <header class="page-header">
             <nav class="breadcrumbs">
                 <div class="breadcrumb-item tw:text-sm tw:text-muted-foreground">Settings</div>
@@ -432,8 +435,8 @@
                                         {#if f.key === "currency"}
                                             <div class="field-help">
                                                 {profile?.currency_locked
-                                                    ? "Fixed: this store has orders that were paid or not cancelled, and changing it would change what their amounts mean."
-                                                    : "What the store sells in. Fixed once it takes its first order; changing it now relabels the prices already entered, without converting them."}
+                                                    ? "Fixed: this store has orders that were paid or sent out, and changing it would change what their amounts mean."
+                                                    : "What the store sells in. Fixed once an order is paid or sent out. Changing it now relabels the prices already entered, without converting them; orders already placed keep their currency."}
                                             </div>
                                         {:else if f.hint}<div class="field-help">{f.hint}</div>{/if}
                                     </div>
@@ -595,18 +598,14 @@
                                     {/if}
                                 </div>
                             </div>
-                            <div class="col-12">
-                                {#if editable}
-                                    <button type="submit" class="btn sm" disabled={saving || !dirty}>
-                                        <span class="txt">{saving ? "Saving…" : "Save store details"}</span>
-                                    </button>
-                                {:else}
+                            {#if !editable}
+                                <div class="col-12">
                                     <div class="field-help">
                                         These are the shop's own details, and changing them needs
                                         store.write.
                                     </div>
-                                {/if}
-                            </div>
+                                </div>
+                            {/if}
                         </form>
                     </section>
                     <!-- Saved as each is picked; the form above keeps its edits. -->

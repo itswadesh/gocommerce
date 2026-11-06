@@ -14346,7 +14346,7 @@
                         "currency_locked": {
                           "type": "boolean",
                           "readOnly": true,
-                          "description": "True once the store has an order, which fixes its currency."
+                          "description": "True once an order was paid or sent out, which fixes the store's currency."
                         },
                         "logo_media_id": {
                           "type": "integer",
@@ -14528,7 +14528,7 @@
                   "currency_locked": {
                     "type": "boolean",
                     "readOnly": true,
-                    "description": "True once the store has an order, which fixes its currency."
+                    "description": "True once an order was paid or sent out, which fixes the store's currency."
                   },
                   "logo_media_id": {
                     "type": "integer",

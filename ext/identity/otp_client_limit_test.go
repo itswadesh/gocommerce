@@ -10,7 +10,7 @@ import (
 )
 
 // Limits per phone do not stop one client texting many numbers. The two routes that
-// text share the client's count (D212).
+// text share the client's count (D213).
 func TestAShopperClientGetsTwentyCodesAnHour(t *testing.T) {
 	app, mod, sms := phoneApp(t)
 	for i := range loginCodesPerClientHr {

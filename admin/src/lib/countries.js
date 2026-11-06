@@ -266,6 +266,40 @@ export const COUNTRIES = [
 ];
 
 /**
+ * Which countries spend which currency. Neither Intl nor the engine knows this,
+ * so it is a table, and a test holds it to COUNTRIES. Antarctica has none.
+ */
+const SPENT_IN = {
+    AED: "AE", AFN: "AF", ALL: "AL", AMD: "AM", AOA: "AO", ARS: "AR", AUD: "AU CC CX HM KI NF NR TV", AWG: "AW",
+    AZN: "AZ", BAM: "BA", BBD: "BB", BDT: "BD", BHD: "BH", BIF: "BI", BMD: "BM", BND: "BN", BOB: "BO", BRL: "BR",
+    BSD: "BS", BTN: "BT", BWP: "BW", BYN: "BY", BZD: "BZ", CAD: "CA", CDF: "CD", CHF: "CH LI", CLP: "CL", CNY: "CN",
+    COP: "CO", CRC: "CR", CUP: "CU", CVE: "CV", CZK: "CZ", DJF: "DJ", DKK: "DK FO GL", DOP: "DO", DZD: "DZ",
+    EGP: "EG", ERN: "ER", ETB: "ET",
+    EUR: "AD AT AX BE BG BL CY DE EE ES FI FR GF GP GR HR IE IT LT LU LV MC ME MF MQ MT NL PM PT RE SI SK SM TF VA XK YT",
+    FJD: "FJ", FKP: "FK", GBP: "CQ GB GG GS IM JE", GEL: "GE", GHS: "GH", GIP: "GI", GMD: "GM", GNF: "GN", GTQ: "GT",
+    GYD: "GY", HKD: "HK", HNL: "HN", HTG: "HT", HUF: "HU", IDR: "ID", ILS: "IL PS", INR: "IN", IQD: "IQ", IRR: "IR",
+    ISK: "IS", JMD: "JM", JOD: "JO", JPY: "JP", KES: "KE", KGS: "KG", KHR: "KH", KMF: "KM", KPW: "KP", KRW: "KR",
+    KWD: "KW", KYD: "KY", KZT: "KZ", LAK: "LA", LBP: "LB", LKR: "LK", LRD: "LR", LSL: "LS", LYD: "LY", MAD: "EH MA",
+    MDL: "MD", MGA: "MG", MKD: "MK", MMK: "MM", MNT: "MN", MOP: "MO", MRU: "MR", MUR: "MU", MVR: "MV", MWK: "MW",
+    MXN: "MX", MYR: "MY", MZN: "MZ", NAD: "NA", NGN: "NG", NIO: "NI", NOK: "BV NO SJ", NPR: "NP",
+    NZD: "CK NU NZ PN TK", OMR: "OM", PAB: "PA", PEN: "PE", PGK: "PG", PHP: "PH", PKR: "PK", PLN: "PL", PYG: "PY",
+    QAR: "QA", RON: "RO", RSD: "RS", RUB: "RU", RWF: "RW", SAR: "SA", SBD: "SB", SCR: "SC", SDG: "SD", SEK: "SE",
+    SGD: "SG", SHP: "SH", SLE: "SL", SOS: "SO", SRD: "SR", SSP: "SS", STN: "ST", SYP: "SY", SZL: "SZ", THB: "TH",
+    TJS: "TJ", TMT: "TM", TND: "TN", TOP: "TO", TRY: "TR", TTD: "TT", TWD: "TW", TZS: "TZ", UAH: "UA", UGX: "UG",
+    USD: "AS BQ EC FM GU IO MH MP PR PW SV TC TL UM US VG VI", UYU: "UY", UZS: "UZ", VES: "VE", VND: "VN", VUV: "VU",
+    WST: "WS", XAF: "CF CG CM GA GQ TD", XCD: "AG AI DM GD KN LC MS VC", XCG: "CW SX",
+    XOF: "BF BJ CI GW ML NE SN TG", XPF: "NC PF WF", YER: "YE", ZAR: "ZA", ZMW: "ZM", ZWG: "ZW",
+};
+
+/** currencyOf is what a country spends, or "" when the table has no answer. */
+export function currencyOf(country) {
+    for (const [code, countries] of Object.entries(SPENT_IN)) {
+        if (countries.split(" ").includes(country)) return code;
+    }
+    return "";
+}
+
+/**
  * countryOptions is the list for a select whose saved value may predate it: a
  * value that is not a code on the list (a name typed into the old text box,
  * an import's "India") stays a choice, first, rather than the select showing

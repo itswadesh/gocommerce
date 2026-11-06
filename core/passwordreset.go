@@ -349,7 +349,7 @@ func (s *Superusers) LookupReset(ctx context.Context, token, clientIP string) (*
 // from there both kinds take the same path.
 //
 // A reset also ends the account's other way in, because nothing proves who put
-// it there and a stranger's must not survive the real owner coming back (D212).
+// it there and a stranger's must not survive the real owner coming back (D213).
 // By email: the phone goes, and its owner adds it again with a code. By text: the
 // number is proved by this, and an email on it goes if the number was not proved
 // until now, as the first sign-in code does (claimPhoneAccount).
@@ -708,7 +708,7 @@ const installScope = "install"
 
 // identityMailScope is the channel a code or link that opens an account may go
 // out on. A store's template and provider account are its staff's to edit and
-// read, whoever the person is, so it is always the install's own (D212).
+// read, whoever the person is, so it is always the install's own (D213).
 //
 // The one exception is an install that hosts nobody else: closed to sign-ups,
 // with one store. There the store's settings are the install's, and they are the
