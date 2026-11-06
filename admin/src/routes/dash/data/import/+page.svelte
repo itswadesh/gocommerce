@@ -423,21 +423,32 @@
                     Either layout: the store's own, or a file exported from Shopify, as it is.
                     The engine reads which off the first line.
                     {#if kind === "products"}
-                        <!-- The file to fill in: Shopify's columns (D182) and an example
-                             product in two sizes, saved as a draft if imported as it is. -->
+                        <!-- Template files to fill in: GoCommerce native format or Shopify format,
+                             each with instructional # notes at the top and an example draft product. -->
                         <div class="m-t-sm">
-                            <button
-                                type="button"
-                                class="btn sm secondary"
-                                onclick={() => downloadFile("/api/admin/import/products/template", "products-template.csv", "text/csv")}
-                            >
-                                <i class="ri-file-download-line" aria-hidden="true"></i>
-                                <span class="txt">Download a template</span>
-                            </button>
-                            <span class="txt-hint txt-sm">
-                                Shopify's product CSV, so a file exported from Shopify imports as it
-                                is. The file explains every column at the top.
-                            </span>
+                            <div class="flex gap-10 flex-wrap">
+                                <button
+                                    type="button"
+                                    class="btn sm secondary"
+                                    onclick={() => downloadFile("/api/admin/import/products/template?format=gocommerce", "products-template-gocommerce.csv", "text/csv")}
+                                >
+                                    <i class="ri-file-download-line" aria-hidden="true"></i>
+                                    <span class="txt">GoCommerce template</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn sm secondary"
+                                    onclick={() => downloadFile("/api/admin/import/products/template?format=shopify", "products-template-shopify.csv", "text/csv")}
+                                >
+                                    <i class="ri-file-download-line" aria-hidden="true"></i>
+                                    <span class="txt">Shopify template</span>
+                                </button>
+                            </div>
+                            <div class="m-t-xs">
+                                <span class="txt-hint txt-sm">
+                                    Sample CSVs with instructions and draft examples: choose GoCommerce native (integer minor units and option axes) or Shopify's layout (decimal prices).
+                                </span>
+                            </div>
                         </div>
                     {/if}
                 {:else if kind === "categories"}

@@ -1111,14 +1111,84 @@ var productTemplateNotes = []string{
 	"Variant Barcode, Variant Fulfillment Service, Variant Tax Code, Gift Card and Published can be left as they are or empty. The HSN code for GST invoices comes from the product's category, set under Categories.",
 }
 
+var nativeProductTemplateNotes = []string{
+	"HOW TO FILL THIS FILE. It is GoCommerce's native product CSV. Lines starting with # are notes: the import skips them, so keep or delete them.",
+	"One row per variant. Rows of one product sit together and share its product_slug. Delete the two example rows (cotton-kurta) before importing your own.",
+	"product_slug: the product's web address, lowercase-with-hyphens, e.g. cotton-kurta. The same slug on multiple rows groups variants of that product.",
+	"product_title, product_description, product_status, vendor, product_type, tags, category, seo_title, seo_description: fill these on the product's first row only.",
+	"product_status: draft (hidden from shoppers) or active (on sale). tags: separated by commas. category: full path (e.g. Apparel / Clothing) or slug.",
+	"sku: unique variant code. barcode: optional barcode. variant_options: multi-options separated by |, e.g. Size=M|Color=Black. Leave blank for a single-variant product.",
+	"price_minor: price in integer minor units (e.g. 99900 for 999.00). compare_at_price_minor: strikethrough price in minor units. cost_minor: cost price in minor units.",
+	"taxable, requires_shipping, track_inventory, continue_selling, active: TRUE or FALSE. stock_on_hand: count in stock at the default location (or stock_on_hand:<location>).",
+	"weight_grams: weight in grams; weight_unit: g, kg, oz, or lb. origin_country: 2-letter country code (e.g. IN, US). hs_code: customs/HSN tariff code.",
+	"images: pipe-separated URLs (|) on the first row. image_alts: pipe-separated alt texts. variant_images: pipe-separated URLs on each variant row. metadata: JSON string.",
+}
+
 // ProductTemplate writes a file to fill in for an import: its instructions
-// as # notes, then Shopify's product header and one example product in two
-// sizes (D182). It is the Shopify exporter's own header, so the template
-// cannot drift from what the import reads, and its prices are written as
-// that exporter writes them, in the store's currency. The example is a
-// draft, so a template imported unedited never puts a made-up product on
-// sale.
-func (t *Transfer) ProductTemplate(ctx context.Context, out io.Writer) error {
+// as # notes, then the product header and one example product in two
+// sizes. It supports both Shopify's layout and GoCommerce's native layout.
+func (t *Transfer) ProductTemplate(ctx context.Context, out io.Writer, format ...Format) error {
+	f := FormatShopify
+	if len(format) > 0 && format[0] != "" {
+		f = format[0]
+	}
+	if f == FormatNative {
+		return t.nativeProductTemplate(ctx, out)
+	}
+	return t.shopifyProductTemplate(ctx, out)
+}
+
+func (t *Transfer) nativeProductTemplate(ctx context.Context, out io.Writer) error {
+	stockCols, err := t.productStockColumns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, note := range nativeProductTemplateNotes {
+		if _, err := io.WriteString(out, "# "+note+"\n"); err != nil {
+			return err
+		}
+	}
+	header := productHeaderFor(stockCols)
+	w := csv.NewWriter(out)
+	if err := w.Write(header); err != nil {
+		return err
+	}
+	first := map[string]string{
+		"product_slug": "cotton-kurta", "product_title": "Cotton kurta",
+		"product_description": "<p>Soft cotton, for everyday wear.</p>", "product_status": "draft",
+		"product_type": "Kurta", "tags": "cotton, summer",
+		"sku": "KURTA-M", "variant_options": "Size=M",
+		"price_minor": "99900", "compare_at_price_minor": "129900", "cost_minor": "45000",
+		"taxable": "true", "requires_shipping": "true", "track_inventory": "true",
+		"continue_selling": "false", "active": "true",
+		"weight_grams": "250", "weight_unit": "g", "metadata": "{}",
+	}
+	second := map[string]string{
+		"product_slug": "cotton-kurta",
+		"sku":          "KURTA-L", "variant_options": "Size=L",
+		"price_minor": "99900", "compare_at_price_minor": "129900", "cost_minor": "45000",
+		"taxable": "true", "requires_shipping": "true", "track_inventory": "true",
+		"continue_selling": "false", "active": "true",
+		"weight_grams": "270", "weight_unit": "g", "metadata": "{}",
+	}
+	for _, col := range stockCols {
+		first[col.name] = "10"
+		second[col.name] = "10"
+	}
+	for _, values := range []map[string]string{first, second} {
+		row := make([]string, len(header))
+		for i, name := range header {
+			row[i] = values[name]
+		}
+		if err := w.Write(row); err != nil {
+			return err
+		}
+	}
+	w.Flush()
+	return w.Error()
+}
+
+func (t *Transfer) shopifyProductTemplate(ctx context.Context, out io.Writer) error {
 	exp := CurrencyExponent(t.app.Currency(ctx))
 	for _, note := range productTemplateNotes {
 		if _, err := io.WriteString(out, "# "+note+"\n"); err != nil {

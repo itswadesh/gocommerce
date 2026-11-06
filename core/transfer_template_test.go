@@ -51,6 +51,47 @@ func TestTheProductTemplateImportsAsWritten(t *testing.T) {
 	}
 }
 
+func TestTheNativeProductTemplateImportsAsWritten(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+
+	rec := do(t, app, http.MethodGet, "/api/admin/import/products/template?format=gocommerce", withAdmin)
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/csv") {
+		t.Fatalf("GET the native template = %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if disp := rec.Header().Get("Content-Disposition"); !strings.Contains(disp, "products-template-gocommerce.csv") {
+		t.Errorf("Content-Disposition = %q, want products-template-gocommerce.csv", disp)
+	}
+	var header string
+	for _, l := range strings.Split(rec.Body.String(), "\n") {
+		if !strings.HasPrefix(l, "#") {
+			header = l
+			break
+		}
+	}
+	if !strings.HasPrefix(rec.Body.String(), "# ") || !strings.HasPrefix(header, "product_slug,") {
+		t.Fatalf("the template does not start with notes and native header: %q", header)
+	}
+
+	res, err := app.Data().ImportProducts(ctx, bytes.NewReader(rec.Body.Bytes()), ImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errors) != 0 || res.Created == 0 {
+		t.Fatalf("native template imported with %d created and errors %+v", res.Created, res.Errors)
+	}
+	p, err := app.Products().GetProductBySlug(ctx, "cotton-kurta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Status != ProductDraft || len(p.Variants) != 2 {
+		t.Fatalf("example landed as %s with %d variants, want draft with two sizes", p.Status, len(p.Variants))
+	}
+	if got := p.Variants[0].Price.AmountMinor; got != 99900 {
+		t.Errorf("example price is %d minor units, want 99900", got)
+	}
+}
+
 // An error in a file with notes in it names the line it is on in the file,
 // not its row number among the records.
 func TestAnImportErrorNamesTheFilesOwnLine(t *testing.T) {

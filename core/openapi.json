@@ -6213,7 +6213,12 @@
             "adminToken": []
           }
         ],
-        "description": "Shopify's product CSV, which POST /api/admin/import/products reads as it is (D182): instructions as # lines, which the import skips, then Shopify's product header and one example product in two sizes, a draft so importing it unedited puts nothing on sale. Prices are decimals in the store's currency (999.00), as Shopify writes them. Needs data.import.",
+        "description": "A sample product CSV to fill in, with instructions as # lines which the import skips, then the CSV header and an example product in two sizes as a draft. Takes format=gocommerce (default minor units) or format=shopify (Shopify column names and decimal prices). Needs data.import.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Format"
+          }
+        ],
         "responses": {
           "200": {
             "description": "The template.",
