@@ -125,9 +125,28 @@ func (a *App) handleExportProducts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleProductTemplate(w http.ResponseWriter, r *http.Request) {
+	rawFormat := r.URL.Query().Get("format")
+	format := FormatShopify
+	if rawFormat != "" {
+		parsed, err := ParseFormat(rawFormat)
+		if err != nil {
+			RespondError(w, r, err)
+			return
+		}
+		format = parsed
+	}
+	filename := "products-template.csv"
+	switch format {
+	case FormatShopify:
+		if rawFormat != "" {
+			filename = "products-template-shopify.csv"
+		}
+	case FormatNative:
+		filename = "products-template-gocommerce.csv"
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="products-template.csv"`)
-	if err := a.transfer.ProductTemplate(r.Context(), w); err != nil {
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	if err := a.transfer.ProductTemplate(r.Context(), w, format); err != nil {
 		a.log.Error("product template failed midway", "error", err)
 	}
 }
