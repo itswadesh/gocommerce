@@ -111,7 +111,7 @@ func setup(t *testing.T) *harness {
 	return setupWith(t, func(*Config) {})
 }
 
-func setupWith(t *testing.T, change func(*Config)) *harness {
+func setupWith(t *testing.T, change func(*Config), extra ...gocommerce.Module) *harness {
 	t.Helper()
 	meta := &fakeMeta{files: map[string][]byte{}}
 	meta.srv = gctest.StubHTTP(t, meta.handler)
@@ -125,6 +125,7 @@ func setupWith(t *testing.T, change func(*Config)) *harness {
 	if cfg.Gateway != nil {
 		mods = []gocommerce.Module{cfg.Gateway, mod}
 	}
+	mods = append(extra, mods...)
 	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mods...)
 	st, err := app.Stores().Create(context.Background(), "Store B", "store-b")
 	if err != nil {
@@ -940,4 +941,5 @@ func TestSecretsAreKeptFromReports(t *testing.T) {
 	app := gctest.NewWithReports(t, mod)
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_phone_links", "code_hash")
 	gctest.AssertReportsCannotRead(t, app, "retailassistant_documents", "content")
+	gctest.AssertReportsCannotRead(t, app, "retailassistant_wholesale_quotes", "lines")
 }

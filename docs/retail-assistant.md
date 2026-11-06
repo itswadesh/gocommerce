@@ -21,7 +21,7 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout, wholesale quotes, and WhatsApp sign-in.
+Also not built: barcode checkout and WhatsApp sign-in.
 
 ## Setting it up
 
@@ -194,6 +194,29 @@ you owe and what is waiting, once a day around 8 in the morning, India time. Out
 the 24-hour window it needs the template, and each one may cost a WhatsApp message.
 
 Asking questions in plain language on WhatsApp is not built.
+
+## Wholesale quotes
+
+A wholesaler can turn a manufacturer's bill or price list into a quote for one retailer
+without rebuilding a spreadsheet. It needs `-b2b`, the retailer as a company with a
+buyer, and the `quotes.write` and `retailassistant.write` rights.
+
+Under **Orders › Wholesale quote**, choose a document, a retailer, and a rule. The two
+rules are different prices, and the screen says so: 20% **markup** on ₹100 is ₹120, and
+20% **gross margin** is ₹125. Match each line to a product, change any price by hand,
+and press **Show prices**, then **Draft the quote**.
+
+- The cost comes from the document, and the retailer's quote holds only the price. What
+  you paid and your margin stay in this module, kept from custom reports.
+- A price below what you paid is refused until you tick that you mean it, and that goes
+  in the audit trail.
+- The draft is not sent. **Review and send** opens the quote in B2B, where the retailer
+  is told by email and accepts it, and accepting makes the order.
+- Quoting from a document puts nothing on your supplier accounts, and makes no tax
+  invoice.
+
+Prices are before tax, and tax is added as for any B2B order. MRP limits are not
+checked. Sending the quote on WhatsApp and a PDF of it are not built.
 
 ## Who can do what
 

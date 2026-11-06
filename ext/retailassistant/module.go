@@ -32,6 +32,7 @@ import (
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	"github.com/itswadesh/gocommerce/ext/b2b"
 )
 
 const (
@@ -76,6 +77,8 @@ type Config struct {
 	// WhatsApp's customer-service window: one body variable, in each language a
 	// phone may choose. Empty, such a message is marked undelivered.
 	TemplateName string
+	// B2B makes wholesale quotes. Nil, there are none.
+	B2B *b2b.Module
 	// Gateway reads PDFs and photos with a model. Nil, a person enters them.
 	Gateway *aigateway.Module
 	// Poll is how often the worker looks for work; 0 is five seconds.
@@ -338,6 +341,28 @@ CREATE TABLE retailassistant_bank_lines (
     created_at        timestamptz NOT NULL DEFAULT now()
 );`},
 		gocommerce.ScopeMigration("0008_bank_store_scope", "retailassistant_bank_lines"),
+		{ID: "0010_wholesale_quotes", SQL: `
+-- What a wholesale quote was worked from, for the audit trail. Lines hold what the
+-- wholesaler paid, which is why they live here and not on ext/b2b's quote.
+CREATE TABLE retailassistant_wholesale_quotes (
+    id              bigserial PRIMARY KEY,
+    document_id     bigint NOT NULL REFERENCES retailassistant_documents (id),
+    company_id      bigint NOT NULL,
+    quote_id        bigint,
+    mode            text NOT NULL,
+    percent_bps     integer NOT NULL,
+    lines           jsonb NOT NULL,
+    below_cost      boolean NOT NULL DEFAULT false,
+    overridden      boolean NOT NULL DEFAULT false,
+    idempotency_key text,
+    created_by      text NOT NULL DEFAULT '',
+    created_at      timestamptz NOT NULL DEFAULT now()
+);`},
+		gocommerce.ScopeMigration("0011_wholesale_store_scope", "retailassistant_wholesale_quotes"),
+		{ID: "0012_wholesale_keys", SQL: `
+CREATE UNIQUE INDEX retailassistant_wholesale_key ON retailassistant_wholesale_quotes (store_id, idempotency_key) WHERE idempotency_key IS NOT NULL;`},
+		gocommerce.WithholdFromReports("0013_withhold_wholesale",
+			"retailassistant_wholesale_quotes.lines", "retailassistant_wholesale_quotes.idempotency_key"),
 		{ID: "0009_bank_keys", SQL: `
 CREATE UNIQUE INDEX retailassistant_bank_lines_hash ON retailassistant_bank_lines (store_id, line_hash);
 CREATE UNIQUE INDEX retailassistant_bank_lines_payment ON retailassistant_bank_lines (store_id, payment_id) WHERE payment_id IS NOT NULL;
@@ -443,6 +468,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/invoices/{id}/reverse", m.handleReverseInvoice)
 	read("GET "+adminBase+"/invoices/{id}/lines", m.handleInvoiceLines)
 	read("GET "+adminBase+"/insights", m.handleInsights)
+	write("POST "+adminBase+"/wholesale/preview", m.handleWholesalePreview)
+	write("POST "+adminBase+"/wholesale/quotes", m.handleWholesaleQuote)
 	read("GET "+adminBase+"/bank-lines", m.handleBankLines)
 	write("POST "+adminBase+"/bank-statements", m.handleImportStatement)
 	write("POST "+adminBase+"/bank-lines/{id}/match", m.handleMatchLine)
@@ -479,6 +506,7 @@ func (m *Module) on(h http.HandlerFunc) http.HandlerFunc {
 func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 	reading, why := m.aiAvailable(r.Context())
 	gocommerce.Respond(w, http.StatusOK, map[string]any{
+		"wholesale":      m.cfg.B2B != nil,
 		"ai_reading":     reading,
 		"ai_reading_why": why,
 		"enabled":        m.enabled(r.Context()),

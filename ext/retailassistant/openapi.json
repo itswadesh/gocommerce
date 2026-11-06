@@ -1388,6 +1388,182 @@
           }
         }
       }
+    },
+    "/api/admin/x/retailassistant/wholesale/preview": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Work out a retailer's prices from a manufacturer's document",
+        "description": "Costs come from the document, never the request. Writes nothing. Needs retailassistant.write and quotes.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "company_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "buyer_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "markup",
+                      "margin"
+                    ]
+                  },
+                  "percent_bps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "allow_below_cost": {
+                    "type": "boolean"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "index": {
+                          "type": "integer"
+                        },
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "price_minor": {
+                          "type": "integer",
+                          "format": "int64"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Each line's cost, price and margin, for the wholesaler's eyes"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs quotes.write"
+          },
+          "404": {
+            "description": "This install does not have B2B quotes"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/wholesale/quotes": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Draft a B2B quote from a manufacturer's document",
+        "description": "The quote holds prices only and is not sent. A price below cost needs allow_below_cost. Send an Idempotency-Key. Needs retailassistant.write and quotes.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "company_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "buyer_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "markup",
+                      "margin"
+                    ]
+                  },
+                  "percent_bps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "allow_below_cost": {
+                    "type": "boolean"
+                  },
+                  "lines": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "index": {
+                          "type": "integer"
+                        },
+                        "variant_id": {
+                          "type": "integer",
+                          "format": "int64"
+                        },
+                        "quantity": {
+                          "type": "integer"
+                        },
+                        "price_minor": {
+                          "type": "integer",
+                          "format": "int64"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The drafted quote"
+          },
+          "200": {
+            "description": "The same press again, and the quote it already made"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Needs quotes.write"
+          },
+          "404": {
+            "description": "This install does not have B2B quotes"
+          },
+          "409": {
+            "description": "A price is below cost, or the document cannot be quoted from"
+          }
+        }
+      }
     }
   }
 }

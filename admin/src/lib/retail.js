@@ -30,6 +30,19 @@ export const CREDIT_KINDS = [
 /** What a model may be asked to read: spreadsheets are read exactly, without one. */
 export const aiReadable = (mimeType) => ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(mimeType);
 
+export const PRICING_RULES = [
+    { value: "markup", label: "Markup on what I pay" },
+    { value: "margin", label: "Gross margin on the price" },
+];
+
+/** The two rules are different prices, so the screen says what the chosen one does. */
+export function ruleExample(mode, percent) {
+    if (!Number.isFinite(percent) || percent < 0) return "";
+    if (mode === "margin" && percent >= 100) return "A gross margin must be under 100%.";
+    const price = mode === "margin" ? 100 / (1 - percent / 100) : 100 * (1 + percent / 100);
+    return `Something you pay ₹100 for sells at ₹${price.toFixed(2)}, before tax.`;
+}
+
 /** A figure that does not add up is the one thing a reviewer may wave through. */
 export const isMismatch = (message) => message.includes("add up");
 
