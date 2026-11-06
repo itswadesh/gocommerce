@@ -614,6 +614,42 @@ func (s *Superusers) SetDisabled(ctx context.Context, emailOrPhone string, disab
 	})
 }
 
+// ChangePhone is support moving a person to a new number after a lost SIM
+// (D197), on the word of whoever checked who they are, so the number counts as
+// proved. It is the command line's, like SetDisabled. Whoever holds the old SIM
+// may be signed in, so their sessions and reset links end here.
+func (s *Superusers) ChangePhone(ctx context.Context, emailOrPhone, phone string) error {
+	phone, err := NormalizePhone(phone)
+	if err != nil {
+		return err
+	}
+	key := normalizeEmail(emailOrPhone)
+	if p, err := NormalizePhone(emailOrPhone); err == nil {
+		key = p
+	}
+	return InTx(ctx, s.db, func(tx *sql.Tx) error {
+		var id int64
+		err := tx.QueryRowContext(ctx, `
+			UPDATE superusers SET phone = $2, phone_proved_at = now(), updated_at = now()
+			WHERE email = $1 OR phone = $1 RETURNING id`, key, phone).Scan(&id)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return NotFoundf("nobody signs in with %q", emailOrPhone)
+		case isUniqueViolation(err):
+			return Conflictf("%s already signs in to another account here", phone)
+		case err != nil:
+			return Internalf(err, "change phone")
+		}
+		for _, q := range []string{`DELETE FROM superuser_sessions WHERE superuser_id = $1`,
+			`DELETE FROM superuser_password_resets WHERE superuser_id = $1`} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return Internalf(err, "end the old number's ways in")
+			}
+		}
+		return nil
+	})
+}
+
 // isCheckViolation reports a 23514: a CHECK constraint refused the row.
 func isCheckViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "23514")

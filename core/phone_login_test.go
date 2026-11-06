@@ -1097,3 +1097,31 @@ func TestTheSignInTemplateIsTheEnginesOwn(t *testing.T) {
 		t.Fatalf("body = %q, %v", body, err)
 	}
 }
+
+// Support moves somebody who lost their SIM to a new number (D197): the new
+// number signs in at once, and whatever the old SIM's holder had open ends.
+func TestSupportChangesALostPhone(t *testing.T) {
+	p := phonePerson(t)
+	ctx := context.Background()
+	const fresh = "+919876512345"
+	if err := p.app.superusers.ChangePhone(ctx, unknownPhone, "+91 98765 12345"); err != nil {
+		t.Fatalf("change: %v", err)
+	}
+	if rec := do(t, p.app, http.MethodGet, "/api/stores/my", p.token); rec.Code != http.StatusUnauthorized {
+		t.Errorf("the old session = %d, want it ended", rec.Code)
+	}
+	su, err := p.app.superusers.personOnPhone(ctx, fresh)
+	if err != nil || su == nil || su.ID != p.id || !su.phoneProved {
+		t.Fatalf("new number = %+v, %v; want person %d, proved", su, err, p.id)
+	}
+	if other, _ := p.app.superusers.personOnPhone(ctx, unknownPhone); other != nil {
+		t.Errorf("the old number still opens %+v", other)
+	}
+	if err := p.app.superusers.ChangePhone(ctx, "nobody@example.com", "+919876512346"); err == nil {
+		t.Error("changing nobody's phone succeeded")
+	}
+	newSuperuser(t, p.app, "other@example.com", "another good password")
+	if err := p.app.superusers.ChangePhone(ctx, "other@example.com", fresh); err == nil {
+		t.Error("took a number from the person who has it")
+	}
+}
