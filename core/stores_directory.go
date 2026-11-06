@@ -3,6 +3,7 @@ package gocommerce
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"slices"
 	"time"
@@ -24,6 +25,9 @@ type DirectoryOwner struct {
 	// address (M105) or the number. Signing up proves neither (D191).
 	EmailVerified bool `json:"email_verified"`
 	PhoneVerified bool `json:"phone_verified"`
+	// EmailSent is the email asking them to verify, while it is still waiting
+	// on them (D225).
+	EmailSent *OwnerEmailSent `json:"email_sent,omitempty"`
 }
 
 // DirectoryStore is one row of the install owner's list.
@@ -153,7 +157,9 @@ func (a *App) storeOwners(ctx context.Context) (map[string][]DirectoryOwner, err
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT m.store_id, su.id, coalesce(su.email, ''), coalesce(su.phone, ''),
 			coalesce(su.email = su.email_proved, false),
-			su.phone IS NOT NULL AND su.phone_proved_at IS NOT NULL
+			su.phone IS NOT NULL AND su.phone_proved_at IS NOT NULL,
+			CASE WHEN su.email = su.owner_email_sent->>'email' AND su.email IS DISTINCT FROM su.email_proved
+				THEN su.owner_email_sent::text END
 		FROM store_members m JOIN superusers su ON su.id = m.superuser_id
 		WHERE m.role = $1 ORDER BY m.created_at, su.id`, RoleOwner)
 	if err != nil {
@@ -164,8 +170,15 @@ func (a *App) storeOwners(ctx context.Context) (map[string][]DirectoryOwner, err
 	for rows.Next() {
 		var id string
 		var o DirectoryOwner
-		if err := rows.Scan(&id, &o.ID, &o.Email, &o.Phone, &o.EmailVerified, &o.PhoneVerified); err != nil {
+		var sent sql.NullString
+		if err := rows.Scan(&id, &o.ID, &o.Email, &o.Phone, &o.EmailVerified, &o.PhoneVerified, &sent); err != nil {
 			return nil, Internalf(err, "scan store owner")
+		}
+		if sent.Valid {
+			o.EmailSent = &OwnerEmailSent{}
+			if err := json.Unmarshal([]byte(sent.String), o.EmailSent); err != nil {
+				return nil, Internalf(err, "read the email sent to a store owner")
+			}
 		}
 		out[id] = append(out[id], o)
 	}

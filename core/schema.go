@@ -122,8 +122,16 @@ func coreMigrations() []Migration {
 		{ID: "0104_phone_invitations", SQL: migration0104PhoneInvitations},
 		{ID: "0105_superuser_email_proved", SQL: migration0105SuperuserEmailProved},
 		{ID: "0106_superuser_email_verifications", SQL: migration0106SuperuserEmailVerifications},
+		{ID: "0107_superuser_owner_email_sent", SQL: migration0107SuperuserOwnerEmailSent},
 	}
 }
+
+// M107 — the email last sent asking a person to verify their address, shown until
+// they do (D225). It holds the words with the link taken out. On the person, as
+// only the latest is shown and it names the address it went to.
+const migration0107SuperuserOwnerEmailSent = `
+ALTER TABLE superusers ADD COLUMN owner_email_sent jsonb;
+`
 
 // M106 — a link emailed to a store's owner, proving their address (D221). The
 // hash, as with a reset, so a read of this table opens nothing. The address the

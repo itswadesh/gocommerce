@@ -10,6 +10,7 @@
     import { stores } from "$lib/api.js";
     import { titled } from "$lib/brand.svelte.js";
     import { formatDate, relativeTime } from "$lib/format.js";
+    import { rise } from "$lib/motion.js";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import OwnerEmailDialog from "$lib/components/OwnerEmailDialog.svelte";
 
@@ -37,6 +38,14 @@
     }
 
     load();
+
+    /* Every row of that person, as they can own several stores. */
+    function emailSent(id, sent) {
+        for (const store of list) for (const owner of store.owners) if (owner.id === id) owner.email_sent = sent;
+    }
+
+    // The link in an email works for 7 days (ownerVerifyTTL).
+    const linkExpired = (sent) => Date.now() - new Date(sent.sent_at).getTime() > 7 * 24 * 60 * 60 * 1000;
 
     // The audit trail writes sentences and the event log writes order.placed.
     function activityName(name) {
@@ -136,10 +145,21 @@
                                                         onclick={() => (writingTo = { superuser_id: owner.id, store_id: store.id, email: owner.email, store: store.name || store.slug })}
                                                     >
                                                         <i class="ri-mail-send-line" aria-hidden="true"></i>
-                                                        <span class="txt">Verify email</span>
+                                                        <span class="txt">{owner.email_sent ? "Send again" : "Verify email"}</span>
                                                     </button>
                                                 {/if}
                                             </div>
+                                            {#if owner.email_sent && !owner.email_verified}
+                                                <div class="sent-email" in:rise>
+                                                    <p class="sent-status" title={formatDate(owner.email_sent.sent_at)}>
+                                                        <i class="ri-mail-check-line" aria-hidden="true"></i>
+                                                        Sent {relativeTime(owner.email_sent.sent_at)}.
+                                                        {linkExpired(owner.email_sent) ? "The link has expired, so send it again." : "Waiting for them to click the link."}
+                                                    </p>
+                                                    <p class="sent-subject">{owner.email_sent.subject}</p>
+                                                    <p class="sent-body">{owner.email_sent.body}</p>
+                                                </div>
+                                            {/if}
                                         {:else}
                                             —
                                         {/each}
@@ -168,7 +188,7 @@
     </div>
 </div>
 
-<OwnerEmailDialog target={writingTo} onclose={() => (writingTo = null)} />
+<OwnerEmailDialog target={writingTo} onclose={() => (writingTo = null)} onsent={(sent) => emailSent(writingTo.superuser_id, sent)} />
 
 <style>
     .verify {
@@ -192,6 +212,30 @@
         flex-direction: column;
         gap: 4px;
         overflow-wrap: anywhere;
+    }
+    /* What went out, in the words it went out in, while it waits on them. */
+    .sent-email {
+        min-width: 240px;
+        max-width: 340px;
+        margin-top: 4px;
+        padding: 8px 10px;
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+        border-left: 2px solid var(--borderColor, currentColor);
+    }
+    .sent-email p {
+        margin: 0;
+    }
+    .sent-status {
+        opacity: 0.75;
+    }
+    .sent-subject {
+        margin-top: 6px !important;
+        font-weight: 600;
+    }
+    .sent-body {
+        margin-top: 4px !important;
+        white-space: pre-wrap;
     }
     .contact {
         display: flex;

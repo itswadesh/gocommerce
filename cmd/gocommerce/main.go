@@ -400,13 +400,11 @@ environment:
 		// Env only, like the demo account: where the panel is reached is a fact
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
-		PanelURL:             os.Getenv("GOCOMMERCE_PANEL_URL"),
-		BrandName:            os.Getenv("GOCOMMERCE_BRAND_NAME"),
-		PlatformOwnerPhone:   os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
-		PlatformEmailFrom:    os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
-		PlatformAnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
-		PlatformAIModel:      os.Getenv("AI_PLATFORM_SMALL_MODEL"),
-		Brands:               brands,
+		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
+		BrandName:          os.Getenv("GOCOMMERCE_BRAND_NAME"),
+		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
+		PlatformEmailFrom:  os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
+		Brands:             brands,
 		// Whether strangers may make an account and open a store: a choice
 		// about who this install is for, so a flag as well as the environment.
 		Signup: *signup || envTrue("GOCOMMERCE_SIGNUP"),
