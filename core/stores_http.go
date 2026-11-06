@@ -45,6 +45,8 @@ func (a *App) mountStoreRoutes() {
 	a.Handle("POST /api/stores/create", a.personAuth(http.HandlerFunc(a.handleCreateStore)))
 	a.Handle("GET /api/stores/suggest", a.personAuth(http.HandlerFunc(a.handleSuggestStoreName)))
 	a.Handle("POST /api/stores/delete", a.personAuth(http.HandlerFunc(a.handleDeleteStore)))
+	a.Handle("GET /api/stores/invitations", a.personAuth(http.HandlerFunc(a.handleMyInvitations)))
+	a.Handle("POST /api/stores/invitations/answer", a.personAuth(http.HandlerFunc(a.handleAnswerInvitation)))
 }
 
 // personPath is a route about the person, never resolved to a store.

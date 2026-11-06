@@ -119,8 +119,29 @@ func coreMigrations() []Migration {
 		{ID: "0101_superuser_phone", SQL: migration0101SuperuserPhone},
 		{ID: "0102_operator_phone_login", SQL: migration0102OperatorPhoneLogin},
 		{ID: "0103_login_codes_identity", SQL: migration0103LoginCodesIdentity},
+		{ID: "0104_phone_invitations", SQL: migration0104PhoneInvitations},
 	}
 }
+
+// M104 — a team invitation can name a phone, with no link to send (D205). The
+// invitee signs in with no store chosen, and invitations are scoped to a store,
+// so store_phone_invitations says which stores to look in for a number. It holds
+// no role and no grant: what counts is the row each store keeps.
+const migration0104PhoneInvitations = `
+ALTER TABLE superuser_invitations ALTER COLUMN email DROP NOT NULL;
+ALTER TABLE superuser_invitations ADD COLUMN phone text;
+ALTER TABLE superuser_invitations ADD CONSTRAINT superuser_invitations_one_address
+    CHECK (num_nonnulls(email, phone) = 1);
+CREATE UNIQUE INDEX superuser_invitations_open_phone
+    ON superuser_invitations (store_id, phone)
+    WHERE phone IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL;
+CREATE TABLE store_phone_invitations (
+    phone      text        NOT NULL,
+    store_id   text        NOT NULL REFERENCES stores (id) ON DELETE CASCADE,
+    expires_at timestamptz NOT NULL,
+    PRIMARY KEY (phone, store_id)
+);
+`
 
 // M103 — a code can now prove an email on an account as well as a phone (D195),
 // so what it is keyed by is no longer only a phone.

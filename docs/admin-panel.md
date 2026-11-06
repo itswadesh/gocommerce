@@ -1099,6 +1099,10 @@ install's SMS provider, unless the person works in the store the request reached
 and no other: a store's provider account is its owner's to read, and the code
 opens every store the person works in.
 
+A team member can be added by phone number instead of email: the Invite box takes
+either. Nothing is sent. When that number signs in, with an account or not, the panel
+asks them to join the store, and they are added if they accept (D205).
+
 `gocommerce superuser phone <email or old phone> <new phone>` is what support runs
 for someone who lost their SIM: it moves them to the new number and signs them
 out everywhere (D197).

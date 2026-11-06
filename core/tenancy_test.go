@@ -65,7 +65,7 @@ func TestAnOperatorsRoleLivesOnTheirMembership(t *testing.T) {
 // a table added later without a policy fails here.
 func storeTables(t *testing.T, app *App) []string {
 	t.Helper()
-	global := map[string]bool{"stores": true, "store_domains": true, "store_members": true,
+	global := map[string]bool{"stores": true, "store_domains": true, "store_members": true, "store_phone_invitations": true,
 		"store_counters": true, "api_key_index": true, "superusers": true,
 		"superuser_sessions": true, "superuser_password_resets": true, "superuser_login_codes": true, "gocommerce_migrations": true,
 		// Which store a reports connection runs for, by backend pid. It is how

@@ -287,7 +287,7 @@ func (s *Superusers) deliverLoginCode(reqCtx context.Context, phone, code string
 			case err != nil:
 				s.app.log.Error("sign-in code not sent: could not look the phone up", "error", err)
 				return
-			case su == nil && !s.app.signupOpen(detached):
+			case su == nil && !s.app.signupOpen(detached) && !s.invitedPhone(detached, phone):
 				return
 			case su != nil && su.disabled:
 				return
@@ -321,6 +321,15 @@ func (s *Superusers) deliverLoginCode(reqCtx context.Context, phone, code string
 			s.app.log.Error("sign-in code could not be sent", "to", maskAddress(phone), "error", reason)
 		}
 	}()
+}
+
+// invitedPhone is whether a store is waiting on phone (D205), which lets a new
+// person in where sign-up is closed: otherwise they could never answer.
+func (s *Superusers) invitedPhone(ctx context.Context, phone string) bool {
+	var yes bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM store_phone_invitations WHERE phone = $1 AND expires_at > now())`, phone).Scan(&yes)
+	return err == nil && yes
 }
 
 // personOnPhone is the person who signs in with phone, or nil.
@@ -360,7 +369,7 @@ func (s *Superusers) VerifyPhoneCode(ctx context.Context, phone, code string) (*
 	}
 	created := false
 	if su == nil {
-		if !s.app.signupOpen(ctx) {
+		if !s.app.signupOpen(ctx) && !s.invitedPhone(ctx, phone) {
 			return nil, nil, false, wrongPhoneCode()
 		}
 		if su, err = s.signUpPhone(ctx, phone); err != nil {

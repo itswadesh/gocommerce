@@ -422,3 +422,109 @@ func TestAnInvitationLinkOpensTheAdminAuthScreen(t *testing.T) {
 		t.Errorf("accept url = %q, want %q", got, want)
 	}
 }
+
+// A phone invitation has no link. The person signs in with their number, is
+// asked, and joins only by saying yes (D205).
+func TestPhoneInvitationIsAnsweredAtSignIn(t *testing.T) {
+	sms, mail := &smsStub{}, &recordingNotifier{}
+	app := newApp(t, signupConfig(t), &notifyModule{rec: mail}, sms)
+	newSuperuser(t, app, "owner@example.com", "the owner's password")
+	ctx := context.Background()
+
+	inv, err := app.Team().InvitePhone(ctx, "+91 98765 00011", RoleStaff, nil)
+	if err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	if inv.Phone != "+919876500011" || inv.Status != InvitationPending || inv.Token != "" || inv.Email != "" {
+		t.Fatalf("invitation = %+v", inv)
+	}
+	if _, err := app.Team().InvitePhone(ctx, "+919876500011", RoleManager, nil); err != nil {
+		t.Fatalf("invite again: %v", err)
+	}
+
+	signIn := func(phone string) func(*http.Request) {
+		t.Helper()
+		mustAsk(t, app, phone)
+		var out authResponse
+		decodeData(t, sendPhoneCode(t, app, phone, sms.lastCode(t, app, phone)), &out)
+		return bearer(out.Token)
+	}
+	stores := func(token func(*http.Request)) []MyStore {
+		t.Helper()
+		var mine []MyStore
+		decodeData(t, do(t, app, http.MethodGet, "/api/stores/my", token), &mine)
+		return mine
+	}
+	waiting := func(token func(*http.Request)) []PhoneInvitation {
+		t.Helper()
+		var list []PhoneInvitation
+		decodeData(t, do(t, app, http.MethodGet, "/api/stores/invitations", token), &list)
+		return list
+	}
+	answer := func(token func(*http.Request), who PhoneInvitation, accept bool) int {
+		t.Helper()
+		return do(t, app, http.MethodPost, "/api/stores/invitations/answer", token, jsonBody(t, map[string]any{
+			"store_id": who.StoreID, "id": who.ID, "accept": accept})).Code
+	}
+
+	// Somebody else's number sees nothing, and cannot answer for them.
+	stranger := signIn("+919876500022")
+	if got := waiting(stranger); len(got) != 0 {
+		t.Errorf("a stranger sees %+v", got)
+	}
+
+	asha := signIn("+919876500011")
+	list := waiting(asha)
+	if len(list) != 1 || list[0].Role != RoleManager {
+		t.Fatalf("waiting = %+v, want the one latest invitation", list)
+	}
+	if got := stores(asha); len(got) != 0 {
+		t.Fatalf("joined before saying yes: %+v", got)
+	}
+	if code := answer(stranger, list[0], true); code != http.StatusNotFound {
+		t.Errorf("a stranger answering = %d, want 404", code)
+	}
+	if got := stores(stranger); len(got) != 0 {
+		t.Errorf("a stranger joined: %+v", got)
+	}
+
+	if code := answer(asha, list[0], true); code != http.StatusNoContent {
+		t.Fatalf("accept = %d", code)
+	}
+	if got := stores(asha); len(got) != 1 || got[0].ID != list[0].StoreID || got[0].Role != RoleManager {
+		t.Fatalf("stores after yes = %+v", got)
+	}
+	if got := waiting(asha); len(got) != 0 {
+		t.Errorf("still asked after yes: %+v", got)
+	}
+	if code := answer(asha, list[0], true); code == http.StatusNoContent {
+		t.Errorf("accepted twice")
+	}
+
+	// No keeps them out and stops the asking.
+	if _, err := app.Team().InvitePhone(ctx, "+919876500022", RoleStaff, nil); err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	list = waiting(stranger)
+	if len(list) != 1 {
+		t.Fatalf("waiting = %+v", list)
+	}
+	if code := answer(stranger, list[0], false); code != http.StatusNoContent {
+		t.Fatalf("decline = %d", code)
+	}
+	if len(waiting(stranger)) != 0 || len(stores(stranger)) != 0 {
+		t.Errorf("after no: waiting %+v, stores %+v", waiting(stranger), stores(stranger))
+	}
+
+	// A withdrawn invitation stops asking, too.
+	withdrawn, err := app.Team().InvitePhone(ctx, "+919876500033", RoleStaff, nil)
+	if err != nil {
+		t.Fatalf("invite: %v", err)
+	}
+	if err := app.Team().Revoke(ctx, withdrawn.ID); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if got := waiting(signIn("+919876500033")); len(got) != 0 {
+		t.Errorf("a withdrawn invitation still asks: %+v", got)
+	}
+}
