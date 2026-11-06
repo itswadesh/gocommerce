@@ -418,6 +418,10 @@ export const stores = {
         });
     },
     /** remove deletes a store for good; confirm is its slug, typed back. */
+    /** deletePreview counts what deleting a store would remove. */
+    async deletePreview(storeID) {
+        return await api.get("/api/stores/delete-preview" + query({ store_id: storeID }));
+    },
     async remove(storeID, confirm) {
         return await api.post("/api/stores/delete", { store_id: storeID, confirm });
     },

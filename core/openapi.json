@@ -16659,6 +16659,60 @@
         }
       }
     },
+    "/api/stores/delete-preview": {
+      "get": {
+        "tags": [
+          "stores"
+        ],
+        "summary": "Count what deleting a store would remove",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "description": "For the store's owner, under the same rules as POST /api/stores/delete. Deletes nothing. The counts are the things an owner would recognise; a delete removes everything else the store holds too.",
+        "parameters": [
+          {
+            "name": "store_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "products": { "type": "integer" },
+                        "orders": { "type": "integer" },
+                        "customers": { "type": "integer" },
+                        "collections": { "type": "integer" },
+                        "categories": { "type": "integer" },
+                        "discounts": { "type": "integer" },
+                        "files": { "type": "integer" },
+                        "file_bytes": { "type": "integer" },
+                        "domains": { "type": "integer" },
+                        "team": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "No valid credential." },
+          "403": { "description": "The caller may not delete this store." },
+          "409": { "description": "It is the install's only store." }
+        }
+      }
+    },
     "/api/stores/directory/allowed": {
       "get": {
         "tags": [

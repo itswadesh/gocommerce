@@ -45,6 +45,7 @@ func (a *App) mountStoreRoutes() {
 	a.Handle("POST /api/stores/create", a.personAuth(http.HandlerFunc(a.handleCreateStore)))
 	a.Handle("GET /api/stores/suggest", a.personAuth(http.HandlerFunc(a.handleSuggestStoreName)))
 	a.Handle("POST /api/stores/delete", a.personAuth(http.HandlerFunc(a.handleDeleteStore)))
+	a.Handle("GET /api/stores/delete-preview", a.personAuth(http.HandlerFunc(a.handleStoreDeletePreview)))
 	a.Handle("GET /api/stores/invitations", a.personAuth(http.HandlerFunc(a.handleMyInvitations)))
 	a.Handle("POST /api/stores/invitations/answer", a.personAuth(http.HandlerFunc(a.handleAnswerInvitation)))
 	a.Handle("GET /api/stores/directory", a.personAuth(http.HandlerFunc(a.handleStoreDirectory)))
@@ -343,41 +344,13 @@ func (a *App) handleDeleteStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	mine, err := a.myStores(ctx)
+	hit, err := a.deletableStore(ctx, in.StoreID)
 	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	want := strings.ToLower(strings.TrimSpace(in.StoreID))
-	var hit *MyStore
-	for i := range mine {
-		if strings.EqualFold(mine[i].ID, want) || mine[i].Slug == want {
-			hit = &mine[i]
-			break
-		}
-	}
-	switch {
-	case hit == nil:
-		RespondError(w, r, ErrNotAMember)
-		return
-	case hit.Role != RoleOwner:
-		RespondError(w, r, Forbiddenf("only an owner of %s can delete it", hit.Slug))
-		return
-	case hit.Demo || a.cfg.Demo:
-		RespondError(w, r, &APIError{Status: http.StatusForbidden, Code: "demo_frozen",
-			Message: "a demo store cannot be deleted from its panel; use the command line"})
-		return
-	case strings.TrimSpace(in.Confirm) != hit.Slug:
+	if strings.TrimSpace(in.Confirm) != hit.Slug {
 		RespondError(w, r, Validationf("type the store's address name, %q, to confirm", hit.Slug))
-		return
-	}
-	n, err := a.stores.Count(ctx)
-	if err != nil {
-		RespondError(w, r, err)
-		return
-	}
-	if n <= 1 {
-		RespondError(w, r, Conflictf("this is the install's only store, and the engine needs one"))
 		return
 	}
 	if err := a.stores.Delete(ctx, hit.ID); err != nil {
@@ -389,6 +362,84 @@ func (a *App) handleDeleteStore(w http.ResponseWriter, r *http.Request) {
 		a.clearStoreCookie(w, r)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// deletableStore is the named store, if the caller may delete it. The preview
+// asks the same as the delete, so it never lists what the caller could not remove.
+func (a *App) deletableStore(ctx context.Context, ref string) (*MyStore, error) {
+	mine, err := a.myStores(ctx)
+	if err != nil {
+		return nil, err
+	}
+	want := strings.ToLower(strings.TrimSpace(ref))
+	var hit *MyStore
+	for i := range mine {
+		if strings.EqualFold(mine[i].ID, want) || mine[i].Slug == want {
+			hit = &mine[i]
+			break
+		}
+	}
+	switch {
+	case hit == nil:
+		return nil, ErrNotAMember
+	case hit.Role != RoleOwner:
+		return nil, Forbiddenf("only an owner of %s can delete it", hit.Slug)
+	case hit.Demo || a.cfg.Demo:
+		return nil, &APIError{Status: http.StatusForbidden, Code: "demo_frozen",
+			Message: "a demo store cannot be deleted from its panel; use the command line"}
+	}
+	n, err := a.stores.Count(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n <= 1 {
+		return nil, Conflictf("this is the install's only store, and the engine needs one")
+	}
+	return hit, nil
+}
+
+// StoreDeletePreview counts what deleting a store removes, for the owner to read
+// first. It does not try to list every table, because a cascade reaches them all
+// and the screen says so; these are the ones an owner would recognise. Customers
+// are counted as the Customers screen counts them.
+type StoreDeletePreview struct {
+	Products    int   `json:"products"`
+	Orders      int   `json:"orders"`
+	Customers   int   `json:"customers"`
+	Collections int   `json:"collections"`
+	Categories  int   `json:"categories"`
+	Discounts   int   `json:"discounts"`
+	Files       int   `json:"files"`
+	FileBytes   int64 `json:"file_bytes"`
+	Domains     int   `json:"domains"`
+	Team        int   `json:"team"`
+}
+
+func (a *App) handleStoreDeletePreview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	hit, err := a.deletableStore(ctx, r.URL.Query().Get("store_id"))
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	var out StoreDeletePreview
+	if err := a.db.QueryRowContext(WithStore(ctx, hit.ID), `SELECT
+		(SELECT count(*) FROM products),
+		(SELECT count(*) FROM orders),
+		(SELECT count(DISTINCT lower(email)) FROM orders WHERE email <> ''),
+		(SELECT count(*) FROM collections),
+		(SELECT count(*) FROM categories),
+		(SELECT count(*) FROM discounts),
+		(SELECT count(*) FROM media),
+		(SELECT coalesce(sum(size_bytes), 0) FROM media),
+		(SELECT count(*) FROM store_domains WHERE store_id = $1),
+		(SELECT count(*) FROM store_members WHERE store_id = $1)`, hit.ID).Scan(
+		&out.Products, &out.Orders, &out.Customers, &out.Collections, &out.Categories,
+		&out.Discounts, &out.Files, &out.FileBytes, &out.Domains, &out.Team); err != nil {
+		RespondError(w, r, Internalf(err, "count what the store holds"))
+		return
+	}
+	Respond(w, http.StatusOK, out)
 }
 
 func (a *App) enterStore(ctx context.Context, id string) (*storeEntry, error) {

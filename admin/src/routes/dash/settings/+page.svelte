@@ -28,6 +28,7 @@
     import { forgetStore } from "$lib/store-scope.js";
     import { goto } from "$app/navigation";
 
+    import StoreDeleteDialog from "$lib/components/StoreDeleteDialog.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
     import CustomerSignInCard from "$lib/components/CustomerSignInCard.svelte";
     import FeatureSwitch from "$lib/components/FeatureSwitch.svelte";
@@ -52,22 +53,15 @@
     const mayDelete = $derived(
         !!here && here.role === "owner" && !here.demo && myStores.list.length > 1,
     );
-    let confirmSlug = $state("");
-    let deleting = $state(false);
-    async function deleteStore() {
-        if (!here || deleting || confirmSlug.trim() !== here.slug) return;
-        deleting = true;
-        try {
-            await storesAPI.remove(here.id, confirmSlug.trim());
-            toast.success(`${here.name} was deleted`);
-            forgetStore();
-            forgetStores();
-            await goto(`${base}/select-store`, { replaceState: true });
-        } catch (err) {
-            toast.error(err);
-        } finally {
-            deleting = false;
-        }
+    let deleteOpen = $state(false);
+    // An error goes back to the dialog, which shows it beside the button.
+    async function deleteStore(typed) {
+        const { id, name } = here;
+        await storesAPI.remove(id, typed);
+        toast.success(`${name} was deleted`);
+        forgetStore();
+        forgetStores();
+        await goto(`${base}/select-store`, { replaceState: true });
     }
 
     const store = $derived(settings.all);
@@ -887,31 +881,16 @@
                         </summary>
                         <div class="map-fold-body store-delete">
                             <p class="field-help m-b-sm">
-                                Deletes {here.name} and everything in it — products, orders, customers,
-                                settings — for good. Nobody can undo it. Your other stores are not touched.
+                                Deletes {here.name} and everything in it for good. You will see exactly what
+                                goes before anything happens.
                             </p>
-                            <div class="field">
-                                <label for="delete-confirm">Type <code>{here.slug}</code> to confirm</label>
-                                <input
-                                    id="delete-confirm"
-                                    type="text"
-                                    autocomplete="off"
-                                    spellcheck="false"
-                                    bind:value={confirmSlug}
-                                />
-                            </div>
-                            <button
-                                type="button"
-                                class="btn danger m-t-sm"
-                                class:loading={deleting}
-                                disabled={deleting || confirmSlug.trim() !== here.slug}
-                                onclick={deleteStore}
-                            >
+                            <button type="button" class="btn danger" onclick={() => (deleteOpen = true)}>
                                 <i class="ri-delete-bin-line" aria-hidden="true"></i>
                                 <span class="txt">Delete this store</span>
                             </button>
                         </div>
                     </details>
+                    <StoreDeleteDialog bind:open={deleteOpen} store={here} ondelete={deleteStore} />
                 {/if}
             {/if}
         </div>
