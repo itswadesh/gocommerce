@@ -45,6 +45,8 @@ const (
 	loginCodeGap      = time.Minute
 	loginCodeDaily    = 5
 	loginCodeSendWait = 30 * time.Second
+	// As an operator's (core's phoneCodesPerClientHr).
+	loginCodesPerClientHr = 20
 )
 
 type signInSettings struct {
@@ -516,6 +518,23 @@ func loginCodeHash(phone, code string) string {
 	return hashToken("login:" + phone + ":" + code)
 }
 
+// clientMayAsk charges the caller's address for a code and answers 429 when it has
+// asked for too many. A number that will be refused costs nothing, as it sends
+// nothing. Behind a server that is not a trusted proxy every shopper is that
+// server, so the log says what to set.
+func (m *Module) clientMayAsk(w http.ResponseWriter, r *http.Request, phone string) bool {
+	if _, err := normalizePhone(phone); err != nil {
+		return true
+	}
+	if _, ok := m.otpClients.Take(clientIP(r)); ok {
+		return true
+	}
+	m.app.Log().Warn("sign-in code refused: one client address asked for too many; if that address is your storefront's server, name it in GOCOMMERCE_TRUSTED_PROXIES")
+	gocommerce.RespondError(w, r, &gocommerce.APIError{Status: http.StatusTooManyRequests, Code: "too_many_requests",
+		Message: "Too many codes asked for from here. Try again in an hour, or sign in with your email."})
+	return false
+}
+
 // waitForSends waits for the codes in flight, up to max.
 func (m *Module) waitForSends(max time.Duration) {
 	done := make(chan struct{})
@@ -538,6 +557,9 @@ func (m *Module) handleRequestPhoneCode(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if !m.clientMayAsk(w, r, in.Phone) {
 		return
 	}
 	if err := m.RequestPhoneCodeOn(r.Context(), in.Phone, in.Domain); err != nil {
@@ -592,6 +614,9 @@ func (m *Module) handleRequestPhoneLink(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if !m.clientMayAsk(w, r, in.Phone) {
 		return
 	}
 	if err := m.RequestPhoneLink(r.Context(), in.Phone); err != nil {

@@ -244,14 +244,14 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 		return ResetRequest{}, Internalf(err, "look up superuser")
 	}
 
-	token, code, err := s.issueReset(ctx, id, true)
+	token, code, err := s.issueReset(ctx, id, email, true)
 	if errors.Is(err, errResetCapped) {
 		return s.accepted(delivery, s.app.Brand(ctx)), nil
 	}
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code, s.app.personMailBrand(ctx, id))
+	s.deliverReset(ctx, email, token, code, s.app.personMailBrand(ctx, id))
 	return s.accepted(delivery, s.app.Brand(ctx)), nil
 }
 
@@ -260,13 +260,14 @@ func (s *Superusers) RequestReset(ctx context.Context, email, clientIP string) (
 // about who has one. SMS is asked per event because MSG91 texts only what it has
 // a DLT template for.
 func (s *Superusers) resetDelivery(ctx context.Context, to string) string {
+	scope := s.identityMailScope(ctx)
 	if strings.Contains(to, "@") {
-		if s.app.notifier.delivers(ctx, ChannelEmail) {
+		if s.app.notifier.delivers(scope, ChannelEmail) {
 			return DeliveryEmail
 		}
 		return DeliveryNone
 	}
-	if s.app.notifier.carries(ctx, Notification{Event: EventSuperuserPasswordReset, Channel: ChannelSMS, To: to}) {
+	if s.app.notifier.carries(scope, Notification{Event: EventSuperuserPasswordReset, Channel: ChannelSMS, To: to}) {
 		return DeliverySMS
 	}
 	return DeliveryNone
@@ -287,7 +288,7 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 	// Only this store's staff: one store's team screen has no business mailing
 	// links to people who work only elsewhere.
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COALESCE(email, phone) FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&email)
+		`SELECT coalesce(email, '') FROM superusers WHERE id = $1 AND `+memberHere, id).Scan(&email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ResetRequest{}, NotFoundf("superuser %d not found", id)
 	}
@@ -306,11 +307,11 @@ func (s *Superusers) RequestResetFor(ctx context.Context, id int64) (ResetReques
 		return s.accepted(DeliveryNone, brand), nil
 	}
 
-	token, code, err := s.issueReset(ctx, id, false)
+	token, code, err := s.issueReset(ctx, id, email, false)
 	if err != nil {
 		return ResetRequest{}, err
 	}
-	s.deliverReset(ctx, id, email, token, code, brand)
+	s.deliverReset(ctx, email, token, code, brand)
 	return s.accepted(delivery, brand), nil
 }
 
@@ -346,6 +347,12 @@ func (s *Superusers) LookupReset(ctx context.Context, token, clientIP string) (*
 // every other link and code that operator holds dropped, and a fresh session
 // handed back. A code is first turned into the token of the row it opens, so
 // from there both kinds take the same path.
+//
+// A reset also ends the account's other way in, because nothing proves who put
+// it there and a stranger's must not survive the real owner coming back (D210).
+// By email: the phone goes, and its owner adds it again with a code. By text: the
+// number is proved by this, and an email on it goes if the number was not proved
+// until now, as the first sign-in code does (claimPhoneAccount).
 //
 // It is one transaction, and the password is validated and hashed before that
 // transaction opens. Both matter. A two-transaction shape — claim the token,
@@ -425,8 +432,13 @@ func (s *Superusers) ConfirmReset(ctx context.Context, proof ResetProof, passwor
 
 		// scanSuperuser rather than the resolving scan: this is inside a
 		// transaction, and that one would take a second pool connection.
+		other := `phone = NULL, phone_proved_at = NULL`
+		if proof.Code != "" && !isEmailAddress(proof.Email) {
+			other = `email = CASE WHEN phone_proved_at IS NULL THEN NULL ELSE email END,
+				phone_proved_at = coalesce(phone_proved_at, now())`
+		}
 		row := tx.QueryRowContext(ctx, `
-			UPDATE superusers SET password_hash = $2, updated_at = now()
+			UPDATE superusers SET password_hash = $2, updated_at = now(), `+other+`
 			WHERE id = $1 RETURNING `+superuserColumns, superuserID, hash)
 		if su, err = scanSuperuser(row); err != nil {
 			return Internalf(err, "update superuser")
@@ -487,7 +499,7 @@ func (s *Superusers) tryResetCode(ctx context.Context, email, code string) (stri
 			  AND expires_at > now() AND attempts < $3
 			RETURNING token_hash, code_hash)
 		SELECT token_hash FROM tried WHERE code_hash = $2`,
-		id, resetCodeHash(id, code), resetCodeAttempts).Scan(&tokenHash)
+		id, sentCodeHash(id, email, code), resetCodeAttempts).Scan(&tokenHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -499,8 +511,9 @@ func (s *Superusers) tryResetCode(ctx context.Context, email, code string) (stri
 
 // issueReset writes one row and returns the only copies of its token and code
 // that will ever exist. capped is the public route's: an operator already at
-// either cap gets no row, and errResetCapped.
-func (s *Superusers) issueReset(ctx context.Context, superuserID int64, capped bool) (token, code string, err error) {
+// either cap gets no row, and errResetCapped. A text the public route sends also
+// counts toward the install's day of texted codes.
+func (s *Superusers) issueReset(ctx context.Context, superuserID int64, to string, capped bool) (token, code string, err error) {
 	if token, err = newSessionToken(); err != nil {
 		return "", "", Internalf(err, "generate password reset token")
 	}
@@ -526,11 +539,28 @@ func (s *Superusers) issueReset(ctx context.Context, superuserID int64, capped b
 			if live >= resetCodesLive || today >= resetCodesDaily {
 				return errResetCapped
 			}
+			if !isEmailAddress(to) {
+				if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('superuser_login_codes'), hashtext('install'))`); err != nil {
+					return Internalf(err, "lock sign-in codes")
+				}
+				if full, err := s.smsDayIsFull(ctx, tx); err != nil {
+					return err
+				} else if full {
+					return errResetCapped
+				}
+				// A row only to be counted: spent from the start, and holding no
+				// number, so it charges no phone's own limits.
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO superuser_login_codes (identity, code_hash, client_hash, expires_at, consumed_at)
+					VALUES ('password-reset', '', '', now(), now())`); err != nil {
+					return Internalf(err, "count texted reset")
+				}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO superuser_password_resets (token_hash, code_hash, superuser_id, expires_at)
 			VALUES ($1, $2, $3, $4)`,
-			hashToken(token), resetCodeHash(superuserID, code), superuserID,
+			hashToken(token), sentCodeHash(superuserID, to, code), superuserID,
 			time.Now().Add(passwordResetTTL)); err != nil {
 			return Internalf(err, "store password reset")
 		}
@@ -560,6 +590,16 @@ func newResetCode() (string, error) {
 // same six digits: a code is only ever looked up with the address it went to.
 func resetCodeHash(superuserID int64, code string) string {
 	return hashToken(fmt.Sprintf("%d:%s", superuserID, code))
+}
+
+// sentCodeHash keys a code to where it was sent as well, so a code that went to
+// the account's email cannot be spent naming its phone: that would prove a number
+// nobody had a text on (ConfirmReset).
+func sentCodeHash(superuserID int64, to, code string) string {
+	if isEmailAddress(to) {
+		return resetCodeHash(superuserID, code)
+	}
+	return resetCodeHash(superuserID, "sms:"+code)
 }
 
 // resetURL is where the link points: the panel URL of a configured brand, and
@@ -596,8 +636,8 @@ func resetURL(b Brand, token string) string {
 //
 // A failure is logged and never returned. The row is written and the operator
 // can ask again; what must not happen is a 500 that says the address exists.
-func (s *Superusers) deliverReset(reqCtx context.Context, id int64, email, token, code string, brand Brand) {
-	sendCtx := s.identityMailScope(reqCtx, id)
+func (s *Superusers) deliverReset(reqCtx context.Context, email, token, code string, brand Brand) {
+	sendCtx := s.identityMailScope(reqCtx)
 	data := map[string]string{
 		// Deliberately not customer_email or customer_name: the recipient is an
 		// operator, and reusing the order vocabulary would let an order
@@ -666,18 +706,24 @@ func (s *Superusers) waitForResetDelivery(max time.Duration) {
 // read.
 const installScope = "install"
 
-// identityMailScope is the store an email carrying a credential for person id
-// may go out under. A reset link is good for every store the person works in,
-// and a store's template and provider account are its owner's to edit and
-// read, so the store the request came through may carry it only when that is
-// the person's one store — its owner can already do anything there. Anyone
-// else's goes by the install's own channel.
-func (s *Superusers) identityMailScope(reqCtx context.Context, id int64) context.Context {
+// identityMailScope is the channel a code or link that opens an account may go
+// out on. A store's template and provider account are its staff's to edit and
+// read, whoever the person is, so it is always the install's own (D210).
+//
+// The one exception is an install that hosts nobody else: closed to sign-ups,
+// with one store. There the store's settings are the install's, and they are the
+// only ones a self-hosted shop that set its provider up in the panel has.
+//
+// ponytail: on that install, staff given the right to edit a provider can still
+// read the owner's code; a separate install-level provider screen would end it.
+func (s *Superusers) identityMailScope(reqCtx context.Context) context.Context {
 	detached := context.WithoutCancel(reqCtx)
-	here := s.app.storeOf(reqCtx)
-	ms, err := s.app.stores.MembershipsOf(reqCtx, id)
-	if err == nil && here != "" && len(ms) == 1 && ms[0].StoreID == here {
-		return WithStore(detached, here)
+	if !s.app.cfg.Signup {
+		var only string
+		if err := s.db.QueryRowContext(detached, `
+			SELECT min(id) FROM stores HAVING count(*) = 1`).Scan(&only); err == nil {
+			return WithStore(detached, only)
+		}
 	}
 	return WithStore(detached, installScope)
 }

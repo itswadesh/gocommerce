@@ -181,7 +181,7 @@ environment:
   GOCOMMERCE_SIGNUP same as -signup. Off when unset, empty, "0", "false", "no"
                     or "off"; any other value is on
   GOCOMMERCE_SMS_CODES_PER_DAY
-                    the sign-in codes texted in 24 hours, to operators in total
+                    the codes texted in 24 hours, to operators in total
                     and to each store's shoppers in total; unset, 500
   RETAIL_ASSISTANT_APP_SECRET, RETAIL_ASSISTANT_VERIFY_TOKEN,
   RETAIL_ASSISTANT_ACCESS_TOKEN, RETAIL_ASSISTANT_PHONE_NUMBER_ID,

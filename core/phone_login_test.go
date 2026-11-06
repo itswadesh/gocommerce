@@ -100,7 +100,7 @@ func phoneCodeSignupApp(t *testing.T) (*App, *smsStub) {
 // withPhone gives an operator a phone, as a proved code would.
 func withPhone(t *testing.T, app *App, su *Superuser, phone string) {
 	t.Helper()
-	if _, err := app.superusers.writeOwnPhone(context.Background(), su.ID, phone, "test"); err != nil {
+	if _, err := app.superusers.writeOwnPhone(context.Background(), su.ID, phone, "test", ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -347,7 +347,7 @@ func TestWrongCodesAtOnceGetOnlyFiveTries(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = app.superusers.spendLoginCode(context.Background(), knownPhone, otherCode(code))
+			_, _ = app.superusers.spendLoginCode(context.Background(), knownPhone, otherCode(code), phoneCodeHash)
 		}()
 	}
 	wg.Wait()
@@ -654,9 +654,9 @@ func TestADisabledPhoneCannotSignUpAgain(t *testing.T) {
 	}
 }
 
-// A store's provider account is its owner's to read, and this code opens every
-// store the person works in. So the code goes on the store's channel only for
-// somebody who works in that store alone.
+// A store's provider account is its staff's to read, and this code opens an
+// account. So on an install that hosts several stores no code goes on a store's
+// channel, whoever the person is (D210).
 func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 	sms := &smsStub{}
 	app := newApp(t, signupConfig(t), &notifyModule{rec: &recordingNotifier{}}, sms)
@@ -683,7 +683,7 @@ func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 		name, phone, via, want string
 	}{
 		{"someone of another store only", "+919876500011", b, installScope},
-		{"someone of this store only", "+919876500012", b, b},
+		{"someone of this store only", "+919876500012", b, installScope},
 		{"someone of two stores", "+919876500013", b, installScope},
 		{"someone of two stores, through the other", "+919876500013", first, installScope},
 		{"a new person", "+919876500014", b, installScope},
@@ -704,25 +704,16 @@ func TestACodeNeverTravelsThroughAnotherStoresChannel(t *testing.T) {
 	// On the install's channel the send leaves no row in any store's log.
 	var rows int
 	if err := app.db.QueryRowContext(ctxB,
-		`SELECT count(*) FROM notifications WHERE recipient = '+919876500011'`).Scan(&rows); err != nil {
+		`SELECT count(*) FROM notifications WHERE recipient IN ('+919876500011', '+919876500012')`).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 0 {
-		t.Fatalf("store B's log holds %d rows about store A's owner", rows)
-	}
-	// On a store's own, its log hides the code.
-	var data string
-	if err := app.db.QueryRowContext(ctxB,
-		`SELECT data::text FROM notifications WHERE recipient = '+919876500012'`).Scan(&data); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(data, "hidden") {
-		t.Fatalf("the store's log shows the code: %s", data)
+		t.Fatalf("store B's log holds %d rows about sign-in codes", rows)
 	}
 }
 
-// A store with SMS of its own and an install with none: the store's only member
-// can use it, and nobody else's code goes out on it.
+// A store with SMS of its own and an install with none, on an install hosting
+// several: no code goes out on it, and no phone is offered.
 func TestAnInstallWithNoSMSOfItsOwnSendsNothingForAnotherStoresPeople(t *testing.T) {
 	sms := &smsStub{}
 	app := newTestApp(t, sms)
@@ -733,13 +724,15 @@ func TestAnInstallWithNoSMSOfItsOwnSendsNothingForAnotherStoresPeople(t *testing
 	}
 	newSuperuser(t, app, "owner-a@example.com", "a-long-enough-password")
 	withPhone(t, app, newSuperuser(t, app, "a@example.com", "a-long-enough-password"), knownPhone)
-	mustAsk(t, app, knownPhone, header("X-Store", b))
+	if rec := askPhoneCode(t, app, knownPhone, header("X-Store", b)); rec.Code != http.StatusConflict {
+		t.Fatalf("asking = %d, want 409: %s", rec.Code, rec.Body)
+	}
 	app.superusers.waitForResetDelivery(5 * time.Second)
 	if n := len(sms.notes()); n != 0 {
-		t.Fatalf("%d texts went out on the store's channel for somebody of another store", n)
+		t.Fatalf("%d texts went out on the store's channel", n)
 	}
-	if !phoneState(t, app, header("X-Store", b))["phone_login"] {
-		t.Error("the store with SMS does not offer a phone")
+	if phoneState(t, app, header("X-Store", b))["phone_login"] {
+		t.Error("a phone is offered with no install channel to text it on")
 	}
 	if phoneState(t, app, header("X-Store", b))["phone_signup"] {
 		t.Error("a phone sign-up is offered with no install channel to text a new person on")

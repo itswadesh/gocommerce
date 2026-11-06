@@ -240,7 +240,7 @@ func (a *App) checkAdminAccess(ctx context.Context) Diagnostic {
 	// them, and both of these configurations look healthy from every other angle.
 	if d.Status == StatusOK {
 		switch {
-		case !a.notifier.delivers(ctx, ChannelEmail):
+		case !a.notifier.delivers(a.superusers.identityMailScope(ctx), ChannelEmail):
 			d.Status = StatusWarn
 			d.Detail += "; no email delivery, so a locked-out operator cannot reset their own password"
 			d.Hint = "register an email notifier (ext/notify-sendgrid) and set Config.PanelURL, " +

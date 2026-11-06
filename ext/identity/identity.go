@@ -207,6 +207,10 @@ type Module struct {
 	app      *gocommerce.App
 	db       *sql.DB
 	throttle *loginThrottle
+	// otpClients rations the sign-in codes one client address asks for, across
+	// every store. ponytail: per replica, as throttle is; a table if the install
+	// ever runs several.
+	otpClients *gocommerce.ClientLimit
 	// sends tracks the sign-in codes being delivered, so tests and shutdown
 	// can wait for them.
 	sends sync.WaitGroup
@@ -223,7 +227,8 @@ func New(cfg Config) *Module {
 	if cfg.VerifyTTL <= 0 {
 		cfg.VerifyTTL = defaultVerifyTTL
 	}
-	return &Module{cfg: cfg, throttle: newLoginThrottle()}
+	return &Module{cfg: cfg, throttle: newLoginThrottle(),
+		otpClients: gocommerce.NewClientLimit(loginCodesPerClientHr, time.Hour)}
 }
 
 // Name implements gocommerce.Module.
