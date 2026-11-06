@@ -19,13 +19,15 @@
     let failed = $state("");
     let list = $state([]);
     let apexOnly = $state(false);
+    let verifiedOnly = $state(false);
     /** The owner the email dialog is open for. */
     let writingTo = $state(null);
 
     // Every domain the store has, verified or not: one still being set up is
     // still the store's own (D225).
     const hasApex = (store) => isApexDomain(store.domain) || store.domains.some((d) => isApexDomain(d.host));
-    const shown = $derived(apexOnly ? list.filter(hasApex) : list);
+    const hasVerifiedEmail = (store) => store.owners.some((owner) => owner.email && owner.email_verified);
+    const shown = $derived(list.filter((store) => (!apexOnly || hasApex(store)) && (!verifiedOnly || hasVerifiedEmail(store))));
     // Domain is the address the shop answers on; the rest are worth showing too.
     const otherDomains = (store) => store.domains.filter((d) => d.host !== store.domain);
 
@@ -96,12 +98,26 @@
         {:else if !loading && list.length === 0}
             <EmptyState icon="ri-store-3-line" title="No stores yet" />
         {:else if list.length}
-            <div class="field apex-filter">
-                <input id="apex-only" type="checkbox" bind:checked={apexOnly} />
-                <label for="apex-only">Apex domains only</label>
+            <div class="store-filters">
+                <div class="field">
+                    <input id="apex-only" type="checkbox" bind:checked={apexOnly} />
+                    <label for="apex-only">Apex domains only</label>
+                </div>
+                <div class="field">
+                    <input id="verified-only" type="checkbox" bind:checked={verifiedOnly} />
+                    <label for="verified-only">Verified emails only</label>
+                </div>
             </div>
             {#if shown.length === 0}
-                <EmptyState icon="ri-filter-off-line" title="No stores on an apex domain" clearLabel="Show all stores" onclear={() => (apexOnly = false)} />
+                <EmptyState
+                    icon="ri-filter-off-line"
+                    title="No stores match these filters"
+                    clearLabel="Show all stores"
+                    onclear={() => {
+                        apexOnly = false;
+                        verifiedOnly = false;
+                    }}
+                />
             {:else}
             <div class="page-table-wrapper tw:rounded-xl tw:border" class:reloading={loading}>
                 <table class="table responsive-table">
@@ -213,8 +229,17 @@
     .verify {
         align-self: flex-start;
     }
-    .apex-filter {
+    .store-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 20px;
         margin-bottom: 12px;
+    }
+    /* A `.field` is a full-width block, which would stack these. */
+    .store-filters .field {
+        flex: 0 0 auto;
+        width: auto;
+        margin: 0;
     }
     .store-total {
         margin-left: 0.35em;
