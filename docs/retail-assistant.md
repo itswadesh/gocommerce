@@ -21,8 +21,7 @@ made-up documents, and not against Meta's real API or a real supplier's bills.
 | Tracks partial payments, advances, credit notes and reversals | Treat a payment screenshot as proof money moved |
 | Books goods into stock when somebody says they arrived | Move stock because a bill arrived |
 
-Also not built: barcode checkout, wholesale quotes, insights, WhatsApp sign-in,
-and bank reconciliation.
+Also not built: barcode checkout, wholesale quotes, and WhatsApp sign-in.
 
 ## Setting it up
 
@@ -161,6 +160,40 @@ does the same for one file, at any time.
 
 **Exports.** **Orders › Suppliers** downloads balances, bills, payments and credit
 notes as CSV for an accountant.
+
+## Matching a bank statement
+
+A screenshot does not prove money moved, and a bank statement does. Under **Orders ›
+Bank statement**, upload your statement as a CSV. If your bank only gives Excel, open
+it and save it as CSV. Money going out is listed, and each line suggests recorded
+payments of exactly that amount within a week of its date.
+
+- **This is it** ties the line to that payment, and verifies it if it was not.
+- **Record as paid to them** makes a verified payment from a line nobody recorded.
+- **Not a supplier payment** sets a line aside.
+- **Undo** puts a line back. A payment that match verified goes back to not verified,
+  unless money from it is allocated to a bill, in which case reverse that first.
+
+Uploading an overlapping statement adds only what is new. A row whose date or amount
+cannot be read is left out and counted, so check those against the file. The column
+names are a first guess at how Indian banks lay out a CSV, and have not met a real
+statement. One transfer that pays two recorded payments cannot be matched yet.
+
+## Shop insights
+
+**Orders › Shop insights** shows what you owe, what you bought and paid in 30 days, what
+needs doing, who is owed most, what is running low, and what has not sold in 90 days.
+Every figure comes from your records, and no AI is involved. Someone who may not read
+orders and inventory sees only the supplier figures.
+
+It says when it cannot know something. Until sales records reach back 90 days it will
+not call anything slow, because no sales recorded is not the same as no sales.
+
+**Send a morning summary** in the settings sends each phone taking confirmations what
+you owe and what is waiting, once a day around 8 in the morning, India time. Outside
+the 24-hour window it needs the template, and each one may cost a WhatsApp message.
+
+Asking questions in plain language on WhatsApp is not built.
 
 ## Who can do what
 

@@ -1142,6 +1142,252 @@
           }
         }
       }
+    },
+    "/api/admin/x/retailassistant/insights": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "What the shop's records say now",
+        "description": "Figures from the ledger and sales records, with no model involved. stock is null for someone without orders.read and inventory.read, and slow_withheld says why a slow list cannot be given. Needs retailassistant.read.",
+        "responses": {
+          "200": {
+            "description": "The figures"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-statements": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Import a bank statement",
+        "description": "The body is the CSV. Only money going out is kept, and an overlapping statement adds only what is new. Needs retailassistant.write.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many lines were added, were already here, or could not be read"
+          },
+          "400": {
+            "description": "This is not a bank statement"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines": {
+      "get": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Statement lines, and the payments each might be",
+        "description": "Suggestions match on exact amount within a week of the date. Needs retailassistant.read.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "unmatched",
+                "matched",
+                "ignored"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of lines"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/match": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Say which payment a line is",
+        "description": "The amounts must be equal. Verifies the payment if it was not. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "payment_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/record": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Make a verified payment from a line",
+        "description": "For a payment nobody recorded. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "supplier_id": {
+                    "type": "integer",
+                    "format": "int64"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/ignore": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Set a line aside as not a supplier payment",
+        "description": "Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/admin/x/retailassistant/bank-lines/{id}/undo": {
+      "post": {
+        "tags": [
+          "retail-assistant"
+        ],
+        "summary": "Put a line back",
+        "description": "A payment this match verified goes back to not verified, unless money from it is allocated. Needs retailassistant.write.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Done"
+          },
+          "404": {
+            "description": "No such line in this store"
+          },
+          "409": {
+            "description": "The line or payment cannot take this"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
     }
   }
 }

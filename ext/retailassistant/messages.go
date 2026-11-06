@@ -73,6 +73,10 @@ var phrases = map[string]map[string]string{
 		langEnglish: "You will get confirmations here again. Reply STOP to end them.",
 		langHindi:   "अब आपको यहाँ फिर से पुष्टि के संदेश आएँगे। बंद करने के लिए STOP भेजिए।",
 	},
+	"morning": {
+		langEnglish: "Good morning. You owe suppliers %s %s. Documents waiting for review: %s. Payments not verified: %s.",
+		langHindi:   "नमस्ते। आपको सप्लायरों को %s %s देना है। जाँच के लिए रुके दस्तावेज़: %s। जिन पेमेंट की जाँच बाकी है: %s।",
+	},
 	"language_set": {
 		langEnglish: "I will write to you in English now. Reply HINDI for Hindi.",
 		langHindi:   "अब मैं आपको हिंदी में लिखूँगा। अंग्रेज़ी के लिए ENGLISH भेजिए।",
