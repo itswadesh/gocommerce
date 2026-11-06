@@ -27,6 +27,9 @@ export const CREDIT_KINDS = [
     { value: "other", label: "Other" },
 ];
 
+/** What a model may be asked to read: spreadsheets are read exactly, without one. */
+export const aiReadable = (mimeType) => ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(mimeType);
+
 /** A figure that does not add up is the one thing a reviewer may wave through. */
 export const isMismatch = (message) => message.includes("add up");
 
