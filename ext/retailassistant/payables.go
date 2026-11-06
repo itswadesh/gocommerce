@@ -766,6 +766,86 @@ func (m *Module) handleReverseInvoice(w http.ResponseWriter, r *http.Request) {
 	gocommerce.Respond(w, http.StatusOK, map[string]bool{"reversed": true})
 }
 
+// PurchaseLine is one line of a posted bill and whether its goods were booked in.
+type PurchaseLine struct {
+	ID          int64   `json:"id"`
+	Description string  `json:"description"`
+	SKU         *string `json:"sku"`
+	Barcode     *string `json:"barcode"`
+	// Quantity is as the bill printed it, which need not be a whole number.
+	Quantity *string `json:"quantity"`
+	Unit     *string `json:"unit"`
+	// Receipt stays pending when the server died between recording it and moving
+	// stock, which a person has to check rather than repeat.
+	Receipt *LineReceipt `json:"receipt"`
+	// VariantID is the variant whose SKU is exactly the one on the line. It is a
+	// suggestion: the person receiving the goods still confirms it.
+	VariantID *int64 `json:"variant_id"`
+}
+
+// LineReceipt is what was booked in for a line.
+type LineReceipt struct {
+	VariantID  int64  `json:"variant_id"`
+	LocationID int64  `json:"location_id"`
+	Quantity   int    `json:"quantity"`
+	Status     string `json:"status"`
+}
+
+func (m *Module) handleInvoiceLines(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	var exists bool
+	if err := m.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM retailassistant_purchase_invoices WHERE id = $1)`, id).Scan(&exists); err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read an invoice"))
+		return
+	}
+	if !exists {
+		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no invoice %d", id))
+		return
+	}
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT l.id, l.description, l.sku, l.barcode, l.quantity, l.unit, x.variant_id, x.location_id, x.quantity, x.status
+		FROM retailassistant_purchase_lines l
+		LEFT JOIN retailassistant_stock_receipts x ON x.line_id = l.id
+		WHERE l.invoice_id = $1 ORDER BY l.id`, id)
+	if err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list invoice lines"))
+		return
+	}
+	defer rows.Close()
+	out := []PurchaseLine{}
+	for rows.Next() {
+		var l PurchaseLine
+		var variant, location sql.NullInt64
+		var quantity sql.NullInt32
+		var status sql.NullString
+		if err := rows.Scan(&l.ID, &l.Description, &l.SKU, &l.Barcode, &l.Quantity, &l.Unit, &variant, &location, &quantity, &status); err != nil {
+			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list invoice lines"))
+			return
+		}
+		if status.Valid {
+			l.Receipt = &LineReceipt{VariantID: variant.Int64, LocationID: location.Int64, Quantity: int(quantity.Int32), Status: status.String}
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list invoice lines"))
+		return
+	}
+	for i := range out {
+		if l := &out[i]; l.Receipt == nil && l.SKU != nil && *l.SKU != "" {
+			if v, err := m.app.Products().GetVariantBySKU(ctx, *l.SKU); err == nil {
+				l.VariantID = &v.ID
+			}
+		}
+	}
+	gocommerce.Respond(w, http.StatusOK, out)
+}
+
 // handleReceive books goods in. It is a separate act from the bill: a bill says
 // goods are owed, this says they are on the shelf.
 //

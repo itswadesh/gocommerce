@@ -4,13 +4,15 @@
      * outstanding is bills less credit notes less verified payments allocated.
      * The screen records and allocates; it never adds anything up itself.
      */
-    import { can, retailAssistant } from "$lib/api.js";
+    import { api, can, retailAssistant } from "$lib/api.js";
     import { hasModule, modulesKnown } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import { formatMoney, fromMinor, isValidMoney, toMinor } from "$lib/format.js";
-    import { CREDIT_KINDS, moneyNote, newKey } from "$lib/retail.js";
+    import { CREDIT_KINDS, moneyNote, newKey, wholeQuantity } from "$lib/retail.js";
     import { toast } from "$lib/toast.svelte.js";
+    import { rise } from "$lib/motion.js";
     import { titled } from "$lib/brand.svelte.js";
+    import VariantSearch from "$lib/components/VariantSearch.svelte";
     import Drawer from "$lib/components/Drawer.svelte";
     import EmptyState from "$lib/components/EmptyState.svelte";
     import ModuleMissing from "$lib/components/ModuleMissing.svelte";
@@ -86,7 +88,10 @@
         }
     }
 
-    const show = (row) => run(() => loadAccount(row));
+    const show = (row) => {
+        receiving = null;
+        return run(() => loadAccount(row));
+    };
     const openBills = $derived(bills.filter((b) => !b.reversed && b.remaining.amount_minor > 0));
     const usable = (e) => !e.reverses_id && !e.reversed && e.unallocated.amount_minor > 0;
 
@@ -147,6 +152,56 @@
             toast.success(message);
             await loadAccount(open);
         });
+
+    const receivable = $derived(writable && can("inventory.write"));
+    let receiving = $state(null);
+
+    async function loadLines(bill) {
+        const lines = await retailAssistant.invoiceLines(bill.id);
+        receiving = {
+            bill,
+            location: receiving?.location ?? "",
+            locations: receiving?.locations ?? [],
+            lines: lines.map((l) => ({ ...l, variant: l.variant_id ? { id: l.variant_id, sku: l.sku } : null, qty: wholeQuantity(l.quantity) })),
+        };
+    }
+
+    function startReceive(bill) {
+        return run(async () => {
+            receiving = null;
+            await loadLines(bill);
+            if (!receivable || !can("locations.read")) return;
+            // With one place or none to choose, the engine's default location is right.
+            const found = (await api.get("/api/admin/locations")).data ?? [];
+            if (found.length > 1) {
+                receiving.locations = found.map((l) => ({ value: String(l.id), label: l.name }));
+                receiving.location = String(found[0].id);
+            }
+        });
+    }
+
+    async function receive(e) {
+        e.preventDefault();
+        const chosen = receiving.lines.filter((l) => !l.receipt && l.variant && l.qty);
+        if (!chosen.length) {
+            toast.error(new Error("Choose a product and a quantity for at least one line"));
+            return;
+        }
+        const bill = receiving.bill;
+        await run(async () => {
+            try {
+                const out = await retailAssistant.receive(bill.id, {
+                    lines: chosen.map((l) => ({ line_id: l.id, variant_id: l.variant.id, location_id: Number(receiving.location) || 0, quantity: Number(l.qty) })),
+                });
+                toast.success(out.received === 1 ? "1 line booked into stock" : `${out.received} lines booked into stock`);
+            } finally {
+                // Lines go one at a time, so a refusal part way leaves earlier ones
+                // booked in; the list has to show that either way.
+                await loadLines(bill);
+                await loadAccount(open);
+            }
+        });
+    }
 </script>
 
 <svelte:head><title>{titled("Suppliers")}</title></svelte:head>
@@ -219,11 +274,62 @@
                 <li>
                     <span><strong>{b.invoice_no}</strong> <span class="txt-hint txt-sm">{b.invoice_date}</span>{#if b.reversed} <span class="label">Reversed</span>{/if}</span>
                     <span>{formatMoney(b.remaining)} <span class="txt-hint txt-sm">of {formatMoney(b.total)}</span></span>
+                    {#if b.lines && !b.reversed}
+                        <span class="retail-goods">
+                            <span class="txt-hint txt-sm">Goods: {b.lines_received} of {b.lines} lines booked in</span>
+                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => startReceive(b)}><span class="txt">{receivable && b.lines_received < b.lines ? "Book in goods" : "See goods"}</span></button>
+                        </span>
+                    {/if}
                 </li>
             {:else}
                 <li class="txt-hint">No bills posted yet.</li>
             {/each}
         </ul>
+
+        {#if receiving}
+            <form class="retail-box" onsubmit={receive} in:rise>
+                <h3 class="tw:mb-1 tw:font-semibold">Goods on {receiving.bill.invoice_no}</h3>
+                <p class="txt-hint txt-sm tw:mb-2">Book in only what is on the shelf. Each line moves stock once and cannot be repeated.</p>
+                {#if receivable && receiving.locations.length}
+                    <div class="field">
+                        <label for="ra-location">Stock goes to</label>
+                        <Select id="ra-location" bind:value={receiving.location} options={receiving.locations} />
+                    </div>
+                {/if}
+                {#each receiving.lines as line, i (line.id)}
+                    <fieldset class="retail-line" aria-label={line.description || `Line ${i + 1}`}>
+                        <div><strong>{line.description || `Line ${i + 1}`}</strong> <span class="txt-hint txt-sm">{line.quantity ?? "No quantity"}{line.unit ? ` ${line.unit}` : ""} on the bill</span></div>
+                        {#if line.receipt?.status === "posted"}
+                            <span class="label success">{line.receipt.quantity} booked in</span>
+                        {:else if line.receipt}
+                            <span class="label warning">Interrupted</span>
+                            <p class="txt-hint txt-sm">Booking this in stopped part way. Check the stock count and correct it under Inventory if it did not change.</p>
+                        {:else if receivable}
+                            {#if line.variant}
+                                <div class="tw:mt-1 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                                    <span class="txt-sm">{line.variant.product?.title ?? "SKU"} <span class="txt-code">{line.variant.sku}</span></span>
+                                    <button type="button" class="btn sm transparent secondary" onclick={() => (line.variant = null)}><span class="txt">Change</span></button>
+                                </div>
+                            {:else}
+                                <VariantSearch id={`ra-variant-${line.id}`} disabled={busy} onpick={(row) => (line.variant = row)} />
+                            {/if}
+                            <div class="field m-t-sm">
+                                <label for={`ra-qty-${line.id}`}>Quantity that arrived</label>
+                                <input id={`ra-qty-${line.id}`} type="number" min="1" step="1" inputmode="numeric" bind:value={line.qty} />
+                            </div>
+                        {:else}
+                            <span class="label">Not booked in</span>
+                        {/if}
+                    </fieldset>
+                {/each}
+                <div class="tw:mt-3 tw:flex tw:gap-2">
+                    {#if receivable && receiving.lines.some((l) => !l.receipt)}
+                        <button type="submit" class="btn" class:loading={busy} disabled={busy}><span class="txt">Book into stock</span></button>
+                    {/if}
+                    <button type="button" class="btn transparent secondary" onclick={() => (receiving = null)}><span class="txt">Close</span></button>
+                </div>
+            </form>
+        {/if}
 
         <h3 class="tw:mt-4 tw:mb-2 tw:font-semibold">Payments</h3>
         <ul class="retail-list">
@@ -374,6 +480,21 @@
         justify-content: space-between;
         gap: 6px 12px;
         padding: 8px 0;
+        border-top: 1px solid var(--color-border, #e5e5e5);
+    }
+    .retail-goods {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px 12px;
+    }
+    .retail-line {
+        border: 0;
+        margin: 0;
+        padding: 12px 0;
+        min-width: 0;
         border-top: 1px solid var(--color-border, #e5e5e5);
     }
     .retail-actions {
