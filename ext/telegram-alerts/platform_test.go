@@ -2,8 +2,10 @@ package telegramalerts
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
@@ -87,5 +89,98 @@ func TestANewStoreIsRetriedOnlyWhenTelegramMayAnswerLater(t *testing.T) {
 				t.Fatalf("pending = %d, dead = %d; want %d pending, 0 dead", pending, dead, tc.wantPending)
 			}
 		})
+	}
+}
+
+type storeWebhook struct {
+	mu     sync.Mutex
+	status int
+	posts  []map[string]string
+}
+
+func (h *storeWebhook) handler(w http.ResponseWriter, r *http.Request) {
+	var got map[string]string
+	_ = json.NewDecoder(r.Body).Decode(&got)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.posts = append(h.posts, got)
+	if h.status != 0 {
+		w.WriteHeader(h.status)
+	}
+}
+
+func newWebhookApp(t *testing.T, onlyOn string, hook *storeWebhook) *gocommerce.App {
+	t.Helper()
+	srv := gctest.StubHTTP(t, hook.handler)
+	mod := New(Config{BaseURL: srv.URL, PlatformWebhookURL: srv.URL + "/hooks/secret-path", PlatformWebhookBaseDomain: onlyOn})
+	return gctest.NewWithConfig(t, gocommerce.Config{BaseDomain: "shops.example.com"}, mod)
+}
+
+// The automation reads these keys by name.
+func TestANewStoreReachesThePlatformWebhook(t *testing.T) {
+	hook := &storeWebhook{}
+	app := newWebhookApp(t, "shops.example.com", hook)
+	ctx := openStore(t, app)
+	if _, err := app.DrainOutbox(ctx); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(hook.posts) != 1 {
+		t.Fatalf("posts = %d, want 1", len(hook.posts))
+	}
+	got := hook.posts[0]
+	if got["store_name"] != "Asha Jewels" || got["domain"] != "asha-jewels.shops.example.com" {
+		t.Errorf("posted %v", got)
+	}
+	for _, key := range []string{"business_name", "user_first_name", "user_last_name", "user_email", "user_phone", "address", "country"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("posted %v without %q, which the automation reads", got, key)
+		}
+	}
+}
+
+func TestAnotherBrandsStoreDoesNotReachThePlatformWebhook(t *testing.T) {
+	hook := &storeWebhook{}
+	app := newWebhookApp(t, "shopnx.in", hook)
+	ctx := openStore(t, app)
+	if _, err := app.DrainOutbox(ctx); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if len(hook.posts) != 0 {
+		t.Fatalf("posts = %v, want none", hook.posts)
+	}
+}
+
+// Down is worth another try and a refusal is not, as with Telegram. The address
+// carries the secret, so no failure may repeat it on a store's Events screen.
+func TestAPlatformWebhookFailureIsRetriedAndKeepsItsAddressSecret(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		status      int
+		wantPending int
+	}{
+		{"unavailable", http.StatusBadGateway, 1},
+		{"refused", http.StatusGone, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hook := &storeWebhook{status: tc.status}
+			app := newWebhookApp(t, "", hook)
+			ctx := openStore(t, app)
+			if _, err := app.DrainOutbox(ctx); err != nil {
+				t.Fatalf("drain: %v", err)
+			}
+			pending, dead, err := app.PendingEvents(ctx)
+			if err != nil {
+				t.Fatalf("pending: %v", err)
+			}
+			if pending != tc.wantPending || dead != 0 {
+				t.Fatalf("pending = %d, dead = %d; want %d pending, 0 dead", pending, dead, tc.wantPending)
+			}
+		})
+	}
+
+	m := &Module{cfg: Config{PlatformWebhookURL: "http://127.0.0.1:1/hooks/secret-path"}}
+	err := m.postStoreWebhook(context.Background(), "store_x", []byte("{}"))
+	if err == nil || strings.Contains(err.Error(), "secret-path") {
+		t.Fatalf("error = %v, want one that does not quote the address", err)
 	}
 }
