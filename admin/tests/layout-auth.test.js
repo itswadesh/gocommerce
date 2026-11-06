@@ -63,7 +63,7 @@ test("sign-in offers a reset and sign-up only when the install can do them", () 
     const login = read("../src/lib/components/Login.svelte");
     assert.match(login, /canReset = !!s\.password_reset/);
     assert.match(login, /canSignUp = !!s\.signup/);
-    const forgot = login.slice(login.indexOf("{#if installed && canReset}"), login.indexOf("{/if}", login.indexOf("{#if installed && canReset}")));
+    const forgot = login.slice(login.indexOf('{#if step === "password" && installed && canReset}'), login.indexOf("{/if}", login.indexOf('{#if step === "password" && installed && canReset}')));
     assert.match(forgot, /href=\{forgotHref\}/);
     assert.match(login, /forgotHref = \$derived\(\s*`\$\{base\}\/admin\/auth\/forgot-password/);
     const signup = login.slice(login.indexOf("{#if installed && canSignUp}"), login.indexOf("{/if}", login.indexOf("{#if installed && canSignUp}")));

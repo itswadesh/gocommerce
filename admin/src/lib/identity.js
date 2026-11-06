@@ -14,3 +14,9 @@ export function toIdentity(raw) {
     if (/^91[6-9]\d{9}$/.test(digits)) return `+${digits}`;
     return typed;
 }
+
+/** Whether what is in the one box is a phone rather than the start of an email. */
+export function looksLikePhone(raw) {
+    const typed = String(raw ?? "").trim();
+    return /\d/.test(typed) && !/[a-z@]/i.test(typed);
+}

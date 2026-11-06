@@ -14,10 +14,14 @@
      * only where an email can leave the building, and sign-up only where the
      * install takes strangers (Config.Signup).
      *
-     * A phone is a mode of this card rather than an address, because it asks
-     * for nothing a back button could lose. It is offered only where a code
-     * can be texted (auth-state's phone_login).
+     * One box first, for an email or a phone. A phone goes straight to a texted
+     * code where one can be sent (auth-state's phone_login), and an email goes on
+     * to its password, which stays out of sight until then. These are steps of
+     * this card rather than addresses, because they ask for nothing a back
+     * button could lose. A phone with nothing to text it goes on to a password
+     * as an email does, and the installer asks for both at once.
      */
+    import { tick } from "svelte";
     import { base } from "$app/paths";
     import { auth } from "$lib/api.js";
     import { applyBrand, brand, titled } from "$lib/brand.svelte.js";
@@ -27,6 +31,7 @@
     import AuthShell from "$lib/components/AuthShell.svelte";
     import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
     import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
+    import { looksLikePhone, toIdentity } from "$lib/identity.js";
 
     // notice is a line said above the form, such as why the form is back.
     let { onauthenticated, notice = "" } = $props();
@@ -53,7 +58,9 @@
     let canSignUp = $state(false);
     let canPhone = $state(false);
     let phoneOpen = $state(false);
-    let usePhone = $state(false);
+    // "who" is the one box; "password" and "code" are where it leads.
+    let step = $state("who");
+    const textsCode = $derived(canPhone && looksLikePhone(identity));
 
     $effect(() => {
         auth.state()
@@ -67,7 +74,7 @@
                 // The box keeps the number either way; the installer's takes an
                 // email only.
                 if (linkedPhone && !installed) identity = "";
-                if (linkedPhone && installed && canPhone) usePhone = true;
+                if (!installed) step = "password";
             })
             // If the probe itself fails the store is unreachable, and a login
             // form is the more useful of the two guesses.
@@ -89,7 +96,10 @@
         const pass = params.get("password");
         if (!email && !pass) return;
         if (email) identity = email;
-        if (pass) password = pass;
+        if (pass) {
+            password = pass;
+            step = "password";
+        }
         history.replaceState(null, "", window.location.pathname + window.location.search);
     });
 
@@ -102,8 +112,13 @@
     async function submit(e) {
         e.preventDefault();
         if (submitting) return;
-        submitting = true;
         error = "";
+        if (step === "who") {
+            step = textsCode ? "code" : "password";
+            if (step === "password") tick().then(() => document.getElementById("login_pass")?.focus());
+            return;
+        }
+        submitting = true;
         try {
             const record = installed
                 ? await auth.login(identity, password)
@@ -141,13 +156,10 @@
 
     {#if installed === null}
         <div class="block txt-center"><span class="loader lg" aria-label="Loading"></span></div>
-    {:else if installed && canPhone && usePhone}
+    {:else if step === "code"}
         <div in:rise>
-            <PhoneCodeForm {onauthenticated} open={phoneOpen} number={canPhone ? linkedPhone : ""} />
+            <PhoneCodeForm {onauthenticated} open={phoneOpen} number={toIdentity(identity)} onback={() => (step = "who")} />
         </div>
-        <p class="auth-alt">
-            <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = false)}>Use a password instead</button>
-        </p>
         {#if canSignUp}
             <p class="auth-alt">
                 New here? <a class="auth-link" href="{base}/admin/auth/signup">Create a store</a>
@@ -168,14 +180,25 @@
                     autocomplete="username"
                     autocapitalize="off"
                     spellcheck="false"
+                    readonly={installed && step === "password"}
                     aria-invalid={!!error}
                     aria-describedby={error ? "login_refusal" : undefined}
                     bind:value={identity}
                     oninput={() => (error = "")}
                 />
             </div>
+            {#if installed && step === "password"}
+                <div class="auth-field-foot auth-phone-foot">
+                    <button type="button" class="auth-link auth-inline-btn" onclick={() => { step = "who"; password = ""; error = ""; }}>
+                        Use something else
+                    </button>
+                </div>
+            {:else if step === "who"}
+                <div class="field-help">Outside India, start a phone number with its country code.</div>
+            {/if}
 
-            <div>
+            {#if step === "password"}
+            <div in:rise>
                 <div class="fields">
                     <div class="field" class:error={!!error}>
                         <label for="login_pass">Password</label>
@@ -209,11 +232,13 @@
                 {/if}
             </div>
 
+            {/if}
+
             <!-- Only once there is an account to reset, and only when a reset
                  email could actually be delivered: a button that silently does
                  nothing is worse than none. When nothing can be sent, the honest
                  sentence goes in its place. -->
-            {#if installed && canReset}
+            {#if step === "password" && installed && canReset}
                 <div class="auth-field-foot">
                     <a class="auth-link" href={forgotHref}>Forgot password?</a>
                 </div>
@@ -226,18 +251,12 @@
             {/key}
 
             <button class="btn lg block next" class:loading={submitting} disabled={submitting}>
-                <span class="txt">{installed ? "Sign in" : "Create and sign in"}</span>
+                <span class="txt">{step === "who" ? (textsCode ? "Send code" : "Continue") : installed ? "Sign in" : "Create and sign in"}</span>
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
 
-        {#if installed && canPhone}
-            <p class="auth-alt">
-                <button type="button" class="auth-link auth-inline-btn" onclick={() => (usePhone = true)}>Text me a code instead</button>
-            </p>
-        {/if}
-
-        {#if installed && !canReset}
+        {#if step === "password" && installed && !canReset}
             <p class="auth-note">
                 Forgotten your password? This install cannot send reset emails, so ask an owner to set
                 a new one for you from Settings &rarr; Team.
