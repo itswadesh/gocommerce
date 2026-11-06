@@ -85,6 +85,11 @@ func TestAPhonePersonAddsAnEmailAndGetsBackInWithoutTheirPhone(t *testing.T) {
 	if rec := do(t, p.app, http.MethodGet, "/api/admin/me", p.token); rec.Code != http.StatusOK {
 		t.Fatalf("their session after adding = %d", rec.Code)
 	}
+	var proved bool
+	if err := p.app.db.QueryRow(`SELECT email_proved = email FROM superusers WHERE email = $1`, email).
+		Scan(&proved); err != nil || !proved {
+		t.Fatalf("the code did not prove the address: %v, %v", proved, err)
+	}
 
 	// The phone is gone. The email and a reset are the way back.
 	if rec := do(t, p.app, http.MethodPost, "/api/admin/password-reset", jsonBody(t, map[string]string{"identity": email})); rec.Code != http.StatusAccepted {

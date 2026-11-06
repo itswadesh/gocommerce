@@ -16446,7 +16446,7 @@
             "adminToken": []
           }
         ],
-        "description": "Every store on the install, oldest first, suspended ones included, with how to reach its owners and how many products and orders it has. Only for the person whose proved phone number is GOCOMMERCE_PLATFORM_OWNER_PHONE; everybody else, the static admin token included, is refused.",
+        "description": "Every store on the install, newest first, suspended ones included, with how to reach its owners and how many products and orders it has. Only for the person whose proved phone number is GOCOMMERCE_PLATFORM_OWNER_PHONE; everybody else, the static admin token included, is refused.",
         "responses": {
           "200": {
             "description": "Every store.",
@@ -16464,6 +16464,7 @@
                           "slug": { "type": "string" },
                           "name": { "type": "string" },
                           "status": { "type": "string" },
+                          "domain": { "type": "string" },
                           "legal_name": { "type": "string" },
                           "owners": {
                             "type": "array",
@@ -16471,12 +16472,17 @@
                               "type": "object",
                               "properties": {
                                 "email": { "type": "string" },
-                                "phone": { "type": "string" }
+                                "phone": { "type": "string" },
+                                "email_verified": { "type": "boolean" },
+                                "phone_verified": { "type": "boolean" }
                               }
                             }
                           },
                           "products": { "type": "integer" },
-                          "orders": { "type": "integer" }
+                          "orders": { "type": "integer" },
+                          "created_at": { "type": "string", "format": "date-time" },
+                          "last_activity": { "type": "string" },
+                          "last_activity_at": { "type": "string", "format": "date-time", "nullable": true }
                         }
                       }
                     }
