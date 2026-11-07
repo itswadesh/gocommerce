@@ -66,7 +66,7 @@ export function sectionSummary(section, registry) {
     if (!t) return { label: `Unknown section (${section.type})`, text: "" };
     const s = section.settings ?? {};
     const list = Array.isArray(s.items) ? s.items : Array.isArray(s.slides) ? s.slides : [];
-    const text = s.heading || s.text || s.body || s.announcement_text || list.map((i) => i?.title || i?.heading || i?.question).filter(Boolean).join(" · ") || "";
+    const text = s.heading || s.text || s.body || s.announcement_text || list.map((i) => i?.title || i?.heading || i?.question || i?.quote || i?.text || i?.label || i?.name).filter(Boolean).join(" · ") || "";
     return { label: t.label, text: String(text).slice(0, 120) };
 }
 

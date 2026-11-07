@@ -306,6 +306,15 @@ test("a row summarises a list by its items' headings or questions", () => {
     assert.equal(sectionSummary({ type: "faq", settings: { items: [{ question: "Why?" }] } }, reg).text, "Why?");
 });
 
+test("a row summarises the newer lists by what each item says", () => {
+    const reg = [{ type: "testimonials", label: "Customer quotes", fields: [] }];
+    const says = (items) => sectionSummary({ type: "testimonials", settings: { items } }, reg).text;
+    assert.equal(says([{ quote: "Lovely", name: "Asha" }]), "Lovely");
+    assert.equal(says([{ text: "New in" }, { text: "Free returns" }]), "New in · Free returns");
+    assert.equal(says([{ value: "12", label: "Years" }]), "Years");
+    assert.equal(says([{ name: "Acme" }]), "Acme");
+});
+
 test("contrast is the WCAG ratio between two colours", () => {
     assert.equal(contrastRatio("#000000", "#ffffff").toFixed(1), "21.0");
     assert.equal(contrastRatio("#ffffff", "#ffffff").toFixed(1), "1.0");

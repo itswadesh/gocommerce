@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
@@ -30,6 +31,7 @@ const (
 	KindMenu        = "menu"        // one of the store's menus, by its handle (Content → Menus)
 	KindIcon        = "icon"        // one of Options, each a picture's name: the panel shows a grid of them (D139)
 	KindPath        = "path"        // a path on the storefront (/…), never another site
+	KindDateTime    = "datetime"    // a moment, RFC 3339 in UTC: the panel asks in the editor's own time zone
 )
 
 // Option is one choice of a select field.
@@ -147,8 +149,17 @@ var Sections = []SectionType{
 	},
 	{
 		Type: "product-grid", Label: "Product grid", Icon: "ri-layout-grid-line",
-		Description: "Products from a collection, or ones you pick, with live prices and stock.",
+		Description: "Products from a collection, or ones you pick, with live prices and stock, in rows or beside a large picture.",
 		Fields: []Field{
+			// A style of this type rather than a type of its own: the connector
+			// hands a section its products only when it is a product grid.
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "grid",
+				Help:    "Beside a picture puts the heading, the line under it and the \"View all\" link on a large picture, with up to six products next to it. Without a picture the products show in rows.",
+				Options: []Option{{"grid", "Products in rows"}, {"showcase", "Products beside a large picture"}}},
+			{Key: "image", Label: "Picture", Kind: KindImage, Help: "Upright works best: it stands as tall as the products beside it.", ShowWhen: map[string]string{"style": "showcase"}},
+			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading.", ShowWhen: map[string]string{"style": "showcase"}},
+			{Key: "image_side", Label: "Picture on the", Kind: KindSelect, Default: "left", ShowWhen: map[string]string{"style": "showcase"},
+				Options: []Option{{"left", "Left"}, {"right", "Right"}}},
 			eyebrowField,
 			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
 			subtitleField,
@@ -157,7 +168,7 @@ var Sections = []SectionType{
 			{Key: "collection", Label: "Collection", Kind: KindCollection, ShowWhen: map[string]string{"source": "collection"}},
 			{Key: "products", Label: "Products", Kind: KindProducts, MaxItems: 24, ShowWhen: map[string]string{"source": "products"}},
 			{Key: "limit", Label: "How many to show", Kind: KindNumber, Default: 8, Min: 1, Max: 24},
-			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 4, Min: 2, Max: 4},
+			{Key: "columns", Label: "Across on a computer", Kind: KindNumber, Default: 4, Min: 2, Max: 4, ShowWhen: map[string]string{"style": "grid"}},
 			{Key: "mobile_layout", Label: "On a phone", Kind: KindSelect, Default: "grid",
 				Help:    "One row shows the products side by side for a thumb to swipe through. Tablets and computers always show the grid.",
 				Options: []Option{{"grid", "Two across, in rows"}, {"row", "One row that scrolls sideways"}}},
@@ -325,6 +336,159 @@ var Sections = []SectionType{
 			}},
 			viewAllText,
 			viewAllLink,
+			dividerField,
+		},
+	},
+
+	// The looks below are ones the sections above cannot make (D243). None of
+	// their settings is required, unlike a hero's heading: a shop adds one and
+	// then fills it in, and a draft that refuses to save at each step of that
+	// reads as a broken editor. The storefront draws nothing until there is
+	// something to draw. Quotes, figures and logos start empty and are never
+	// filled in for the shop: a made-up one on a real store is a false claim.
+	{
+		Type: "spotlight", Label: "Spotlight banner", Icon: "ri-fullscreen-line",
+		Description: "A large picture with the words on it, edge to edge or in a rounded frame. A bold opening, or a pause between shelves.",
+		Fields: []Field{
+			{Key: "image", Label: "Picture", Kind: KindImage, Help: "Wide, for computers."},
+			{Key: "mobile_image", Label: "Picture on phones", Kind: KindImage, Help: "Taller crop. Empty uses the picture above."},
+			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 400},
+			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
+			{Key: "button_link", Label: "Button link", Kind: KindURL},
+			{Key: "secondary_button_text", Label: "Second button text", Kind: KindText, MaxLen: 60},
+			{Key: "secondary_button_link", Label: "Second button link", Kind: KindURL},
+			{Key: "frame", Label: "Width", Kind: KindSelect, Default: "full",
+				Options: []Option{{"full", "Edge to edge"}, {"inset", "In a rounded frame"}}},
+			{Key: "position", Label: "Words on the", Kind: KindSelect, Default: "bottom-left",
+				Options: []Option{{"bottom-left", "Bottom left"}, {"center", "Centre"}, {"bottom-right", "Bottom right"}}},
+			{Key: "height", Label: "Height", Kind: KindSelect, Default: "tall",
+				Options: []Option{{"medium", "Medium"}, {"tall", "Tall"}, {"screen", "The whole screen"}}},
+			{Key: "shade", Label: "Shade over the picture", Kind: KindSelect, Default: "medium",
+				Help:    "The words are white. A bright picture needs more shade for them to read.",
+				Options: []Option{{"light", "Light"}, {"medium", "Medium"}, {"strong", "Strong"}}},
+		},
+	},
+	{
+		Type: "bento-grid", Label: "Bento grid", Icon: "ri-layout-masonry-line",
+		Description: "Up to six tiles of different sizes fitted together, each a picture or a block of colour with its own words and link.",
+		Fields: []Field{
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
+			{Key: "layout", Label: "Arrangement", Kind: KindSelect, Default: "feature",
+				Help:    "The tiles take their sizes from their order and how many there are.",
+				Options: []Option{{"feature", "One large tile first"}, {"mosaic", "Tall and wide tiles mixed"}}},
+			{Key: "items", Label: "Tiles", Kind: KindList, MaxItems: 6, Fields: []Field{
+				{Key: "image", Label: "Picture", Kind: KindImage},
+				{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Only if the words on the tile don't already say it."},
+				{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: 120},
+				{Key: "text", Label: "Text", Kind: KindText, MaxLen: maxShort},
+				{Key: "link_text", Label: "Link text", Kind: KindText, MaxLen: 60},
+				{Key: "link", Label: "Link", Kind: KindURL, Help: "The whole tile goes here."},
+				{Key: "tone", Label: "Colour without a picture", Kind: KindSelect, Default: "quiet",
+					Options: []Option{{"quiet", "Quiet background"}, {"accent", "Button colour"}, {"dark", "Text colour"}}},
+			}},
+			viewAllText,
+			viewAllLink,
+			dividerField,
+		},
+	},
+	{
+		Type: "testimonials", Label: "Customer quotes", Icon: "ri-double-quotes-l",
+		Description: "What your customers said, in their words: a wall of quotes, one large quote beside the rest, or a row to swipe through.",
+		Fields: []Field{
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "wall",
+				Options: []Option{{"wall", "A wall of quotes"}, {"feature", "The first one large"}, {"row", "A row to swipe through"}}},
+			{Key: "items", Label: "Quotes", Kind: KindList, MaxItems: 12,
+				Help: "Use only what real customers wrote, with their permission.", Fields: []Field{
+					{Key: "quote", Label: "Quote", Kind: KindTextarea, MaxLen: 600},
+					{Key: "name", Label: "Their name", Kind: KindText, MaxLen: 80},
+					{Key: "detail", Label: "Line under the name", Kind: KindText, MaxLen: 120, Help: "Their city, or what they bought."},
+					{Key: "image", Label: "Their photo", Kind: KindImage},
+					{Key: "rating", Label: "Stars they gave", Kind: KindNumber, Min: 1, Max: 5, Help: "From 1 to 5. Empty shows none."},
+				}},
+			dividerField,
+		},
+	},
+	{
+		Type: "stats", Label: "Numbers", Icon: "ri-bar-chart-box-line",
+		Description: "Up to four large figures with a line under each: years in business, orders sent, cities reached.",
+		Fields: []Field{
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "plain",
+				Options: []Option{{"plain", "On the page, with thin lines"}, {"band", "On a dark band"}}},
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			subtitleField,
+			{Key: "items", Label: "Figures", Kind: KindList, MaxItems: 4,
+				Help: "Use only figures you can stand behind.", Fields: []Field{
+					{Key: "value", Label: "Figure", Kind: KindText, MaxLen: 16, Help: "As it should read, such as 12 or 40k+."},
+					{Key: "label", Label: "What it counts", Kind: KindText, MaxLen: 80},
+				}},
+			dividerField,
+		},
+	},
+	{
+		Type: "logo-cloud", Label: "Logos", Icon: "ri-award-line",
+		Description: "A row of logos: the brands you carry, or the places that have written about you.",
+		Fields: []Field{
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			{Key: "style", Label: "Style", Kind: KindSelect, Default: "row",
+				Help:    "A scrolling strip moves slowly sideways, stops while the pointer is on it and has a button to pause it. On a device set to reduce motion it stands still.",
+				Options: []Option{{"row", "A row, all at once"}, {"scroll", "A scrolling strip"}}},
+			{Key: "monochrome", Label: "Grey until the pointer is on them", Kind: KindBool, Default: true,
+				Help: "Logos in one tone sit quietly together, whatever colours they came in."},
+			{Key: "items", Label: "Logos", Kind: KindList, MaxItems: 16,
+				Help: "Use only logos you have permission to show.", Fields: []Field{
+					{Key: "image", Label: "Logo", Kind: KindImage, Help: "A PNG or WebP with a clear background. Files serves an SVG as text, for safety, so it would not show."},
+					{Key: "name", Label: "Name", Kind: KindText, MaxLen: 80, Help: "Read aloud to people who cannot see it."},
+					{Key: "link", Label: "Link", Kind: KindURL},
+				}},
+			dividerField,
+		},
+	},
+	{
+		Type: "scrolling-text", Label: "Scrolling text", Icon: "ri-text-direction-l",
+		Description: "Very large words moving slowly across the page, as a break between sections. It stands still on a device set to reduce motion.",
+		Fields: []Field{
+			{Key: "items", Label: "Phrases", Kind: KindList, MaxItems: 8, Fields: []Field{
+				{Key: "text", Label: "Phrase", Kind: KindText, MaxLen: 60},
+			}},
+			{Key: "size", Label: "Size", Kind: KindSelect, Default: "large",
+				Options: []Option{{"large", "Large"}, {"huge", "Very large"}}},
+			{Key: "tone", Label: "Colour", Kind: KindSelect, Default: "plain",
+				Options: []Option{{"plain", "On the page"}, {"accent", "On the button colour"}, {"dark", "On a dark band"}}},
+			{Key: "separator", Label: "Between phrases", Kind: KindSelect, Default: "star",
+				Options: []Option{{"star", "A star"}, {"slash", "A slash"}, {"none", "Only space"}}},
+			{Key: "speed", Label: "Speed", Kind: KindSelect, Default: "slow",
+				Options: []Option{{"slow", "Slow"}, {"medium", "Medium"}, {"fast", "Fast"}}},
+			{Key: "reverse", Label: "Move left to right", Kind: KindBool, Default: false},
+		},
+	},
+	{
+		Type: "countdown", Label: "Countdown", Icon: "ri-timer-flash-line",
+		Description: "A sale or a launch with the days, hours, minutes and seconds left, on a block of colour with an optional picture.",
+		Fields: []Field{
+			{Key: "ends_at", Label: "Ends at", Kind: KindDateTime, Help: "In your own time zone. Every shopper counts down to the same moment."},
+			eyebrowField,
+			{Key: "heading", Label: "Heading", Kind: KindText, MaxLen: maxShort},
+			{Key: "body", Label: "Text", Kind: KindTextarea, MaxLen: 400},
+			{Key: "button_text", Label: "Button text", Kind: KindText, MaxLen: 60},
+			{Key: "button_link", Label: "Button link", Kind: KindURL},
+			{Key: "image", Label: "Picture", Kind: KindImage, Help: "Shown beside the words. Empty leaves the block all colour."},
+			{Key: "image_alt", Label: "What the picture shows", Kind: KindText, MaxLen: 200, Help: "Read aloud to people who cannot see it. Empty uses the heading."},
+			{Key: "tone", Label: "Colour", Kind: KindSelect, Default: "accent",
+				Options: []Option{{"accent", "Button colour"}, {"dark", "Text colour"}, {"quiet", "Quiet background"}}},
+			{Key: "after_end", Label: "Once it ends", Kind: KindSelect, Default: "hide",
+				Help:    "This changes only what shoppers see: the section stays on your page until you remove it.",
+				Options: []Option{{"hide", "Take the section off the page"}, {"message", "Show a message instead"}}},
+			{Key: "ended_text", Label: "Message", Kind: KindText, MaxLen: maxShort, ShowWhen: map[string]string{"after_end": "message"}},
 			dividerField,
 		},
 	},
@@ -737,7 +901,7 @@ func cleanField(where string, f Field, v any) (any, error) {
 		v = f.Default
 	}
 	switch f.Kind {
-	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindIcon, KindColor, KindMenu, KindPath:
+	case KindText, KindTextarea, KindURL, KindImage, KindVideo, KindSelect, KindIcon, KindColor, KindMenu, KindPath, KindDateTime:
 		s, ok := v.(string)
 		if v != nil && !ok {
 			return nil, bad("must be text")
@@ -778,6 +942,12 @@ func cleanField(where string, f Field, v any) (any, error) {
 			if !strings.HasPrefix(s, "/") || !safeURL(s) {
 				return nil, bad("must be a page on the store, starting with /")
 			}
+		case KindDateTime:
+			t, err := time.Parse(time.RFC3339, s)
+			if err != nil {
+				return nil, bad("must be a date and time")
+			}
+			return t.UTC().Format(time.RFC3339), nil
 		case KindSelect, KindIcon:
 			if !hasOption(f.Options, s) {
 				return nil, bad("must be one of its choices")

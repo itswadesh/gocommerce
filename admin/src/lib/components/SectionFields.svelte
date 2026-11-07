@@ -37,7 +37,7 @@
     import Select from "$lib/components/Select.svelte";
     import ImageField from "$lib/components/ImageField.svelte";
     import TargetPicker from "$lib/components/TargetPicker.svelte";
-    import { visibleFields, menuOptions, iconChoices } from "$lib/layouts.js";
+    import { visibleFields, menuOptions, iconChoices, localInputValue, fromLocalInput } from "$lib/layouts.js";
     import { rise } from "$lib/motion.js";
     import Self from "./SectionFields.svelte";
 
@@ -203,6 +203,16 @@
                     {:else}
                         <Select {id} options={menuOptions(menus, settings[f.key] ?? f.default ?? "")} disabled={readonly} bind:value={() => settings[f.key] ?? f.default ?? "", (v) => set(f.key, v)} />
                     {/if}
+                {:else if f.kind === "datetime"}
+                    <!-- The box speaks this browser's zone; the engine keeps the moment. -->
+                    {@const at = settings[f.key] ? new Date(settings[f.key]) : null}
+                    <input
+                        {id}
+                        type="datetime-local"
+                        value={at && !Number.isNaN(at.getTime()) ? localInputValue(at) : ""}
+                        disabled={readonly}
+                        oninput={(e) => set(f.key, fromLocalInput(e.currentTarget.value)?.toISOString() ?? null)}
+                    />
                 {:else if f.kind === "number"}
                     <input
                         {id}
