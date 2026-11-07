@@ -17,3 +17,7 @@ test("a feature request says it is one and carries what was typed", () => {
     assert.match(page, /Request a new feature for free/);
     assert.match(page, /Feature request\$\{store \? ` from my store \$\{store\}` : ""\}: \$\{asked\}/);
 });
+
+test("the WhatsApp section keeps its promise about messages in view", () => {
+    assert.match(page, /No unwanted, promotional or spam messages\. Guaranteed\./);
+});
