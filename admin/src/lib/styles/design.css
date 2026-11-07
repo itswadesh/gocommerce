@@ -37,89 +37,91 @@
 @import "tailwindcss/utilities.css" prefix(tw);
 
 /*
- * Zero chroma, on purpose. Every grey here is oklch with a chroma of exactly 0
- * — not a blue-grey, not a warm one. Hierarchy is carried by weight, size and
- * border, and the only hue in the product is a status dot or a destructive
- * action. See DESIGN.md §1.
+ * shopnx.in's palette: cream surfaces, charcoal text and buttons, gold for
+ * focus. This replaced the zero-chroma greys DESIGN.md §1 started with, at the
+ * owner's request on 2026-11-07, so the panel and the site read as one product.
+ * Hierarchy is still carried by weight, size and border; the only strong hue
+ * is still a status dot or a destructive action. gocommerce.css sets the same
+ * palette on PocketBase's tokens.
  */
 :root {
-    --background: oklch(100% 0 0);
-    --foreground: oklch(14.5% 0 0);
+    --background: #fbf7ee;
+    --foreground: #242321;
 
-    --card: oklch(100% 0 0);
-    --card-foreground: oklch(14.5% 0 0);
-    --popover: oklch(100% 0 0);
-    --popover-foreground: oklch(14.5% 0 0);
+    --card: #fffdf8;
+    --card-foreground: #242321;
+    --popover: #fffdf8;
+    --popover-foreground: #242321;
 
-    --primary: oklch(20.5% 0 0);
-    --primary-foreground: oklch(98.5% 0 0);
+    --primary: #292725;
+    --primary-foreground: #fffdf8;
 
-    --secondary: oklch(97% 0 0);
-    --secondary-foreground: oklch(20.5% 0 0);
-    --muted: oklch(97% 0 0);
-    --muted-foreground: oklch(55.6% 0 0);
-    --accent-bg: oklch(97% 0 0);
-    --accent-fg: oklch(20.5% 0 0);
+    --secondary: #f3ecdd;
+    --secondary-foreground: #292725;
+    --muted: #f3ecdd;
+    --muted-foreground: #605c55;
+    --accent-bg: #f0e5cf;
+    --accent-fg: #242321;
 
     --destructive: oklch(57.7% 0.245 27.325);
-    --border: oklch(92.2% 0 0);
-    --input: oklch(92.2% 0 0);
-    --ring: oklch(70.8% 0 0);
+    --border: #e6dccb;
+    --input: #ddd3bf;
+    --ring: #b49151;
 
     --radius: 0.625rem;
 
-    --sidebar: oklch(98.5% 0 0);
-    --sidebar-foreground: oklch(14.5% 0 0);
-    --sidebar-primary: oklch(20.5% 0 0);
-    --sidebar-primary-foreground: oklch(98.5% 0 0);
-    --sidebar-accent: oklch(97% 0 0);
-    --sidebar-accent-foreground: oklch(20.5% 0 0);
-    --sidebar-border: oklch(92.2% 0 0);
-    --sidebar-ring: oklch(70.8% 0 0);
+    --sidebar: #fffdf8;
+    --sidebar-foreground: #242321;
+    --sidebar-primary: #292725;
+    --sidebar-primary-foreground: #fffdf8;
+    --sidebar-accent: #f3ecdd;
+    --sidebar-accent-foreground: #292725;
+    --sidebar-border: #e6dccb;
+    --sidebar-ring: #b49151;
 }
 
 /*
  * Dark is not an inversion. Cards lift ABOVE the page rather than sinking below
  * it — the page is the darkest surface and a card is lighter — and the borders
- * become alpha rather than solid greys so they read on either surface. DESIGN.md
- * §2.
+ * become alpha rather than solid colours so they read on either surface.
+ * DESIGN.md §2. The near-blacks lean warm, like the light theme's cream.
  *
  * `[data-color-scheme="dark"]` rather than `.dark`: that is the attribute this
  * panel's theme toggle already sets, and inventing a second switch would mean
  * two things to keep in step.
  */
 [data-color-scheme="dark"] {
-    --background: oklch(14.5% 0 0);
-    --foreground: oklch(98.5% 0 0);
+    --background: #1c1a17;
+    --foreground: #f3eee4;
 
-    --card: oklch(20.5% 0 0);
-    --card-foreground: oklch(98.5% 0 0);
-    --popover: oklch(20.5% 0 0);
-    --popover-foreground: oklch(98.5% 0 0);
+    --card: #262420;
+    --card-foreground: #f3eee4;
+    --popover: #262420;
+    --popover-foreground: #f3eee4;
 
-    --primary: oklch(92.2% 0 0);
-    --primary-foreground: oklch(20.5% 0 0);
+    --primary: #f0e5cf;
+    --primary-foreground: #242321;
 
-    --secondary: oklch(26.9% 0 0);
-    --secondary-foreground: oklch(98.5% 0 0);
-    --muted: oklch(26.9% 0 0);
-    --muted-foreground: oklch(70.8% 0 0);
-    --accent-bg: oklch(26.9% 0 0);
-    --accent-fg: oklch(98.5% 0 0);
+    --secondary: #302d28;
+    --secondary-foreground: #f3eee4;
+    --muted: #302d28;
+    --muted-foreground: #b3ab9d;
+    --accent-bg: #302d28;
+    --accent-fg: #f3eee4;
 
     --destructive: oklch(70.4% 0.191 22.216);
-    --border: oklch(100% 0 0 / 0.1);
-    --input: oklch(100% 0 0 / 0.15);
-    --ring: oklch(55.6% 0 0);
+    --border: rgb(255 244 222 / 0.1);
+    --input: rgb(255 244 222 / 0.15);
+    --ring: #b49151;
 
-    --sidebar: oklch(20.5% 0 0);
-    --sidebar-foreground: oklch(98.5% 0 0);
-    --sidebar-primary: oklch(92.2% 0 0);
-    --sidebar-primary-foreground: oklch(20.5% 0 0);
-    --sidebar-accent: oklch(26.9% 0 0);
-    --sidebar-accent-foreground: oklch(98.5% 0 0);
-    --sidebar-border: oklch(100% 0 0 / 0.1);
-    --sidebar-ring: oklch(55.6% 0 0);
+    --sidebar: #262420;
+    --sidebar-foreground: #f3eee4;
+    --sidebar-primary: #f0e5cf;
+    --sidebar-primary-foreground: #242321;
+    --sidebar-accent: #302d28;
+    --sidebar-accent-foreground: #f3eee4;
+    --sidebar-border: rgb(255 244 222 / 0.1);
+    --sidebar-ring: #b49151;
 }
 
 /* What Tailwind builds its utilities from. */

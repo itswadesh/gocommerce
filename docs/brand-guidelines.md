@@ -19,41 +19,43 @@ tokens (`bg-background`, `text-muted-foreground`), never a hex.
 |---|---|
 | Name | GoCommerce, one word, capital G and C |
 | One line | A small, composable commerce engine for Go |
-| Mark | The K mark: a white K on a dark rounded square, `admin/static/favicon.svg` |
-| Look | Near-monochrome. Colour only for status and for destructive actions |
+| Mark | shopnx.in's bag: a shopping bag with an N, `admin/static/_panel/favicon.svg` |
+| Look | shopnx.in's: cream surfaces, charcoal text and buttons, gold for focus. Strong colour only for status and destructive actions |
 | Type | Inter, with the system sans-serif as fallback |
 | Voice | Plain, specific, honest. Say what happens and why |
 
 ## 1. Color Palette
 
+The palette is shopnx.in's, adopted 2026-11-07 (PLAN.md D253) so the panel
+and the site read as one product. It replaced the zero-chroma greys.
+
 ### Primary Colors
 
 | Name | Token | Light | Dark | Use |
 |---|---|---|---|---|
-| Primary | `--primary` | `#171717` | `#e5e5e5` | Primary buttons; it inverts in dark mode |
-| Foreground | `--foreground` | `#0a0a0a` | `#fafafa` | Body text |
+| Primary | `--primary` | `#292725` | `#f0e5cf` | Primary buttons; it inverts in dark mode |
+| Foreground | `--foreground` | `#242321` | `#f3eee4` | Body text |
 
 ### Secondary Colors
 
 | Name | Token | Light | Dark | Use |
 |---|---|---|---|---|
-| Secondary | `--secondary` | `#f5f5f5` | `#262626` | Secondary buttons |
-| Accent | `--accent` | `#f5f5f5` | `#262626` | Hover and the active navigation item |
-| Mark ground | (the logo file) | `#0f1720` | `#0f1720` | The K mark's square only, never the UI |
+| Secondary | `--secondary` | `#f3ecdd` | `#302d28` | Secondary buttons |
+| Accent | `--accent` | `#f0e5cf` | `#302d28` | Hover and the active navigation item |
+| Gold | `--ring`, `--accentColor` | `#b49151` | `#b49151` | Focus rings and accent edges; as text, the deep gold `#805c16` |
 
 ### Neutral Palette
 
-All greys have zero chroma: no blue-grey and no warm grey.
+Warm, like the site: cream rather than white, charcoal rather than black.
 
 | Name | Token | Light | Dark |
 |---|---|---|---|
-| Background | `--background` | `#ffffff` | `#0a0a0a` |
-| Card | `--card` | `#ffffff` | `#171717` |
-| Muted | `--muted` | `#f5f5f5` | `#262626` |
-| Muted text | `--muted-foreground` | `#737373` | `#a1a1a1` |
-| Border | `--border` | `#e5e5e5` | white at 10% |
-| Ring | `--ring` | `#a1a1a1` | `#737373` |
-| Sidebar | `--sidebar` | `#fafafa` | |
+| Background | `--background` | `#fbf7ee` | `#1c1a17` |
+| Card | `--card` | `#fffdf8` | `#262420` |
+| Muted | `--muted` | `#f3ecdd` | `#302d28` |
+| Muted text | `--muted-foreground` | `#5c5850` | `#b3ab9d` |
+| Border | `--border` | `#e6dccb` | cream at 10% |
+| Sidebar | `--sidebar` | `#fffdf8` | `#262420` |
 
 In dark mode, cards are lighter than the page, so a card is painted
 `bg-card`, not `bg-background` (DESIGN.md §0).
@@ -73,11 +75,12 @@ Status is a small dot beside a word, never a filled block.
 
 ### Accessibility
 
-- Body text is about 19:1 against the page in both themes.
-- Muted text (`#737373`) passes WCAG AA on white (4.74:1) and on the sidebar
-  (4.54:1), but not on the muted fill `#f5f5f5` (4.35:1), so muted text never
-  sits on a muted fill in light mode. In dark mode muted text (`#a1a1a1`)
-  passes on the page, cards and fills (5.9:1 or more).
+- Body text is about 15:1 against the page in both themes.
+- Muted text (`#5c5850`) passes WCAG AA on the page, cards and the muted
+  fill (6:1 or more). In dark mode muted text (`#b3ab9d`) passes on the page,
+  cards and fills (6:1 or more).
+- Gold (`#b49151`) is too light for text on cream (about 2.7:1); text in gold
+  uses `#805c16`, and anything on a gold fill is charcoal.
 - A new colour pairing has its contrast checked before it ships.
 - Status is never colour alone: the dot always sits beside its word.
 - Focus is always visible, on every control.
@@ -116,11 +119,11 @@ on phones, so a phone does not zoom into them (D93).
 
 | File | Use |
 |---|---|
-| `admin/static/favicon.svg` | Browser tab, app icon |
-| `admin/static/images/logo.svg` | The same mark at 26px, for the panel |
+| `admin/static/_panel/favicon.svg` | Browser tab, app icon: a gold (`#e3c27f`) bag with an N on a charcoal (`#292725`) square |
+| The panel's sidebar and sign-in | The bag as an outline in the text colour, drawn inline so it takes the theme |
 
-The mark is kitcommerce.store's K: a white K on a `#0f1720` square with
-rounded corners, drawn on a 24-unit grid.
+The mark is shopnx.in's shopping bag, the same as the site's header and
+favicon. A brand with its own `logo_url` (D114) shows that instead.
 
 ### Clear Space
 
@@ -132,8 +135,7 @@ Keep at least a quarter of the mark's width clear on every side.
 
 ### Don'ts
 
-- Do not recolour the square or the K, or put the K on its own without the
-  square.
+- Do not recolour the favicon's square or bag.
 - Do not stretch it, rotate it, outline it or add a shadow.
 - Do not invent a new mark for a sub-product. The engine, the panel and the
   site share this one.
