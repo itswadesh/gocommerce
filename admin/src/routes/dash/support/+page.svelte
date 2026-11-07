@@ -64,6 +64,10 @@
                 <span class="txt">Chat on WhatsApp</span>
             </a>
             <p class="txt-hint support-number">{SHOWN}</p>
+            <p class="support-promise">
+                <i class="ri-shield-check-line" aria-hidden="true"></i>
+                <span>No unwanted, promotional or spam messages. Guaranteed.</span>
+            </p>
         </section>
 
         <section class="card support-card support-feature">
@@ -121,6 +125,12 @@
 </div>
 
 <style>
+    .support-promise {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 500;
+    }
     .support-feature {
         margin-top: 16px;
     }
