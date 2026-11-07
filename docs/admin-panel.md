@@ -842,16 +842,21 @@ own, which D96 made theirs.
 arranges: **Theme settings** and **Homepage** (`/dash/themes/homepage`,
 `ext/layouts`, D125, D126, D127). The homepage is the storefront's home page as
 the shop arranges it: a list of sections read top to bottom — announcement
-bar, hero, slideshow, product grid, collection list, image with text, text,
-columns, video, questions and answers, newsletter sign-up, benefits — any of
-them any number of times. Forms are drawn from each type's fields in the
+bar, hero, spotlight banner, slideshow, product grid, collection list, bento
+grid, image with text, text, columns, video, customer quotes, numbers, logos,
+scrolling text, countdown, questions and answers, newsletter sign-up, benefits
+— any of them any number of times. A product grid can stand its products
+beside a large picture. Forms are drawn from each type's fields in the
 engine's registry: pictures and videos from Files, products and collections
 from the same picker discounts use, lists (slides, questions, columns,
 benefits) with their own add and move. Each benefit may carry an icon,
 picked from a grid of twenty (D139). The newsletter sign-up is offered only
 while the Newsletter plugin is on, and the storefront leaves it out while it
 is off. A video is a YouTube or Vimeo link or an MP4 from Files, and plays
-only when a shopper presses play.
+only when a shopper presses play. Quotes, figures and logos start empty and
+hold only what the shop enters (D243). A countdown is set in the editor's own
+time zone and counts to one moment for every shopper; past it the section
+leaves the page or says the shop's message, and stays in the draft either way.
 
 **Theme settings** are the store's colours (background, text, buttons and
 links, text on buttons, quiet backgrounds, and the colour of "% off" and
