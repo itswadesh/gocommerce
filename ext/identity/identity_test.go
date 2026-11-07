@@ -445,6 +445,8 @@ func TestOrderHistoryIsByClaim(t *testing.T) {
 	}
 	if rec := as(t, app, ada.Token, http.MethodGet, "/x/identity/me/orders/"+number, nil); rec.Code != http.StatusOK {
 		t.Errorf("get from history = %d: %s", rec.Code, rec.Body)
+	} else if !strings.Contains(rec.Body.String(), `"access_token":"`) {
+		t.Errorf("the owner's order carries no access token: %s", rec.Body)
 	}
 	if rec := as(t, app, bob.Token, http.MethodGet, "/x/identity/me/orders/"+number, nil); rec.Code != http.StatusNotFound {
 		t.Errorf("another account reading the order = %d, want 404", rec.Code)

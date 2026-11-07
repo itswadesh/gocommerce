@@ -430,6 +430,13 @@ func (m *Module) handleGetOrder(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// The owner's own key to the order, so an order placed on another device can
+	// still open what a guest's can: its invoice, for one.
+	if err := m.db.QueryRowContext(r.Context(),
+		`SELECT access_token FROM orders WHERE id = $1`, o.ID).Scan(&o.AccessToken); err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read the order's access token"))
+		return
+	}
 	gocommerce.Respond(w, http.StatusOK, o)
 }
 
