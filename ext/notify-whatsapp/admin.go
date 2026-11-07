@@ -86,7 +86,7 @@ func readTemplate(g graphTemplate) Template {
 			t.Variables = variablesIn(c.Text)
 		case "HEADER":
 			if strings.ToUpper(c.Format) != "TEXT" || len(variablesIn(c.Text)) > 0 {
-				t.Usable, t.Reason = false, "Its header needs a value or a file GoCommerce cannot fill"
+				t.Usable, t.Reason = false, "Its header needs a value or a file ShopNx cannot fill"
 			}
 		case "BUTTONS":
 			for _, b := range c.Buttons {

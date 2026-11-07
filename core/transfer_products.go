@@ -1112,7 +1112,7 @@ var productTemplateNotes = []string{
 }
 
 var nativeProductTemplateNotes = []string{
-	"HOW TO FILL THIS FILE. It is GoCommerce's native product CSV. Lines starting with # are notes: the import skips them, so keep or delete them.",
+	"HOW TO FILL THIS FILE. It is ShopNx's native product CSV. Lines starting with # are notes: the import skips them, so keep or delete them.",
 	"One row per variant. Rows of one product sit together and share its product_slug. Delete the two example rows (cotton-kurta) before importing your own.",
 	"product_slug: the product's web address, lowercase-with-hyphens, e.g. cotton-kurta. The same slug on multiple rows groups variants of that product.",
 	"product_title, product_description, product_status, vendor, product_type, tags, category, seo_title, seo_description: fill these on the product's first row only.",
@@ -1126,7 +1126,7 @@ var nativeProductTemplateNotes = []string{
 
 // ProductTemplate writes a file to fill in for an import: its instructions
 // as # notes, then the product header and one example product in two
-// sizes. It supports both Shopify's layout and GoCommerce's native layout.
+// sizes. It supports both Shopify's layout and ShopNx's native layout.
 func (t *Transfer) ProductTemplate(ctx context.Context, out io.Writer, format ...Format) error {
 	f := FormatShopify
 	if len(format) > 0 && format[0] != "" {
