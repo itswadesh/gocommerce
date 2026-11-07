@@ -40,6 +40,7 @@ func TestCoreSaysWhereEachBuiltInFeatureIsSetUp(t *testing.T) {
 		"social-sharing":   "/dash/themes/extras",
 		"sold-count":       "/dash/themes/extras",
 		"cart-suggestions": "/dash/themes/extras",
+		"emi-note":         "/dash/themes/extras",
 		// The store's own rules, on its settings page.
 		"store-close":    "/dash/settings",
 		"enquiry-mode":   "/dash/settings",
