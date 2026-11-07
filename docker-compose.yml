@@ -381,6 +381,8 @@ services:
       # Runs once, on first init of the volume, to create gocommerce_reports.
       - ./scripts/reports-role.sql:/opt/gocommerce/reports-role.sql:ro
       - ./scripts/initdb-reports-role.sh:/docker-entrypoint-initdb.d/10-reports-role.sh:ro
+    ports:
+      - "5450:5432"
     healthcheck:
       # The engine applies its migrations on boot, so it must not start against
       # a database that is still initialising.

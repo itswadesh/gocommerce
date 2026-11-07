@@ -9692,7 +9692,10 @@
                     ],
                     "default": "staff"
                   },
-                  "phone": { "type": "string", "description": "Invite by number instead of email: no link and no email, the person is asked when they sign in. Takes the place of email." },
+                  "phone": {
+                    "type": "string",
+                    "description": "Invite by number instead of email: no link and no email, the person is asked when they sign in. Takes the place of email."
+                  },
                   "send_email": {
                     "type": "boolean",
                     "default": true,
@@ -16386,9 +16389,15 @@
     },
     "/api/stores/invitations": {
       "get": {
-        "tags": ["stores"],
+        "tags": [
+          "stores"
+        ],
         "summary": "List the stores asking the caller to join",
-        "security": [{ "adminToken": [] }],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
         "description": "Stores that invited the caller's proved phone number and are waiting on an answer.",
         "responses": {
           "200": {
@@ -16398,22 +16407,37 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/PhoneInvitation" } }
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PhoneInvitation"
+                      }
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
     },
     "/api/stores/invitations/answer": {
       "post": {
-        "tags": ["stores"],
+        "tags": [
+          "stores"
+        ],
         "summary": "Accept or decline a store's invitation",
-        "security": [{ "adminToken": [] }],
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
         "description": "Accepting joins the store in the invited role. Declining keeps it on the store's list as withdrawn.",
         "requestBody": {
           "required": true,
@@ -16421,22 +16445,43 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["store_id", "id", "accept"],
+                "required": [
+                  "store_id",
+                  "id",
+                  "accept"
+                ],
                 "properties": {
-                  "store_id": { "type": "string" },
-                  "id": { "type": "integer", "format": "int64" },
-                  "accept": { "type": "boolean" }
+                  "store_id": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "integer",
+                    "format": "int64"
+                  },
+                  "accept": {
+                    "type": "boolean"
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "204": { "description": "Answered." },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "description": "The invitation is no longer open, or is for another number." },
-          "409": { "description": "The invitation was already used, withdrawn or has expired." }
+          "204": {
+            "description": "Answered."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The invitation is no longer open, or is for another number."
+          },
+          "409": {
+            "description": "The invitation was already used, withdrawn or has expired."
+          }
         }
       }
     },
@@ -16465,51 +16510,101 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "id": { "type": "string" },
-                          "slug": { "type": "string" },
-                          "name": { "type": "string" },
-                          "status": { "type": "string" },
-                          "domain": { "type": "string" },
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "domain": {
+                            "type": "string"
+                          },
                           "domains": {
                             "type": "array",
                             "items": {
                               "type": "object",
                               "properties": {
-                                "host": { "type": "string" },
-                                "verified": { "type": "boolean" }
+                                "host": {
+                                  "type": "string"
+                                },
+                                "verified": {
+                                  "type": "boolean"
+                                }
                               }
                             }
                           },
-                          "legal_name": { "type": "string" },
+                          "legal_name": {
+                            "type": "string"
+                          },
                           "owners": {
                             "type": "array",
                             "items": {
                               "type": "object",
                               "properties": {
-                                "id": { "type": "integer" },
-                                "email": { "type": "string" },
-                                "phone": { "type": "string" },
-                                "email_verified": { "type": "boolean" },
-                                "phone_verified": { "type": "boolean" },
+                                "id": {
+                                  "type": "integer"
+                                },
+                                "email": {
+                                  "type": "string"
+                                },
+                                "phone": {
+                                  "type": "string"
+                                },
+                                "email_verified": {
+                                  "type": "boolean"
+                                },
+                                "phone_verified": {
+                                  "type": "boolean"
+                                },
                                 "email_sent": {
                                   "type": "object",
                                   "description": "The email last sent asking them to verify, with the link taken out. Present only until the address is verified.",
                                   "properties": {
-                                    "email": { "type": "string" },
-                                    "from": { "type": "string" },
-                                    "subject": { "type": "string" },
-                                    "body": { "type": "string" },
-                                    "sent_at": { "type": "string", "format": "date-time" }
+                                    "email": {
+                                      "type": "string"
+                                    },
+                                    "from": {
+                                      "type": "string"
+                                    },
+                                    "subject": {
+                                      "type": "string"
+                                    },
+                                    "body": {
+                                      "type": "string"
+                                    },
+                                    "sent_at": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
                                   }
                                 }
                               }
                             }
                           },
-                          "products": { "type": "integer" },
-                          "orders": { "type": "integer" },
-                          "created_at": { "type": "string", "format": "date-time" },
-                          "last_activity": { "type": "string" },
-                          "last_activity_at": { "type": "string", "format": "date-time", "nullable": true }
+                          "products": {
+                            "type": "integer"
+                          },
+                          "orders": {
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "last_activity": {
+                            "type": "string"
+                          },
+                          "last_activity_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          }
                         }
                       }
                     }
@@ -16545,10 +16640,17 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["superuser_id", "store_id"],
+                "required": [
+                  "superuser_id",
+                  "store_id"
+                ],
                 "properties": {
-                  "superuser_id": { "type": "integer" },
-                  "store_id": { "type": "string" }
+                  "superuser_id": {
+                    "type": "integer"
+                  },
+                  "store_id": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -16565,10 +16667,18 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "from": { "type": "string" },
-                        "to": { "type": "string" },
-                        "subject": { "type": "string" },
-                        "body": { "type": "string" }
+                        "from": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "subject": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -16576,10 +16686,18 @@
               }
             }
           },
-          "401": { "description": "No valid credential." },
-          "403": { "description": "The caller is not the install's owner." },
-          "404": { "description": "That person does not own that store." },
-          "409": { "description": "The address is already verified." }
+          "401": {
+            "description": "No valid credential."
+          },
+          "403": {
+            "description": "The caller is not the install's owner."
+          },
+          "404": {
+            "description": "That person does not own that store."
+          },
+          "409": {
+            "description": "The address is already verified."
+          }
         }
       }
     },
@@ -16601,12 +16719,25 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["superuser_id", "store_id", "subject", "body"],
+                "required": [
+                  "superuser_id",
+                  "store_id",
+                  "subject",
+                  "body"
+                ],
                 "properties": {
-                  "superuser_id": { "type": "integer" },
-                  "store_id": { "type": "string" },
-                  "subject": { "type": "string" },
-                  "body": { "type": "string" }
+                  "superuser_id": {
+                    "type": "integer"
+                  },
+                  "store_id": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -16623,8 +16754,13 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "sent_to": { "type": "string" },
-                        "email_sent": { "type": "object", "description": "The copy the list shows until the address is verified, with the link taken out." }
+                        "sent_to": {
+                          "type": "string"
+                        },
+                        "email_sent": {
+                          "type": "object",
+                          "description": "The copy the list shows until the address is verified, with the link taken out."
+                        }
                       }
                     }
                   }
@@ -16632,12 +16768,24 @@
               }
             }
           },
-          "400": { "description": "The subject or message is missing or too long." },
-          "401": { "description": "No valid credential." },
-          "403": { "description": "The caller is not the install's owner." },
-          "404": { "description": "That person does not own that store." },
-          "409": { "description": "The address is already verified, or this install cannot send it yet." },
-          "502": { "description": "The email provider did not send it." }
+          "400": {
+            "description": "The subject or message is missing or too long."
+          },
+          "401": {
+            "description": "No valid credential."
+          },
+          "403": {
+            "description": "The caller is not the install's owner."
+          },
+          "404": {
+            "description": "That person does not own that store."
+          },
+          "409": {
+            "description": "The address is already verified, or this install cannot send it yet."
+          },
+          "502": {
+            "description": "The email provider did not send it."
+          }
         }
       }
     },
@@ -16654,9 +16802,13 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["token"],
+                "required": [
+                  "token"
+                ],
                 "properties": {
-                  "token": { "type": "string" }
+                  "token": {
+                    "type": "string"
+                  }
                 }
               }
             }
@@ -16673,7 +16825,9 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "verified": { "type": "boolean" }
+                        "verified": {
+                          "type": "boolean"
+                        }
                       }
                     }
                   }
@@ -16681,7 +16835,9 @@
               }
             }
           },
-          "400": { "description": "The link has expired or was already used." }
+          "400": {
+            "description": "The link has expired or was already used."
+          }
         }
       }
     },
@@ -16702,7 +16858,9 @@
             "name": "store_id",
             "in": "query",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -16716,16 +16874,36 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "products": { "type": "integer" },
-                        "orders": { "type": "integer" },
-                        "customers": { "type": "integer" },
-                        "collections": { "type": "integer" },
-                        "categories": { "type": "integer" },
-                        "discounts": { "type": "integer" },
-                        "files": { "type": "integer" },
-                        "file_bytes": { "type": "integer" },
-                        "domains": { "type": "integer" },
-                        "team": { "type": "integer" }
+                        "products": {
+                          "type": "integer"
+                        },
+                        "orders": {
+                          "type": "integer"
+                        },
+                        "customers": {
+                          "type": "integer"
+                        },
+                        "collections": {
+                          "type": "integer"
+                        },
+                        "categories": {
+                          "type": "integer"
+                        },
+                        "discounts": {
+                          "type": "integer"
+                        },
+                        "files": {
+                          "type": "integer"
+                        },
+                        "file_bytes": {
+                          "type": "integer"
+                        },
+                        "domains": {
+                          "type": "integer"
+                        },
+                        "team": {
+                          "type": "integer"
+                        }
                       }
                     }
                   }
@@ -16733,9 +16911,15 @@
               }
             }
           },
-          "401": { "description": "No valid credential." },
-          "403": { "description": "The caller may not delete this store." },
-          "409": { "description": "It is the install's only store." }
+          "401": {
+            "description": "No valid credential."
+          },
+          "403": {
+            "description": "The caller may not delete this store."
+          },
+          "409": {
+            "description": "It is the install's only store."
+          }
         }
       }
     },
@@ -16762,7 +16946,9 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "allowed": { "type": "boolean" }
+                        "allowed": {
+                          "type": "boolean"
+                        }
                       }
                     }
                   }
@@ -21912,11 +22098,22 @@
         "type": "object",
         "description": "A store asking the signed-in person to join, by their proved phone number.",
         "properties": {
-          "id": { "type": "integer", "format": "int64" },
-          "store_id": { "type": "string" },
-          "store_name": { "type": "string" },
-          "role": { "type": "string" },
-          "invited_by": { "type": "string" }
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "store_id": {
+            "type": "string"
+          },
+          "store_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "invited_by": {
+            "type": "string"
+          }
         }
       },
       "Invitation": {
@@ -21930,7 +22127,10 @@
           "email": {
             "type": "string"
           },
-          "phone": { "type": "string", "description": "Who a phone invitation is for, in place of email. It has no link." },
+          "phone": {
+            "type": "string",
+            "description": "Who a phone invitation is for, in place of email. It has no link."
+          },
           "role": {
             "type": "string",
             "enum": [
