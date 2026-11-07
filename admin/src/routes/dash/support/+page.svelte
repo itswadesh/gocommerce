@@ -18,6 +18,7 @@
     const message = $derived(store ? `Hi, I need help with my store ${store}.` : "Hi, I need help with my store.");
     const whatsappTo = (text) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`;
     const link = $derived(whatsappTo(message));
+    const setupLink = $derived(whatsappTo(store ? `Hi, I need help setting up my store ${store}.` : "Hi, I need help setting up my store."));
 
     // Sent as WhatsApp messages like the rest of this page, so they reach the same
     // person, and the store's name comes along. The first words say which kind it
@@ -123,6 +124,14 @@
             {/each}
         </ul>
 
+        <section class="card support-card support-setup-help">
+            <h2 class="tw:text-sm tw:font-semibold">Need help setting up your store? Talk to us anytime.</h2>
+            <a class="btn support-whatsapp" href={setupLink} target="_blank" rel="noopener noreferrer">
+                <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                <span class="txt">Talk to us on WhatsApp</span>
+            </a>
+        </section>
+
         <h2 class="support-heading tw:text-sm tw:font-semibold">Set up your store</h2>
         <ul class="support-links">
             {#each setup as l (l.href)}
@@ -153,6 +162,9 @@
     }
     .support-form-field {
         width: 100%;
+    }
+    .support-setup-help {
+        margin-top: 24px;
     }
     .support-heading {
         margin: 24px 0 8px;
