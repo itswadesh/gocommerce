@@ -397,6 +397,48 @@ func (p *Payments) CheckPayment(ctx context.Context, orderID int64) (*PaymentChe
 	return check, nil
 }
 
+const (
+	// sweepAskTimeout bounds one question to a gateway from the sweeper, which
+	// asks about each order in turn.
+	sweepAskTimeout = 10 * time.Second
+	// sweepAskGrace is how long past its deadline an order is held while its
+	// gateway cannot answer. Held stock is cheaper than a paid order cancelled
+	// during an outage, but keys revoked for good must not hold stock for ever.
+	sweepAskGrace = 24 * time.Hour
+)
+
+// holdFromSweep says the sweeper must leave an expired order alone, because the
+// gateway says it was paid or cannot say yet. A paid order is recorded here, by
+// [Payments.CheckPayment]. A method that cannot be asked, such as a hosted page
+// with no status call or one no longer set up, is swept as it always was.
+//
+// ponytail: held orders stay in the sweep's batch, so 200 of them in one store
+// would crowd out the rest until the grace ends. Order the query by age if a
+// long gateway outage ever shows that happening.
+func (p *Payments) holdFromSweep(ctx context.Context, orderID int64, expired time.Time) bool {
+	o, err := p.app.orders.Get(ctx, orderID)
+	if err != nil {
+		return false
+	}
+	provider, ok := p.provider(o.PaymentProvider)
+	if !ok {
+		return false
+	}
+	if _, ok := provider.(PaymentStatusReader); !ok || !configured(ctx, provider) {
+		return false
+	}
+	ask, cancel := context.WithTimeout(ctx, sweepAskTimeout)
+	defer cancel()
+	check, err := p.CheckPayment(ask, orderID)
+	if err != nil {
+		hold := time.Since(expired) < sweepAskGrace
+		p.app.log.Warn("could not ask the gateway about an expired order",
+			"order", o.Number, "provider", o.PaymentProvider, "held", hold, "error", err)
+		return hold
+	}
+	return check.Order.PaymentStatus == PaymentPaid
+}
+
 // ------------------------------------------------------------------- refunds
 
 // refundStaleAfter is how long a refund may sit `pending` before it has stopped
