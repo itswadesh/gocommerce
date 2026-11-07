@@ -37,6 +37,10 @@ type Config struct {
 	// MaxItems overrides how many products one list may hold. Zero takes
 	// the default of 200.
 	MaxItems int
+	// ProductPath is where a product page lives on the storefront, with
+	// {slug} in it, for the link in a back-in-stock email. Empty takes
+	// "/products/{slug}".
+	ProductPath string
 }
 
 // List is one shopper's wishlist.
@@ -140,6 +144,18 @@ CREATE INDEX wishlist_items_product_idx ON wishlist_items (product_id);
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "wishlists", "wishlist_items"),
 		gocommerce.WithholdFromReports("0003_withhold_from_reports", "wishlists.token"),
+		{
+			// Back-in-stock alerts (D248). waiting_since is set when the pass
+			// sees the item sold out and cleared when it announces the
+			// restock, so each restock is one message; sent_at is when the
+			// last one went.
+			ID: "0004_restock_alerts",
+			SQL: `
+ALTER TABLE wishlist_items ADD COLUMN restock_waiting_since timestamptz;
+ALTER TABLE wishlist_items ADD COLUMN restock_sent_at timestamptz;
+CREATE INDEX wishlist_items_restock_waiting_idx ON wishlist_items (store_id) WHERE restock_waiting_since IS NOT NULL;
+`,
+		},
 	}
 }
 
@@ -155,9 +171,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Fields: []gocommerce.PluginField{
 			{Key: "heading", Label: "Page heading", Kind: "text", Public: true, Default: "Your wishlist"},
 			{Key: "collect_email", Label: "Ask for an email on the wishlist page", Kind: "bool", Public: true,
-				Help: "So the shop can write when something wished for comes back in stock."},
+				Help: "Shoppers who give one are emailed when something they saved comes back in stock."},
 		},
 	})
+	m.registerRestock(app)
 
 	app.HandleFunc("POST /x/wishlist", m.handleCreate)
 	app.HandleFunc("GET /x/wishlist/{token}", m.handleGet)
