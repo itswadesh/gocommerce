@@ -156,7 +156,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `contact` | The storefront's contact form and product enquiries, and the inbox behind both, where an operator replies by email from the panel |
 | `newsletter` | The storefront's signup box, its list, and its unsubscribe link |
 | `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
-| `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
+| `wishlist` | Shoppers save products and are emailed when a sold-out one is back; the panel ranks what is wanted most and what of it is out of stock |
 | `customizer` | A shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; the order carries the print file and the photos. Off until switched on; see [`docs/customizer.md`](docs/customizer.md) |
 | `gokwik` | Asks GoKwik how likely each cash-on-delivery order in India is to come back undelivered, and refuses cash on delivery for the risky ones; cash on delivery stays open if GoKwik is slow or down |
 | `retailassistant` | Supplier bills forwarded on one shared WhatsApp number wait for review, then keep an account of what each supplier is owed: partial payments, advances, credit notes and reversals. Goods reach stock only when somebody books them in |
