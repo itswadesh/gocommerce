@@ -101,6 +101,8 @@ graph):
 | `payments-razorpay` | Cards and UPI, hosted or in-page |
 | `payments-paypal` | PayPal balance and cards; not for rupee stores, because PayPal has no INR; partial refunds |
 | `payments-cashfree` | UPI, cards and netbanking on Cashfree's checkout, India; rupees only, partial refunds |
+| `payments-paystack` | Cards, bank transfer and mobile money on Paystack's checkout; NGN, GHS, ZAR, KES, USD; partial refunds |
+| `payments-flutterwave` | Cards, bank transfer and mobile money on Flutterwave's checkout, across Africa and beyond; partial refunds |
 | `payments-paddle` | Merchant of record: hosted checkout, adjustments as refunds |
 | `payments-lemonsqueezy` | Merchant of record for digital goods, refunds |
 | `payments-adyen` | Payment links, HMAC-signed notifications, refunds |

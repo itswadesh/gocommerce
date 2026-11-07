@@ -53,11 +53,13 @@ import (
 	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
 	creem "github.com/itswadesh/gocommerce/ext/payments-creem"
+	flutterwave "github.com/itswadesh/gocommerce/ext/payments-flutterwave"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
 	lemonsqueezy "github.com/itswadesh/gocommerce/ext/payments-lemonsqueezy"
 	paddle "github.com/itswadesh/gocommerce/ext/payments-paddle"
 	paypal "github.com/itswadesh/gocommerce/ext/payments-paypal"
+	paystack "github.com/itswadesh/gocommerce/ext/payments-paystack"
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
@@ -131,7 +133,9 @@ func everyModule() []gocommerce.Module {
 		hyperswitch.New(hyperswitch.Config{}),
 		lemonsqueezy.New(lemonsqueezy.Config{}),
 		paddle.New(paddle.Config{}),
+		flutterwave.New(flutterwave.Config{}),
 		paypal.New(paypal.Config{}),
+		paystack.New(paystack.Config{}),
 		razorpay.New(razorpay.Config{}),
 		revenuecat.New(revenuecat.Config{}),
 		stripe.New(stripe.Config{}),

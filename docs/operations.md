@@ -445,6 +445,26 @@ While the rule is on, those requests do not go through `HTTP_PROXY` or
 goes. The install's own addresses — `MEILI_HOST`, `IMPORT_AMAZON_LLM_URL` —
 are set by whoever runs the server and are not held to it.
 
+### Taking payments through Paystack or Flutterwave
+
+Both are on an install started with `-gateways`, which needs no environment
+variable, and each store connects its own account under Settings › Payment
+methods. The URL below is on the store's own host; on a shared host add
+`?store=<store id>`, as for every gateway.
+
+| | Paystack | Flutterwave |
+|---|---|---|
+| Enter in the panel | Secret key | Secret key, and a secret hash you choose |
+| Set in its dashboard | `https://<host>/api/checkout/paystack/webhook`, under Settings › API Keys & Webhooks | `https://<host>/api/checkout/flutterwave/webhook` and the same secret hash, under Settings › Webhooks |
+| Currencies | NGN, GHS, ZAR, KES, USD | CAD, COP, EGP, EUR, GBP, GHS, KES, NGN, RWF, SLL, TZS, UGX, USD, XAF, XOF, ZAR, ZMW; the account's country narrows it |
+
+The key decides test or live, and an order paid with a test key is marked paid
+with no money behind it, so change to the live key and set the live webhook
+before taking real orders. Paystack's dashboard has a webhook URL for each mode;
+Flutterwave's also has a switch for retrying failed webhooks, which is worth
+turning on. A payment that does not match its order is not recorded: it appears
+on the Errors screen for somebody to settle with the provider.
+
 ### Shipping through Shiprocket
 
 Each store connects its own Shiprocket account; nothing about one store's
@@ -942,6 +962,8 @@ DELETE FROM outbox_events WHERE published_at < now() - interval '90 days';
 
 -- Webhook idempotency records, well past any gateway's retry window.
 DELETE FROM payments_stripe_events WHERE received_at < now() - interval '30 days';
+DELETE FROM payments_paystack_events WHERE received_at < now() - interval '30 days';
+DELETE FROM payments_flutterwave_events WHERE received_at < now() - interval '30 days';
 
 -- Stock movements, roughly two rows per order line plus every operator
 -- movement. Nothing in the engine deletes one.
