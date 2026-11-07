@@ -49,15 +49,13 @@ func (a *App) trustedProxiesMW(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Temporary, to be removed once read: says what one test request looked like.
-		if r.URL.Path == "/diag-forwarded-010ba0d20a385f36" {
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte("remote=" + r.RemoteAddr + " xff=" + strings.Join(r.Header.Values("X-Forwarded-For"), "|") + " trusted=" + fmt.Sprint(trusted)))
-			return
-		}
 		if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
 			remote := peer.Addr().Unmap()
-			if addr := clientAddr(remote, r.Header.Values("X-Forwarded-For"), trusted); addr != remote {
+			addr := clientAddr(remote, r.Header.Values("X-Forwarded-For"), trusted)
+			if behind := behindCloudflare(addr, r.Header.Get("CF-Connecting-IP")); behind.IsValid() {
+				addr = behind
+			}
+			if addr != remote {
 				proxied := *r
 				proxied.RemoteAddr = net.JoinHostPort(addr.String(), "0")
 				r = &proxied
@@ -65,6 +63,40 @@ func (a *App) trustedProxiesMW(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// cloudflareRanges are Cloudflare's published ranges,
+// https://www.cloudflare.com/ips/. They change rarely, and a new one only means
+// its visitors count as that edge until it is listed here.
+var cloudflareRanges = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, r := range []string{
+		"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18",
+		"108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17",
+		"162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+		"2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
+		"2a06:98c0::/29", "2c0f:f248::/32",
+	} {
+		out = append(out, netip.MustParsePrefix(r))
+	}
+	return out
+}()
+
+// behindCloudflare is the visitor Cloudflare names when the address the walk
+// ended on is Cloudflare's own edge, and the zero address otherwise. A proxy such
+// as Traefik drops what it does not trust from X-Forwarded-For, leaving only the
+// edge it heard from, so the header is the one place the visitor still is (D243).
+// It is believed only there: a request that did not come through Cloudflare ends
+// the walk on its own address, however it fills in the header.
+func behindCloudflare(edge netip.Addr, header string) netip.Addr {
+	if !isTrustedProxy(edge, cloudflareRanges) {
+		return netip.Addr{}
+	}
+	visitor, err := netip.ParseAddr(strings.TrimSpace(header))
+	if err != nil {
+		return netip.Addr{}
+	}
+	return visitor.Unmap()
 }
 
 // clientAddr is the address a request from remote is counted against. Only a
