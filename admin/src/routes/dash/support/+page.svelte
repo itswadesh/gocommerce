@@ -37,6 +37,30 @@
         { href: `${base}/docs`, icon: "ri-code-s-slash-line", label: "API reference", hint: "For connecting your own apps and tools." },
         { href: "https://shopnx.in/updates", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
     ];
+    // The ShopNx tutorials on YouTube, in the order a new store needs them. One
+    // with `from` is scheduled and private until then, so it is left out until it
+    // publishes rather than shown as a dead link.
+    const PLAYLIST = "https://www.youtube.com/playlist?list=PLL5RUDvO6zNE";
+    const VIDEOS = [
+        { id: "xJ0lxasdQkw", label: "Add your store details and GSTIN", from: "2026-11-10T13:00:00Z" },
+        { id: "uqpDvr_nQjk", label: "Add a product" },
+        { id: "kz8LaZvm-MI", label: "Add sizes and variants" },
+        { id: "QE9hgdVIZJI", label: "Create a collection" },
+        { id: "oilaWywnu9E", label: "Import products from a CSV file" },
+        { id: "fAOzhuSh-Tk", label: "Set up cash on delivery and payments" },
+        { id: "tWt7c84QaOw", label: "Set up shipping zones and rates" },
+        { id: "8N3YKqye_bU", label: "Add policy pages", from: "2026-11-12T13:00:00Z" },
+        { id: "CJVX67nku_k", label: "Connect your own domain", from: "2026-11-14T13:00:00Z" },
+        { id: "kVDYeyc9IjY", label: "Create a discount code" },
+        { id: "LBmSceBUsrA", label: "Add an FAQ page", from: "2026-11-17T13:00:00Z" },
+        { id: "S9DitSPU1D8", label: "Issue gift cards", from: "2026-11-19T13:00:00Z" },
+        { id: "w5rEdgJ6O7Y", label: "Price jewellery by the gold rate", from: "2026-11-21T13:00:00Z" },
+        { id: "bGvaJ1Yfe6k", label: "Track stock and what's running low", from: "2026-11-24T13:00:00Z" },
+        { id: "ROlg-O6Z-N0", label: "Ship an order and mark COD paid" },
+        { id: "aJJ-UQAurF8", label: "Invite a team member" },
+        { id: "d3VOICVlO80", label: "Get help and request a feature", from: "2026-11-26T13:00:00Z" },
+    ];
+    const videos = VIDEOS.filter((v) => !v.from || Date.now() >= Date.parse(v.from));
     // Where stores most often need to go. Rights match the sidebar's (nav.js), so
     // nobody is sent to a screen that would refuse them.
     const SETUP = [
@@ -133,6 +157,31 @@
                 <span class="txt">Talk to us on WhatsApp</span>
             </a>
         </section>
+
+        <h2 class="support-heading tw:text-sm tw:font-semibold">Video tutorials</h2>
+        <ul class="support-links">
+            <li>
+                <a class="card support-link" href={PLAYLIST} target="_blank" rel="noopener noreferrer">
+                    <i class="ri-play-list-line" aria-hidden="true"></i>
+                    <span class="support-link-text">
+                        <span class="support-link-label">Watch them all<span class="support-new-tab"> (opens in a new tab)</span></span>
+                        <span class="txt-hint support-link-hint">Every ShopNx tutorial in one playlist on YouTube.</span>
+                    </span>
+                    <i class="ri-external-link-line" aria-hidden="true"></i>
+                </a>
+            </li>
+            {#each videos as v (v.id)}
+                <li>
+                    <a class="card support-link" href="https://youtu.be/{v.id}" target="_blank" rel="noopener noreferrer">
+                        <i class="ri-youtube-line" aria-hidden="true"></i>
+                        <span class="support-link-text">
+                            <span class="support-link-label">{v.label}<span class="support-new-tab"> (opens in a new tab)</span></span>
+                        </span>
+                        <i class="ri-external-link-line" aria-hidden="true"></i>
+                    </a>
+                </li>
+            {/each}
+        </ul>
 
         <h2 class="support-heading tw:text-sm tw:font-semibold">Set up your store</h2>
         <ul class="support-links">
