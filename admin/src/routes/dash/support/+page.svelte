@@ -16,7 +16,16 @@
 
     const store = $derived(myStores.current?.name);
     const message = $derived(store ? `Hi, I need help with my store ${store}.` : "Hi, I need help with my store.");
-    const link = $derived(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(message)}`);
+    const whatsappTo = (text) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`;
+    const link = $derived(whatsappTo(message));
+
+    // Sent as a WhatsApp message like the rest of this page, so the request reaches
+    // the same person, and the store's name comes along with it.
+    let feature = $state("");
+    const asked = $derived(feature.trim());
+    const featureLink = $derived(
+        whatsappTo(`Feature request${store ? ` from my store ${store}` : ""}: ${asked}`),
+    );
 
     // Each opens as its own tab, so the panel stays where the person left it.
     const READING = [
@@ -57,6 +66,26 @@
             <p class="txt-hint support-number">{SHOWN}</p>
         </section>
 
+        <section class="card support-card support-feature">
+            <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
+            <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
+            <div class="field support-feature-field">
+                <label for="support_feature">What should we add?</label>
+                <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
+            </div>
+            {#if asked}
+                <a class="btn support-whatsapp" href={featureLink} target="_blank" rel="noopener noreferrer">
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">Send request on WhatsApp</span>
+                </a>
+            {:else}
+                <button type="button" class="btn support-whatsapp" disabled>
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">Send request on WhatsApp</span>
+                </button>
+            {/if}
+        </section>
+
         <h2 class="support-heading tw:text-sm tw:font-semibold">Read and learn</h2>
         <ul class="support-links">
             {#each READING as l (l.href)}
@@ -92,6 +121,12 @@
 </div>
 
 <style>
+    .support-feature {
+        margin-top: 16px;
+    }
+    .support-feature-field {
+        width: 100%;
+    }
     .support-heading {
         margin: 24px 0 8px;
     }
