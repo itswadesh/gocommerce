@@ -913,7 +913,9 @@ operators learn to ignore. It is the production counterpart of
 `TestTheLedgerReconcilesToTheShelf`.
 
 **Reserved stock that never resolves.** The unpaid-order sweeper cancels
-pending orders past `OrderTTL` and returns their inventory. If reserved
+pending orders past `OrderTTL` and returns their inventory. A gateway that can
+report a payment is asked first: a paid order is recorded instead, and an order
+whose gateway cannot answer is held for up to 24 hours. If reserved
 quantities climb anyway, look for orders stuck `pending` with a payment status
 nobody ever settled.
 

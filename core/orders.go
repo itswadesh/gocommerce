@@ -1272,6 +1272,9 @@ var sweepUnpaidBatch = 200
 // there more" from the cancellation count alone would report a clear queue in
 // exactly the backlogged-and-partly-broken state an operator presses the button
 // in — an order that cannot be cancelled is logged and skipped just below.
+//
+// A gateway that can be asked is asked first (see [Payments.holdFromSweep]),
+// because a missed webhook makes a paid order look exactly like an abandoned one.
 func (s *Orders) SweepUnpaidPass(ctx context.Context) (cancelled, scanned int, err error) {
 	// Named once, before the loop, so two hundred cancellations at 3am read as
 	// the store doing maintenance rather than as somebody's night's work.
@@ -1292,21 +1295,25 @@ func (s *Orders) SweepUnpaidPass(ctx context.Context) (cancelled, scanned int, e
 	// compares against sweepUnpaidBatch, and two copies of 200 are two things
 	// that can drift.
 	rows, err := s.app.db.QueryContext(ctx, `
-		SELECT id FROM orders
+		SELECT id, reservation_expires_at FROM orders
 		WHERE status = 'pending' AND payment_status IN ('pending', 'failed')
 		  AND reservation_expires_at IS NOT NULL AND reservation_expires_at < now()
 		LIMIT $1`, sweepUnpaidBatch)
 	if err != nil {
 		return 0, 0, err
 	}
-	var ids []int64
+	type expiredOrder struct {
+		id      int64
+		expired time.Time
+	}
+	var expired []expiredOrder
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var e expiredOrder
+		if err := rows.Scan(&e.id, &e.expired); err != nil {
 			rows.Close()
 			return 0, 0, err
 		}
-		ids = append(ids, id)
+		expired = append(expired, e)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -1314,7 +1321,11 @@ func (s *Orders) SweepUnpaidPass(ctx context.Context) (cancelled, scanned int, e
 	}
 
 	var swept int
-	for _, id := range ids {
+	for _, e := range expired {
+		id := e.id
+		if s.app.Pay().holdFromSweep(ctx, id, e.expired) {
+			continue
+		}
 		// Labelled before Cancel's own transition can label it 'order', which
 		// is what makes a night's sweep distinguishable in the ledger from an
 		// operator cancelling by hand.
@@ -1328,7 +1339,7 @@ func (s *Orders) SweepUnpaidPass(ctx context.Context) (cancelled, scanned int, e
 	if swept > 0 {
 		s.app.log.Info("released inventory from expired unpaid orders", "orders", swept)
 	}
-	return swept, len(ids), nil
+	return swept, len(expired), nil
 }
 
 // ------------------------------------------------------------- editing lines

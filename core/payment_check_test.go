@@ -190,6 +190,68 @@ func TestCheckPaymentGatewayError(t *testing.T) {
 	}
 }
 
+// A missed webhook leaves a paid order looking abandoned, so the sweeper asks
+// before it cancels, and waits out a gateway that cannot answer.
+func TestSweepAsksTheGatewayBeforeCancelling(t *testing.T) {
+	gw := &statusProvider{}
+	app := newTestApp(t, payModule{provider: gw})
+	ctx := context.Background()
+	expire := func(id int64, age string) {
+		t.Helper()
+		if _, err := app.DB().ExecContext(ctx,
+			`UPDATE orders SET reservation_expires_at = now() - $2::interval WHERE id = $1`, id, age); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func(id int64) (string, string) {
+		t.Helper()
+		o, err := app.Order().Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o.Status, o.PaymentStatus
+	}
+	// The gateway took the money: recorded, not cancelled.
+	paid := checkableOrder(t, app, "SWP-1")
+	expire(paid.ID, "1 hour")
+	gw.answer(PaymentState{Paid: true, Reference: "pay_1"}, nil)
+	if swept, err := app.Order().SweepUnpaid(ctx); err != nil || swept != 0 {
+		t.Fatalf("sweep with a paid order = %d, %v; want 0", swept, err)
+	}
+	if status, payment := state(paid.ID); status == OrderCancelled || payment != PaymentPaid {
+		t.Errorf("paid order = %s/%s; want it settled", status, payment)
+	}
+
+	// The gateway cannot answer: held, until the grace runs out.
+	down := checkableOrder(t, app, "SWP-2")
+	expire(down.ID, "1 hour")
+	gw.answer(PaymentState{}, errors.New("connection refused"))
+	if swept, err := app.Order().SweepUnpaid(ctx); err != nil || swept != 0 {
+		t.Fatalf("sweep with the gateway down = %d, %v; want 0", swept, err)
+	}
+	if status, _ := state(down.ID); status == OrderCancelled {
+		t.Error("an order was cancelled while its gateway could not answer")
+	}
+	expire(down.ID, "25 hours")
+	if swept, err := app.Order().SweepUnpaid(ctx); err != nil || swept != 1 {
+		t.Fatalf("sweep past the grace = %d, %v; want 1", swept, err)
+	}
+	if status, _ := state(down.ID); status != OrderCancelled {
+		t.Errorf("status past the grace = %q, want cancelled", status)
+	}
+
+	// The gateway says nothing was paid: cancelled as before.
+	unpaid := checkableOrder(t, app, "SWP-3")
+	expire(unpaid.ID, "1 hour")
+	gw.answer(PaymentState{}, nil)
+	if swept, err := app.Order().SweepUnpaid(ctx); err != nil || swept != 1 {
+		t.Fatalf("sweep with an unpaid order = %d, %v; want 1", swept, err)
+	}
+	if status, _ := state(unpaid.ID); status != OrderCancelled {
+		t.Errorf("status = %q, want cancelled", status)
+	}
+}
+
 // A method that cannot be asked says so plainly, before anything is called.
 func TestCheckPaymentNeedsAMethodThatCanBeAsked(t *testing.T) {
 	app := newTestApp(t)
