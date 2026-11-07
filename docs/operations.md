@@ -547,8 +547,11 @@ anybody.
 `docker-compose.yml` tells the storefront to read the shopper's address from the
 proxy in front of it (`ADDRESS_HEADER`, `XFF_DEPTH`), and the storefront replaces
 `X-Forwarded-For` with it. List the storefront service here and the trade portal's
-sign-ins and the dealer form count each shopper apart (D236). Behind a CDN as well,
-set `STOREFRONT_XFF_DEPTH=2`.
+sign-ins and the dealer form count each shopper apart (D236). The file trusts Docker's
+private ranges unless told otherwise, so anything else on those networks is believed
+too. Behind Cloudflare nothing more is needed: the storefront reads `CF-Connecting-IP`
+on a request from Cloudflare's published ranges. Behind another CDN, set
+`STOREFRONT_XFF_DEPTH=2`.
 
 ### Several brands
 
