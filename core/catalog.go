@@ -134,12 +134,15 @@ type Variant struct {
 	// download, a service or a gift card: nothing is charged to send it and
 	// the checkout asks for no delivery option when the basket holds nothing
 	// else.
-	RequiresShipping bool     `json:"requires_shipping"`
-	Options          []string `json:"options"`
-	Label            string   `json:"label"`
-	StockOnHand      int      `json:"stock_on_hand"`
-	StockReserved    int      `json:"stock_reserved"`
-	Available        int      `json:"available"`
+	RequiresShipping bool `json:"requires_shipping"`
+	// GiftCard is whether each unit sold becomes a gift card worth its price
+	// once the order is paid (D250).
+	GiftCard      bool     `json:"gift_card"`
+	Options       []string `json:"options"`
+	Label         string   `json:"label"`
+	StockOnHand   int      `json:"stock_on_hand"`
+	StockReserved int      `json:"stock_reserved"`
+	Available     int      `json:"available"`
 	// AtLocation is this variant's holding at one particular place. It is filled
 	// in only by the reads that are *about* a place — a location's stock listing
 	// and the low-stock report for one shop — and is absent everywhere else,
@@ -257,6 +260,7 @@ type VariantInput struct {
 	CostMinor           *int64   `json:"cost_minor"`
 	Taxable             *bool    `json:"taxable"`
 	RequiresShipping    *bool    `json:"requires_shipping"`
+	GiftCard            *bool    `json:"gift_card"`
 	Options             []string `json:"options"`
 	StockOnHand         *int     `json:"stock_on_hand"`
 	TrackInventory      *bool    `json:"track_inventory"`
@@ -323,6 +327,7 @@ type VariantPatch struct {
 	CostMinor        NullableAmount `json:"cost_minor"`
 	Taxable          *bool          `json:"taxable"`
 	RequiresShipping *bool          `json:"requires_shipping"`
+	GiftCard         *bool          `json:"gift_card"`
 	TrackInventory   *bool          `json:"track_inventory"`
 	ContinueSelling  *bool          `json:"continue_selling"`
 	Active           *bool          `json:"active"`
@@ -689,6 +694,11 @@ func (c *Catalog) insertVariant(ctx context.Context, tx *sql.Tx, productID int64
 	).Scan(&id)
 	if err != nil {
 		return 0, translateCatalogErr(err)
+	}
+	if boolOr(in.GiftCard, false) {
+		if _, err := tx.ExecContext(ctx, `UPDATE variants SET gift_card = true WHERE id = $1`, id); err != nil {
+			return 0, err
+		}
 	}
 
 	// A variant is created with its opening stock in one place. `stock_on_hand`
@@ -1089,6 +1099,9 @@ func (c *Catalog) UpdateVariant(ctx context.Context, id int64, patch VariantPatc
 	}
 	if patch.RequiresShipping != nil {
 		add("requires_shipping", *patch.RequiresShipping)
+	}
+	if patch.GiftCard != nil {
+		add("gift_card", *patch.GiftCard)
 	}
 	if patch.TrackInventory != nil {
 		add("track_inventory", *patch.TrackInventory)
@@ -1738,7 +1751,7 @@ const (
 )
 
 const variantColumns = `v.id, v.product_id, v.sku, coalesce(v.barcode, ''), v.price_minor,
-	v.compare_at_price_minor, v.cost_minor, v.taxable, v.requires_shipping, ` + variantOnHand + `, ` + variantReserved + `,
+	v.compare_at_price_minor, v.cost_minor, v.taxable, v.requires_shipping, v.gift_card, ` + variantOnHand + `, ` + variantReserved + `,
 	v.track_inventory, v.continue_selling, v.active, v.origin_country, v.hs_code,
 	v.weight_grams, v.weight_unit,
 	v.length_mm, v.width_mm, v.height_mm, v.dimension_unit,
@@ -1776,7 +1789,7 @@ func (c *Catalog) selectVariants(ctx context.Context, where, orderBy, page strin
 		var weight sql.NullInt64
 		var length, width, height sql.NullInt64
 		if err := rows.Scan(&v.ID, &v.ProductID, &v.SKU, &v.Barcode, &v.Price.AmountMinor,
-			&compareAt, &cost, &v.Taxable, &v.RequiresShipping, &v.StockOnHand, &v.StockReserved,
+			&compareAt, &cost, &v.Taxable, &v.RequiresShipping, &v.GiftCard, &v.StockOnHand, &v.StockReserved,
 			&v.TrackInventory, &v.ContinueSelling, &v.Active, &v.OriginCountry, &v.HSCode,
 			&weight, &v.WeightUnit,
 			&length, &width, &height, &v.DimensionUnit,

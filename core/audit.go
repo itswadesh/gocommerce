@@ -57,6 +57,7 @@ const (
 	AuditEntityCategory   = "category"
 	AuditEntityCollection = "collection"
 	AuditEntityDiscount   = "discount"
+	AuditEntityGiftCard   = "gift_card"
 	AuditEntityTaxRate    = "tax_rate"
 	AuditEntityLocation   = "location"
 	AuditEntitySuperuser  = "superuser"
@@ -97,6 +98,7 @@ var AuditEntityTypes = []string{
 	AuditEntityCategory,
 	AuditEntityCollection,
 	AuditEntityDiscount,
+	AuditEntityGiftCard,
 	AuditEntityTaxRate,
 	AuditEntityLocation,
 	AuditEntitySuperuser,
@@ -213,6 +215,10 @@ const (
 	AuditDiscountUpdate = "discount.update"
 	AuditDiscountDelete = "discount.delete"
 
+	// A gift card issued by hand is money created, so it is recorded.
+	AuditGiftCardIssue  = "gift_card.issue"
+	AuditGiftCardUpdate = "gift_card.update"
+
 	// AuditPluginUpdate is a plugin switched, or its settings changed.
 	AuditPluginUpdate = "plugin.update"
 	// AuditNotificationTemplateUpdate is a message's wording edited, or its
@@ -294,6 +300,7 @@ var AllAuditActions = []string{
 	AuditTaxonomyAttributeDelete,
 
 	AuditDiscountCreate, AuditDiscountUpdate, AuditDiscountDelete,
+	AuditGiftCardIssue, AuditGiftCardUpdate,
 
 	AuditTaxRateCreate, AuditTaxRateUpdate, AuditTaxRateDelete,
 

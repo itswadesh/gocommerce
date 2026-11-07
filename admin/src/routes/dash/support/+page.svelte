@@ -16,13 +16,26 @@
 
     const store = $derived(myStores.current?.name);
     const message = $derived(store ? `Hi, I need help with my store ${store}.` : "Hi, I need help with my store.");
-    const link = $derived(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(message)}`);
+    const whatsappTo = (text) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`;
+    const link = $derived(whatsappTo(message));
+    const setupLink = $derived(whatsappTo(store ? `Hi, I need help setting up my store ${store}.` : "Hi, I need help setting up my store."));
+
+    // Sent as WhatsApp messages like the rest of this page, so they reach the same
+    // person, and the store's name comes along. The first words say which kind it
+    // is. An empty box has no link, so nothing blank can be sent.
+    const fromStore = $derived(store ? ` from my store ${store}` : "");
+    let issue = $state("");
+    const reported = $derived(issue.trim());
+    const issueLink = $derived(reported && whatsappTo(`Issue report${fromStore}: ${reported}`));
+    let feature = $state("");
+    const asked = $derived(feature.trim());
+    const featureLink = $derived(asked && whatsappTo(`Feature request${fromStore}: ${asked}`));
 
     // Each opens as its own tab, so the panel stays where the person left it.
     const READING = [
-        { href: "https://kitcommerce.store/docs/", icon: "ri-book-open-line", label: "Documentation", hint: "How the platform works. Written mostly for developers." },
+        { href: "https://shopnx.in/help", icon: "ri-book-open-line", label: "Help guides", hint: "Step-by-step guides for running your store." },
         { href: `${base}/docs`, icon: "ri-code-s-slash-line", label: "API reference", hint: "For connecting your own apps and tools." },
-        { href: "https://kitcommerce.store/updates/", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
+        { href: "https://shopnx.in/updates", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
     ];
     // Where stores most often need to go. Rights match the sidebar's (nav.js), so
     // nobody is sent to a screen that would refuse them.
@@ -47,15 +60,55 @@
             </nav>
         </header>
 
-        <section class="card support-card">
-            <h2 class="tw:text-sm tw:font-semibold">Message us on WhatsApp</h2>
-            <p class="txt-hint">Tell us what you need help with, and which screen you were on.</p>
-            <a class="btn support-whatsapp" href={link} target="_blank" rel="noopener noreferrer">
-                <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                <span class="txt">Chat on WhatsApp</span>
-            </a>
-            <p class="txt-hint support-number">{SHOWN}</p>
-        </section>
+        {#snippet sendOnWhatsapp(href, label)}
+            {#if href}
+                <a class="btn support-whatsapp" {href} target="_blank" rel="noopener noreferrer">
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">{label}</span>
+                </a>
+            {:else}
+                <button type="button" class="btn support-whatsapp" disabled>
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">{label}</span>
+                </button>
+            {/if}
+        {/snippet}
+
+        <div class="support-cards">
+            <section class="card support-card">
+                <h2 class="tw:text-sm tw:font-semibold">Message us on WhatsApp</h2>
+                <p class="txt-hint">Tell us what you need help with, and which screen you were on.</p>
+                <a class="btn support-whatsapp" href={link} target="_blank" rel="noopener noreferrer">
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">Chat on WhatsApp</span>
+                </a>
+                <p class="txt-hint support-number">{SHOWN}</p>
+                <p class="support-promise">
+                    <i class="ri-shield-check-line" aria-hidden="true"></i>
+                    <span>No unwanted, promotional or spam messages. Guaranteed.</span>
+                </p>
+            </section>
+    
+            <section class="card support-card support-form">
+                <h2 class="tw:text-sm tw:font-semibold">Report an issue</h2>
+                <p class="txt-hint">Tell us what went wrong and which screen you were on. You can add a screenshot in WhatsApp.</p>
+                <div class="field support-form-field">
+                    <label for="support_issue">What went wrong?</label>
+                    <textarea id="support_issue" rows="3" maxlength="1000" bind:value={issue}></textarea>
+                </div>
+                {@render sendOnWhatsapp(issueLink, "Send report on WhatsApp")}
+            </section>
+    
+            <section class="card support-card support-form">
+                <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
+                <p class="txt-hint">Found a feature somewhere and want it in your store? Send us the details, and we will respond within 24 hours. Asking costs nothing.</p>
+                <div class="field support-form-field">
+                    <label for="support_feature">What should we add?</label>
+                    <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
+                </div>
+                {@render sendOnWhatsapp(featureLink, "Send request on WhatsApp")}
+            </section>
+        </div>
 
         <h2 class="support-heading tw:text-sm tw:font-semibold">Read and learn</h2>
         <ul class="support-links">
@@ -72,6 +125,14 @@
                 </li>
             {/each}
         </ul>
+
+        <section class="card support-card support-setup-help">
+            <h2 class="tw:text-sm tw:font-semibold">Need help setting up your store? Talk to us anytime.</h2>
+            <a class="btn support-whatsapp" href={setupLink} target="_blank" rel="noopener noreferrer">
+                <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                <span class="txt">Talk to us on WhatsApp</span>
+            </a>
+        </section>
 
         <h2 class="support-heading tw:text-sm tw:font-semibold">Set up your store</h2>
         <ul class="support-links">
@@ -92,6 +153,37 @@
 </div>
 
 <style>
+    .support-promise {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 500;
+    }
+    /* Past this, lines and tiles get too long to read on a wide monitor. */
+    .support-cards,
+    .support-links,
+    .support-card.support-setup-help {
+        max-width: 1200px;
+    }
+    /* One column on a phone, side by side once there is room for two. */
+    .support-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+        gap: 16px;
+    }
+    .support-cards .support-card {
+        margin: 0;
+    }
+    .support-form-field {
+        width: 100%;
+    }
+    /* A heading and one button: a row when they fit, stacked when they don't. */
+    .support-card.support-setup-help {
+        flex-flow: row wrap;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 24px;
+    }
     .support-heading {
         margin: 24px 0 8px;
     }
@@ -154,7 +246,6 @@
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
-        max-width: 480px;
     }
     .support-card p {
         margin: 0;

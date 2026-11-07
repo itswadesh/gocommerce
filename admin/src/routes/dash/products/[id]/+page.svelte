@@ -458,6 +458,7 @@
             cost: "",
             taxable: true,
             requires_shipping: true,
+            gift_card: false,
             track_inventory: true,
             continue_selling: false,
             origin_country: "",
@@ -554,6 +555,7 @@
             cost: variant?.cost ? fromMinor(variant.cost.amount_minor, code) : "",
             taxable: variant?.taxable ?? true,
             requires_shipping: variant?.requires_shipping ?? true,
+            gift_card: variant?.gift_card ?? false,
             track_inventory: variant?.track_inventory ?? true,
             continue_selling: variant?.continue_selling ?? false,
             origin_country: variant?.origin_country ?? "",
@@ -574,6 +576,7 @@
         "compare_at",
         "taxable",
         "requires_shipping",
+        "gift_card",
         "track_inventory",
         "continue_selling",
         "origin_country",
@@ -806,6 +809,7 @@
                 cost_minor: v.cost?.amount_minor ?? null,
                 taxable: v.taxable,
                 requires_shipping: v.requires_shipping,
+                gift_card: v.gift_card,
                 options: [...(v.options ?? [])],
                 track_inventory: v.track_inventory,
                 continue_selling: v.continue_selling,
@@ -1108,6 +1112,9 @@
                         form.cost.trim() === "" ? null : toMinor(form.cost, currency);
                 }
                 if (form.taxable !== snapshot.taxable) body.taxable = form.taxable;
+                if (form.gift_card !== snapshot.gift_card) {
+                    body.gift_card = form.gift_card;
+                }
                 if (form.requires_shipping !== snapshot.requires_shipping) {
                     body.requires_shipping = form.requires_shipping;
                 }
@@ -2134,6 +2141,18 @@
                             send it, and a basket with nothing else in it is not asked where to
                             deliver.
                         </div>
+                        {#if !form.requires_shipping}
+                            <div class="field m-t-sm">
+                                <input id="gift-card" type="checkbox" bind:checked={form.gift_card} />
+                                <label for="gift-card">Sold as a gift card</label>
+                            </div>
+                            <div class="field-help">
+                                Each one bought becomes a gift card worth its price once the order is
+                                paid. The buyer finds the code on their order, and it is under
+                                Products › Gift cards. Turn off tax for it: GST is charged when the
+                                card is spent.
+                            </div>
+                        {/if}
                         {#if form.requires_shipping}
                             <div class="fields m-t-sm">
                                 <div class="field">

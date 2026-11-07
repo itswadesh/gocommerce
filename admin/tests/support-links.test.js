@@ -12,3 +12,22 @@ test("every setup link on the Support page is a screen the panel has", () => {
         assert.ok(existsSync(file), `${href} has no page`);
     }
 });
+
+test("a feature request says it is one and carries what was typed", () => {
+    assert.match(page, /Request a new feature for free/);
+    assert.match(page, /Feature request\$\{fromStore\}: \$\{asked\}/);
+});
+
+test("an issue report says it is one and carries what was typed", () => {
+    assert.match(page, /Report an issue/);
+    assert.match(page, /Issue report\$\{fromStore\}: \$\{reported\}/);
+});
+
+test("the WhatsApp section keeps its promise about messages in view", () => {
+    assert.match(page, /No unwanted, promotional or spam messages\. Guaranteed\./);
+});
+
+test("a feature request says when we will respond", () => {
+    assert.match(page, /Found a feature somewhere and want it in your store\?/);
+    assert.match(page, /respond within 24 hours/);
+});

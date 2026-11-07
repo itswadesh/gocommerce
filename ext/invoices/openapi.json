@@ -1,5 +1,23 @@
 {
   "paths": {
+    "/x/invoices/{number}": {
+      "get": {
+        "tags": ["invoices"],
+        "summary": "A buyer's own invoice",
+        "description": "For whoever holds the order's access token, as `GET /api/orders/{number}` is. A complete printable HTML document by default, and JSON when the Accept header contains application/json. A wrong token and an order with no invoice yet both answer 404. Answers `Cache-Control: no-store` and `Referrer-Policy: no-referrer`, because the token is in the address.",
+        "parameters": [
+          {"name": "number", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The order's number."},
+          {"name": "token", "in": "query", "required": true, "schema": {"type": "string"}, "description": "The order's access token."}
+        ],
+        "responses": {
+          "200": {
+            "description": "The invoice, as a document or as data.",
+            "content": {"text/html": {"schema": {"type": "string"}}, "application/json": {"schema": {"type": "object"}}}
+          },
+          "404": {"description": "No such order for this token, or no invoice issued for it yet."}
+        }
+      }
+    },
     "/api/admin/x/invoices": {
       "get": {
         "tags": ["admin:invoices"],

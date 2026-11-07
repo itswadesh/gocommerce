@@ -1,10 +1,10 @@
-# ShopNx
+# GoCommerce
 
-This engine was called GoCommerce. The repository, Go module, default brand name, `GOCOMMERCE_` settings and `X-GoCommerce-Signature` webhook header keep that name for now, so nothing that depends on them breaks.
+GoCommerce is the open-source engine. [Svelte Commerce](https://github.com/itswadesh/svelte-commerce) is its storefront, and [ShopNx](https://shopnx.in) is the hosted service built on both.
 
 **Commerce primitives in Go, without a commerce monolith.**
 
-ShopNx is a small, composable commerce engine. It owns the hard parts —
+GoCommerce is a small, composable commerce engine. It owns the hard parts —
 products and variants, inventory, carts, checkout, orders, payments,
 fulfillment and durable events — over a PostgreSQL database. Integrations are
 ordinary Go packages you wire together in `main()`.
@@ -141,6 +141,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `import-amazon` | A product, its variations and pictures from an Amazon URL, through a real Chrome; copy rewritten by a model, through the AI gateway where the store has switched it on |
 | `photo-products` | Draft products from a batch of the shop's own photos: Claude, through the AI gateway, sorts them into products and variants and writes each listing from what is visible; created as unpriced drafts after the shop reviews them |
 | `ask-ai` | "Ask AI" in the panel: answers setup questions from the store's setup guide and screens, and proposes changes to the store's details through the AI gateway; nothing changes until a person holding `store.write` presses Apply |
+| `shop-assistant` | A chat on the storefront that finds products and answers from the store's FAQs, off until a store switches it on; each answer spends that store's AI credit |
 | `catalog-ai` | "Improve with AI" on a product's page: a better title, description, highlights, tags, category, SEO copy and alt text, proposed field by field through the AI gateway, with what the shop must check; nothing is saved until the shop saves the product |
 | `ads` | Ads intelligence: orders, sales, profit after product cost and ad spend by source, medium and campaign, from the attribution the storefront records on each order; spend typed in or imported from Google Ads and Meta Ads Manager, with ROAS and profit per unit of spend; a plain-words AI summary written only from the report's figures |
 | `ai-gateway` | Every model call the store makes, recorded and held to a monthly cap in the store's currency, with the owner's own provider key and a switch for each kind of data that may leave the store; idle until a key, a cap and prices are set |
@@ -155,7 +156,7 @@ Every gateway and carrier module installs idle: `-gateways` and `-carriers` put 
 | `contact` | The storefront's contact form and product enquiries, and the inbox behind both, where an operator replies by email from the panel |
 | `newsletter` | The storefront's signup box, its list, and its unsubscribe link |
 | `faq` | The questions a shop is asked often, grouped and ordered by hand, served at `/x/faq` |
-| `wishlist` | Shoppers save products; the panel ranks what is wanted most and what of it is out of stock |
+| `wishlist` | Shoppers save products and are emailed when a sold-out one is back; the panel ranks what is wanted most and what of it is out of stock |
 | `customizer` | A shopper designs their own print on a product (a phone case with their photo, words, shapes and stickers) and buys it as a line of its own; the order carries the print file and the photos. Off until switched on; see [`docs/customizer.md`](docs/customizer.md) |
 | `gokwik` | Asks GoKwik how likely each cash-on-delivery order in India is to come back undelivered, and refuses cash on delivery for the risky ones; cash on delivery stays open if GoKwik is slow or down |
 | `retailassistant` | Supplier bills forwarded on one shared WhatsApp number wait for review, then keep an account of what each supplier is owed: partial payments, advances, credit notes and reversals. Goods reach stock only when somebody books them in |

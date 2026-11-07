@@ -78,6 +78,9 @@ services:
       # "Ask AI" in the panel: setup questions, and changes to the store's
       # details that a person applies. Runs through the gateway above.
       - -ask-ai
+      # The shop assistant on the storefront. Off for every store until the store
+      # switches it on under Plugins; shoppers then spend that store's AI credit.
+      - -shop-assistant
       # Ads intelligence: the ads report, ad spend and its AI summary.
       - -ads
       - serve
@@ -175,11 +178,12 @@ services:
       # install that wants it adds the line here.
       # The proxies whose X-Forwarded-For the engine believes, comma-separated
       # CIDR ranges or addresses: the storefront service and whatever proxy
-      # reaches the engine, as the engine sees them. Unset, every shopper the
+      # reaches the engine, as the engine sees them. Empty, every shopper the
       # storefront proxies counts as the storefront, so one shopper at the
       # order-lookup or sign-in limit is the whole store at it
-      # (docs/operations.md, "Behind a proxy").
-      GOCOMMERCE_TRUSTED_PROXIES: ${GOCOMMERCE_TRUSTED_PROXIES:-}
+      # (docs/operations.md, "Behind a proxy"). The default is the private ranges
+      # Docker networks use, where the storefront and proxy are.
+      GOCOMMERCE_TRUSTED_PROXIES: ${GOCOMMERCE_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       # Where every store has an address without adding a domain:
       # <slug>.<base domain>, e.g. shops.example.com. The panel shows it, and
       # a domain under it cannot be added as a store's own.
@@ -295,8 +299,8 @@ services:
       # The shopper's address, from the proxy that reaches this service (Caddy
       # or Traefik, each of which writes it last). The storefront forwards it
       # to the engine, which counts sign-ins and enquiries against it once
-      # GOCOMMERCE_TRUSTED_PROXIES lists this service. Behind a CDN too, raise
-      # the depth by one.
+      # GOCOMMERCE_TRUSTED_PROXIES lists this service. Behind Cloudflare it reads
+      # Cloudflare's own header instead; behind another CDN, raise the depth by one.
       ADDRESS_HEADER: X-Forwarded-For
       XFF_DEPTH: ${STOREFRONT_XFF_DEPTH:-1}
       # The engine on this compose network, for server-side rendering and for

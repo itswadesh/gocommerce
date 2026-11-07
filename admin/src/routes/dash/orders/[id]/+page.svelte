@@ -598,6 +598,13 @@
        order itself. */
     const refundedMinor = $derived(order?.refunded?.amount_minor ?? 0);
     const remainingMinor = $derived((order?.total?.amount_minor ?? 0) - refundedMinor);
+    /* What the order is worth. `total` is what the payment method collects,
+       and a gift card paid the rest (D250). */
+    const giftCardMinor = $derived(order?.gift_card?.amount_minor ?? 0);
+    const fullTotal = $derived({
+        amount_minor: (order?.total?.amount_minor ?? 0) + giftCardMinor,
+        currency: order?.currency,
+    });
     /* A partly refunded order stays `paid`, so it keeps the button and the
        operator can finish the refund; it vanishes on the last one. */
     const refundable = $derived(order?.payment_status === "paid" && remainingMinor > 0);
@@ -1675,7 +1682,7 @@
                             </h6>
                             <!-- The total leads. It is the number an order is
                                  opened to see. -->
-                            <div class="order-total {totalState}">{formatMoney(order.total)}</div>
+                            <div class="order-total {totalState}">{formatMoney(fullTotal)}</div>
 
                             <div class="order-lines">
                                 <div class="order-line">
@@ -1746,6 +1753,26 @@
                                     <div class="order-line">
                                         <span class="txt-hint">Cash on delivery charge</span>
                                         <span class="txt-money">{formatMoney(order.payment_fee)}</span>
+                                    </div>
+                                {/if}
+                                {#if giftCardMinor}
+                                    <div class="order-line">
+                                        <span class="txt-hint">Paid by gift card</span>
+                                        <span class="txt-money">−{formatMoney(order.gift_card)}</span>
+                                    </div>
+                                    <div class="order-line">
+                                        <span class="txt-hint">Left to pay</span>
+                                        <span class="txt-money">{formatMoney(order.total)}</span>
+                                    </div>
+                                {/if}
+                                {#if order.gift_cards?.length}
+                                    <div class="order-line">
+                                        <span class="txt-hint">Gift cards sold</span>
+                                        <span>
+                                            {#each order.gift_cards as card (card.code)}
+                                                <a class="order-gift-card" href="{base}/dash/gift-cards?q={card.last4}">…{card.last4}</a>{" "}
+                                            {/each}
+                                        </span>
                                     </div>
                                 {/if}
                                 <!-- Under the total rather than changing it: the

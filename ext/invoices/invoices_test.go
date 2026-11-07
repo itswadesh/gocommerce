@@ -238,6 +238,45 @@ func TestInvoiceEndpoints(t *testing.T) {
 	}
 }
 
+// The buyer reads their own invoice with the order's token, and nobody else can.
+func TestShopperInvoice(t *testing.T) {
+	app := gctest.New(t, testModule())
+	ctx := context.Background()
+	result := gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+	path := "/x/invoices/" + result.Order.Number
+	token := "?token=" + result.Order.AccessToken
+
+	// Not paid yet, so nothing has been issued.
+	if rec := gctest.Request(t, app, http.MethodGet, path+token, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("before payment = %d, want 404", rec.Code)
+	}
+	if _, err := app.Pay().MarkPaid(ctx, result.Order.ID, "cash"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	gctest.DrainOutbox(t, app)
+
+	rec := gctest.Request(t, app, http.MethodGet, path+token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("with the token = %d: %s", rec.Code, rec.Body)
+	}
+	for _, want := range []string{"Example Ltd", result.Order.Number, "INV-"} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("invoice is missing %q", want)
+		}
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Errorf("Referrer-Policy = %q, want no-referrer", got)
+	}
+	for _, bad := range []string{"", "?token=wrong"} {
+		if rec := gctest.Request(t, app, http.MethodGet, path+bad, nil); rec.Code != http.StatusNotFound {
+			t.Errorf("token %q = %d, want 404", bad, rec.Code)
+		}
+	}
+}
+
 func invoiceCount(t *testing.T, app *gocommerce.App) int {
 	t.Helper()
 	var n int
