@@ -130,7 +130,7 @@ test("every screen before a store shares the signed-out layout", () => {
         "../src/routes/admin/auth/accept-invite/[token]/+page.svelte",
         "../src/routes/select-store/+page.svelte",
     ]) {
-        assert.match(read(p), /<AuthShell>/, `${p} is not in AuthShell`);
+        assert.match(read(p), /<AuthShell( hero)?>/, `${p} is not in AuthShell`);
     }
 });
 

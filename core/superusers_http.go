@@ -20,6 +20,8 @@ func (a *App) mountSuperuserRoutes() {
 	// Public, and answering the same for every number (phone_login.go).
 	a.HandleFunc("POST /api/admin/auth-with-phone/code", a.handleRequestPhoneCode)
 	a.HandleFunc("POST /api/admin/auth-with-phone", a.handleAuthWithPhone)
+	// Public: the code from Google is the credential (google_login.go).
+	a.HandleFunc("POST /api/admin/auth-with-google", a.handleAuthWithGoogle)
 
 	a.HandleAdminFunc("POST /api/admin/auth-refresh", a.handleAuthRefresh)
 	// A person's, not one store's: somebody still choosing a store (or in
@@ -77,6 +79,9 @@ func (a *App) handleAuthState(w http.ResponseWriter, r *http.Request) {
 		// leads nowhere (phone_login.go); the second is the same for a new person.
 		"phone_login":  a.phoneLoginOpen(r.Context()),
 		"phone_signup": a.phoneSignupOpen(r.Context()),
+		// Public by nature, since the browser sends it to Google. Empty hides the
+		// button (google_login.go).
+		"google_client_id": a.googleClientID(),
 		// Whether a reset email carries a link beside its code, so the
 		// forgot-password screen can say what to look for before it is asked.
 		"reset_link": brand.PanelURL != "",

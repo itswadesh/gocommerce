@@ -2225,6 +2225,10 @@
                           "type": "boolean",
                           "description": "A sign-in code could be texted from here, so the sign-in screen may offer a phone. False with no SMS provider carrying the code, on a demo, and before the first owner."
                         },
+                        "google_client_id": {
+                          "type": "string",
+                          "description": "The Google OAuth client to send a person to. Empty hides Continue with Google."
+                        },
                         "phone_signup": {
                           "type": "boolean",
                           "description": "Sign-up is open and the install itself can text, so a new person can sign up with a phone. A new person's code never goes out on a store's own provider."
@@ -2458,6 +2462,99 @@
           },
           "422": {
             "description": "The code did not sign anybody in (`invalid_code`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/auth-with-google": {
+      "post": {
+        "tags": [
+          "admin:auth"
+        ],
+        "summary": "Sign in with the code Google gave back",
+        "description": "Exchanges the code at Google with this install's client secret, and signs in the person on the verified address, as POST /api/admin/auth-with-password does. An address with no account makes a person in no store where sign-up is open (201). The first sign-in on an address nobody had proved ends the account's password, sessions and reset links; an account with a proved phone is refused instead (409 `google_confirm_email`).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "code_verifier",
+                  "nonce",
+                  "redirect_uri"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "description": "The PKCE verifier behind the challenge sent to Google."
+                  },
+                  "nonce": {
+                    "type": "string",
+                    "description": "The nonce sent to Google, which its token has to repeat."
+                  },
+                  "redirect_uri": {
+                    "type": "string",
+                    "description": "The redirect URI sent to Google."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "201": {
+            "$ref": "#/components/responses/AuthResponse"
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "403": {
+            "description": "No account here for that address, or it is disabled (`google_no_account`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This install does not offer Google (`google_unavailable`), or the account's email has to be confirmed first (`google_confirm_email`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Google did not confirm the sign-in (`google_refused`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Google could not be reached (`google_unreachable`).",
             "content": {
               "application/json": {
                 "schema": {

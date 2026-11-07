@@ -264,6 +264,12 @@ export const auth = {
         return beginSession(result);
     },
 
+    /** loginWithGoogle finishes the trip to Google (google-signin.js), making an account where sign-up is open. */
+    async loginWithGoogle(signin) {
+        const result = await api.post("/api/admin/auth-with-google", signin, { admin: false, store: false });
+        return beginSession(result);
+    },
+
     /** requestMyPhoneCode texts a code to a number the signed-in person wants to add. */
     requestMyPhoneCode: (phone) => api.post("/api/admin/me/phone/code", { phone }),
     setMyPhone: (phone, code, current_password) => api.put("/api/admin/me/phone", { phone, code, current_password }),

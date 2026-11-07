@@ -20,7 +20,7 @@ test("the shell does not render the notice beside the sign-in card", () => {
 });
 
 test("the sign-in card renders the notice inside its own shell, above the form", () => {
-    const shell = login.indexOf("<AuthShell>");
+    const shell = login.indexOf("<AuthShell hero>");
     const notice = login.indexOf("{#if notice}");
     const form = login.indexOf("<form");
     assert.ok(shell >= 0 && notice > shell && notice < form, "notice must be inside the shell, before the form");

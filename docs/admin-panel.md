@@ -1092,6 +1092,22 @@ new person in), then the store picker's create form, with its suggested name,
 country and currency. The account belongs to no store until that form opens
 one. An address that already has an account is told to sign in or reset it.
 
+### Signing in with Google
+
+With `GOCOMMERCE_GOOGLE_CLIENT_ID` and `GOCOMMERCE_GOOGLE_CLIENT_SECRET` set, the
+sign-in and sign-up screens offer **Continue with Google**. `auth-state` carries
+`google_client_id`, and without both settings the button is not there. In the
+Google Cloud console the client is a web application, with
+`<panel address>/admin/auth/login` as its redirect URI, one for each brand's panel.
+
+The panel posts what Google gives back to `POST /api/admin/auth-with-google`. An
+address with an account signs in. One with none gets an account in no store where
+sign-up is open, and is refused elsewhere. The first time Google vouches for an
+address nobody had proved, the account's password, sessions and reset links end,
+as with a password reset, because anybody may have typed that address at sign-up.
+The person can set a new password through a reset. An account with a proved phone
+is refused instead and keeps everything, until its email is confirmed.
+
 ### Signing in with a phone
 
 Where a code can be texted, the sign-in and sign-up screens offer **Text me a

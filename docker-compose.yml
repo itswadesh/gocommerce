@@ -124,6 +124,9 @@ services:
       # Where the panel is reached, e.g. https://shop.example.com: the base of
       # a password-reset link. Unset, a reset email carries only a code.
       GOCOMMERCE_PANEL_URL: ${GOCOMMERCE_PANEL_URL:-}
+      # "Continue with Google" on the panel. Unset, the button is not shown.
+      GOCOMMERCE_GOOGLE_CLIENT_ID: ${GOCOMMERCE_GOOGLE_CLIENT_ID:-}
+      GOCOMMERCE_GOOGLE_CLIENT_SECRET: ${GOCOMMERCE_GOOGLE_CLIENT_SECRET:-}
       # Where emails send a store's buyers and shoppers. {domain} is each
       # store's own address, so one setting serves every store (D236). The
       # storefront forwards /portal to this engine and has its own account

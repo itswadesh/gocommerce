@@ -171,6 +171,12 @@ type Config struct {
 	// X-Forwarded-Host would carry a live token to a host they chose. Left
 	// empty, the reset email carries the bare token to paste instead.
 	PanelURL string
+	// GoogleClientID and GoogleClientSecret offer "Continue with Google" on the
+	// panel's sign-in and sign-up screens (D237); it needs both. GoogleTokenURL
+	// is Google's token endpoint when empty, and a test's stand-in otherwise.
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleTokenURL     string
 	// PlatformOwnerPhone is the one person who may read every store's owners
 	// and counts, once a code has proved the number (D215). Empty, nobody may.
 	PlatformOwnerPhone string
