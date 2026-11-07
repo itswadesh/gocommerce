@@ -19,13 +19,16 @@
     const whatsappTo = (text) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`;
     const link = $derived(whatsappTo(message));
 
-    // Sent as a WhatsApp message like the rest of this page, so the request reaches
-    // the same person, and the store's name comes along with it.
+    // Sent as WhatsApp messages like the rest of this page, so they reach the same
+    // person, and the store's name comes along. The first words say which kind it
+    // is. An empty box has no link, so nothing blank can be sent.
+    const fromStore = $derived(store ? ` from my store ${store}` : "");
+    let issue = $state("");
+    const reported = $derived(issue.trim());
+    const issueLink = $derived(reported && whatsappTo(`Issue report${fromStore}: ${reported}`));
     let feature = $state("");
     const asked = $derived(feature.trim());
-    const featureLink = $derived(
-        whatsappTo(`Feature request${store ? ` from my store ${store}` : ""}: ${asked}`),
-    );
+    const featureLink = $derived(asked && whatsappTo(`Feature request${fromStore}: ${asked}`));
 
     // Each opens as its own tab, so the panel stays where the person left it.
     const READING = [
@@ -70,24 +73,38 @@
             </p>
         </section>
 
-        <section class="card support-card support-feature">
-            <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
-            <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
-            <div class="field support-feature-field">
-                <label for="support_feature">What should we add?</label>
-                <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
-            </div>
-            {#if asked}
-                <a class="btn support-whatsapp" href={featureLink} target="_blank" rel="noopener noreferrer">
+        {#snippet sendOnWhatsapp(href, label)}
+            {#if href}
+                <a class="btn support-whatsapp" {href} target="_blank" rel="noopener noreferrer">
                     <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                    <span class="txt">Send request on WhatsApp</span>
+                    <span class="txt">{label}</span>
                 </a>
             {:else}
                 <button type="button" class="btn support-whatsapp" disabled>
                     <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                    <span class="txt">Send request on WhatsApp</span>
+                    <span class="txt">{label}</span>
                 </button>
             {/if}
+        {/snippet}
+
+        <section class="card support-card support-form">
+            <h2 class="tw:text-sm tw:font-semibold">Report an issue</h2>
+            <p class="txt-hint">Tell us what went wrong and which screen you were on. You can add a screenshot in WhatsApp.</p>
+            <div class="field support-form-field">
+                <label for="support_issue">What went wrong?</label>
+                <textarea id="support_issue" rows="3" maxlength="1000" bind:value={issue}></textarea>
+            </div>
+            {@render sendOnWhatsapp(issueLink, "Send report on WhatsApp")}
+        </section>
+
+        <section class="card support-card support-form">
+            <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
+            <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
+            <div class="field support-form-field">
+                <label for="support_feature">What should we add?</label>
+                <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
+            </div>
+            {@render sendOnWhatsapp(featureLink, "Send request on WhatsApp")}
         </section>
 
         <h2 class="support-heading tw:text-sm tw:font-semibold">Read and learn</h2>
@@ -131,10 +148,10 @@
         gap: 6px;
         font-weight: 500;
     }
-    .support-feature {
+    .support-form {
         margin-top: 16px;
     }
-    .support-feature-field {
+    .support-form-field {
         width: 100%;
     }
     .support-heading {
