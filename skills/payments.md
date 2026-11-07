@@ -336,7 +336,7 @@ the optional `PaymentStatusReader` port (D112), and answers with what it said:
 `checks_payments`, and the order screen offers "Check with <gateway>" beside
 an unpaid payment only for those. Stripe reads the PaymentIntent, Razorpay the
 payments on its order, Cashfree the payments on each of its orders, PayPal its
-order or capture.
+order or capture, Paystack and Flutterwave each transaction opened for the order.
 `ext/payments-cashfree` also lets the storefront's return page have Cashfree
 asked at once: `POST /x/payments-cashfree/orders/{cf_order_id}/verify`.
 
@@ -346,6 +346,27 @@ no money until the store captures the order. The return page does that with
 `CHECKOUT.ORDER.APPROVED` webhook does it for a shopper who never came back. Its
 `Configured` also answers false for a currency PayPal lacks, which includes
 rupees, so such a store never offers the method.
+
+`ext/payments-paystack` and `ext/payments-flutterwave` send the shopper to a
+hosted page (`kind: redirect`, `client_data.url`), so both need the checkout's
+`return_url` and an email, and neither is offered in a currency it lacks. Both
+treat a webhook as a prompt rather than as proof: a Paystack signature carries
+no timestamp, and Flutterwave's v3 `verif-hash` is the merchant's own secret sent
+as it is, signing nothing, so each delivery only makes the module ask the
+provider, and that answer is compared with the order, exactly (D238). A payment
+that does not match, or that lands on a cancelled order, goes on the Errors screen
+and is acknowledged. The return page asks through
+`POST /x/payments-paystack/transactions/{reference}/verify` or
+`POST /x/payments-flutterwave/transactions/{tx_ref}/verify`; what the return URL
+itself says is never read.
+
+The secret key decides test or live on both. There is no sandbox switch, and
+Paystack's transaction `domain` must match the key. Paystack amounts are hundredths
+in all five of its currencies, so they pass through; Flutterwave's are major units,
+written from the digits using `CurrencyExponent`, so `UGX` and `XOF` stay whole.
+A retried checkout reuses the provider's transaction until it has failed
+(`PaymentResumer`). Paystack's order reference stays its transaction reference;
+Flutterwave's becomes the numeric transaction id, which its refund route needs.
 
 ## How to settle by hand
 

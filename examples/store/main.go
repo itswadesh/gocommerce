@@ -52,11 +52,13 @@ import (
 	adyen "github.com/itswadesh/gocommerce/ext/payments-adyen"
 	cashfree "github.com/itswadesh/gocommerce/ext/payments-cashfree"
 	clover "github.com/itswadesh/gocommerce/ext/payments-clover"
+	flutterwave "github.com/itswadesh/gocommerce/ext/payments-flutterwave"
 	helcim "github.com/itswadesh/gocommerce/ext/payments-helcim"
 	hyperswitch "github.com/itswadesh/gocommerce/ext/payments-hyperswitch"
 	lemonsqueezy "github.com/itswadesh/gocommerce/ext/payments-lemonsqueezy"
 	paddle "github.com/itswadesh/gocommerce/ext/payments-paddle"
 	paypal "github.com/itswadesh/gocommerce/ext/payments-paypal"
+	paystack "github.com/itswadesh/gocommerce/ext/payments-paystack"
 	razorpay "github.com/itswadesh/gocommerce/ext/payments-razorpay"
 	revenuecat "github.com/itswadesh/gocommerce/ext/payments-revenuecat"
 	stripe "github.com/itswadesh/gocommerce/ext/payments-stripe"
@@ -190,7 +192,7 @@ func main() {
 	// there. Stripe keeps its environment fallback below, the way it always
 	// had one; the rest wait for the panel.
 	modules = append(modules,
-		razorpay.New(razorpay.Config{}), paypal.New(paypal.Config{}), cashfree.New(cashfree.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
+		razorpay.New(razorpay.Config{}), paypal.New(paypal.Config{}), cashfree.New(cashfree.Config{}), paystack.New(paystack.Config{}), flutterwave.New(flutterwave.Config{}), adyen.New(adyen.Config{}), paddle.New(paddle.Config{}),
 		lemonsqueezy.New(lemonsqueezy.Config{}), helcim.New(helcim.Config{}), hyperswitch.New(hyperswitch.Config{}),
 		revenuecat.New(revenuecat.Config{}), clover.New(clover.Config{}),
 		shiprocket.New(shiprocket.Config{}), delhivery.New(delhivery.Config{}), nimbuspost.New(nimbuspost.Config{}),
