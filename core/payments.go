@@ -183,6 +183,11 @@ func (p *Payments) markPaid(ctx context.Context, orderID int64, reference, summa
 			}
 			o.Status = OrderConfirmed
 		}
+		// Cards bought on the order exist from the moment it is paid, in the
+		// same transaction, so a paid order never lacks the cards it sold.
+		if err := p.app.giftCards.issueForOrderTx(ctx, tx, o); err != nil {
+			return transitionResult{}, err
+		}
 		res := transitionResult{
 			Event: EventOrderPaid, Payload: p.app.orders.eventPayload(o),
 			Action: AuditOrderMarkPaid, Summary: "Marked order " + o.Number + " paid",

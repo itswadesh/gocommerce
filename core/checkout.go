@@ -132,7 +132,17 @@ type CheckoutQuote struct {
 	Tax            Money           `json:"tax"`
 	TaxInclusive   bool            `json:"tax_inclusive"`
 	PaymentFee     Money           `json:"payment_fee"`
-	Total          Money           `json:"total"`
+	// GiftCard is what a gift card on the cart pays (D250). Total is what is
+	// left after it, which is what the payment method collects.
+	GiftCard *QuotedGiftCard `json:"gift_card"`
+	Total    Money           `json:"total"`
+}
+
+// QuotedGiftCard is the card a quote spent: its last four characters and how
+// much of it this order takes.
+type QuotedGiftCard struct {
+	Last4  string `json:"last4"`
+	Amount Money  `json:"amount"`
 }
 
 // QuotedDiscount is the code a quote took off. AutoApplied says the shopper
@@ -240,8 +250,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// whether tax is charged at all, and all three have to be judged as the
 		// same person (D66, D76).
 		var verified sql.NullString
+		var giftCode string
 		if err := tx.QueryRowContext(ctx,
-			`SELECT verified_email FROM carts WHERE id = $1`, cartID).Scan(&verified); err != nil {
+			`SELECT verified_email, gift_card_code FROM carts WHERE id = $1`, cartID).Scan(&verified, &giftCode); err != nil {
 			return err
 		}
 
@@ -476,11 +487,26 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		if !inclusive {
 			total += tax
 		}
+		// A gift card pays after everything else is worked out, so it moves no
+		// line, discount or tax (D250). What it leaves is what the payment
+		// method collects.
+		card, err := s.app.giftCards.chargeTx(ctx, tx, giftCode, currency, total)
+		if err != nil {
+			return err
+		}
+		var giftCard int64
+		if card != nil {
+			giftCard = card.amount
+			total -= giftCard
+		}
 
 		figures := CheckoutQuote{
 			Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
 			ShippingMethod: shippingMethod, Tax: money(tax, currency), TaxInclusive: inclusive,
 			PaymentFee: money(paymentFee, currency), Total: money(total, currency),
+		}
+		if card != nil {
+			figures.GiftCard = &QuotedGiftCard{Last4: card.last4, Amount: money(giftCard, currency)}
 		}
 		if applied != nil {
 			figures.Discount = &QuotedDiscount{
@@ -553,18 +579,21 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 			                    lang, metadata, shipping_method, channel_id,
 			                    reservation_expires_at,
 			                    tax_exempt_group_id, tax_exempt_group_code, tax_exempt_group_name,
-			                    payment_fee_minor)
+			                    payment_fee_minor, gift_card_minor)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
 			        (SELECT channel_id FROM carts WHERE id = $22),
 			        now() + make_interval(secs => $21),
-			        $23, $24, $25, $26)`,
+			        $23, $24, $25, $26, $27)`,
 			orderID, number, accessToken, OrderPending, PaymentPending, code, currency,
 			subtotal, shipping, discount, tax, inclusive, total,
 			strings.ToLower(in.Email), nullString(in.Phone),
 			nullString(in.Name), addr, s.app.RequestLanguageValue(ctx), meta, shippingMethod,
 			s.app.cfg.OrderTTL.Seconds(), cartID,
-			exemptID, exemptCode, exemptName, paymentFee,
+			exemptID, exemptCode, exemptName, paymentFee, giftCard,
 		); err != nil {
+			return err
+		}
+		if err := card.spendTx(ctx, tx, orderID, number); err != nil {
 			return err
 		}
 
@@ -622,7 +651,7 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 
 		o := &Order{ID: orderID, Number: number, Status: OrderPending,
 			PaymentStatus: PaymentPending, PaymentProvider: code, Currency: currency,
-			Total: money(total, currency), Email: in.Email, Phone: in.Phone,
+			Total: money(total, currency), GiftCard: money(giftCard, currency), Email: in.Email, Phone: in.Phone,
 			Name: in.Name, Language: s.app.RequestLanguageValue(ctx)}
 		for _, l := range lines {
 			o.Lines = append(o.Lines, OrderLine{
@@ -690,6 +719,11 @@ func (s *Orders) replayedPayment(ctx context.Context, provider PaymentProvider, 
 }
 
 func (s *Orders) startPayment(ctx context.Context, provider PaymentProvider, start func(context.Context, *Order, PayOptions) (PaymentIntent, error), o *Order, in CheckoutInput, scope, key string) (*CheckoutResult, error) {
+	if o.Total.AmountMinor == 0 && o.GiftCard.AmountMinor > 0 {
+		// A gift card paid all of it: there is nothing for a gateway to collect,
+		// and most of them refuse a zero amount anyway (D250).
+		return s.paidByGiftCard(ctx, provider, o, scope, key)
+	}
 	intent, err := start(ctx, o, PayOptions{ReturnURL: in.ReturnURL, Data: in.PaymentData})
 	if err != nil {
 		// The order stands, unpaid. A retry with the same key resumes here
@@ -726,7 +760,23 @@ func (s *Orders) startPayment(ctx context.Context, provider PaymentProvider, sta
 		}
 	}
 
-	result := &CheckoutResult{Order: o, Payment: intent}
+	return s.finishPayment(ctx, &CheckoutResult{Order: o, Payment: intent}, scope, key)
+}
+
+// paidByGiftCard records an order a gift card paid in full as paid, with no
+// payment step for the shopper.
+func (s *Orders) paidByGiftCard(ctx context.Context, provider PaymentProvider, o *Order, scope, key string) (*CheckoutResult, error) {
+	paid, _, err := s.app.payments.markPaid(ctx, o.ID, "", "Paid in full by gift card", nil)
+	if err != nil {
+		return nil, err
+	}
+	paid.AccessToken = o.AccessToken
+	return s.finishPayment(ctx, &CheckoutResult{Order: paid,
+		Payment: PaymentIntent{Kind: IntentNone, Provider: provider.Code()}}, scope, key)
+}
+
+// finishPayment stores the answer under the idempotency key and returns it.
+func (s *Orders) finishPayment(ctx context.Context, result *CheckoutResult, scope, key string) (*CheckoutResult, error) {
 	if key != "" {
 		if body, err := json.Marshal(result); err == nil {
 			if _, err := s.app.db.ExecContext(ctx,

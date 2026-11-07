@@ -128,6 +128,9 @@ export const NAV = [
             // own words, so it sits with them rather than under Settings.
             { href: "/dash/translations", label: "Translations", right: "catalog.read", module: "translations", keywords: "languages translate hindi multilingual i18n locale" },
             { href: "/dash/inventory", label: "Inventory", right: "inventory.read", keywords: "stock levels ledger" },
+            // Money a shopper holds with the store (D250). Shopify keeps them here,
+            // and the cards bought are products; issuing one is a promotions call.
+            { href: "/dash/gift-cards", label: "Gift cards", right: "discounts.read", keywords: "gift card voucher store credit balance code" },
             // A price list is a rule about what somebody pays, worked in as
             // often as a promotion is, not vocabulary configured once.
             { href: "/dash/pricing", label: "Price lists", right: "pricing.read", keywords: "trade wholesale b2b quantity breaks tiers" },
