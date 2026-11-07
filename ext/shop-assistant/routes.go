@@ -595,10 +595,10 @@ func cards(products []*gocommerce.Product, currency string) []Card {
 // towards dropping a good sentence: the catalogue and the FAQ cards say everything
 // a number could, so a reply loses nothing it needs. A number of three digits or
 // more is a price, a phone number or an invention; so is a money sign beside any
-// number. Markup is refused too, as the widget would show it as stray text.
+// number, in any script's digits. Markup is refused too, as the widget would show it as stray text.
 var (
 	unsafeLinkRE  = regexp.MustCompile(`(?i)[a-z][a-z0-9+.\-]*://|\bwww\.|\]\(|\b[a-z0-9\-]+\.(com|in|net|org|io|co|shop|store|app|xyz|link|me|ly|info|biz)\b`)
-	unsafePriceRE = regexp.MustCompile(`(?i)[0-9][0-9,.]{2,}|(₹|\$|€|£|\brs\.?|\binr\b|\busd\b|\brupees?\b|\bdollars?\b)\s*[0-9]|[0-9]\s*(₹|\$|€|£|rs\b|inr\b|usd\b|rupees?\b|dollars?\b|/-)|\b(price[sd]?|costs?|only|just)\b\D{0,12}[0-9]`)
+	unsafePriceRE = regexp.MustCompile(`(?i)\p{Nd}[\p{Nd},.]{2,}|(₹|\$|€|£|\brs\.?|\binr\b|\busd\b|\brupees?\b|\bdollars?\b)\s*\p{Nd}|\p{Nd}\s*(₹|\$|€|£|rs\b|inr\b|usd\b|rupees?\b|dollars?\b|/-)|\b(price[sd]?|costs?|only|just)\b\P{Nd}{0,12}\p{Nd}`)
 	unsafeHTMLRE  = regexp.MustCompile(`<[a-zA-Z/!]`)
 )
 
