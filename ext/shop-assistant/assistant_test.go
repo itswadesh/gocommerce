@@ -754,3 +754,16 @@ func TestHasWord(t *testing.T) {
 		}
 	}
 }
+
+// An invented price is one in any script's digits.
+func TestAReplyCannotCarryAPriceInAnotherScriptsDigits(t *testing.T) {
+	k := newMasker()
+	for _, reply := range []string{"यह ₹ २००० का है", "यह ₹२०० में", "कीमत २५०० है", "only ५ left"} {
+		if got := chooseReply(reply, k, false, 1, 0); got != replyFound {
+			t.Errorf("%q came through as %q", reply, got)
+		}
+	}
+	if got := chooseReply("यह कुर्ता शादी के लिए अच्छा है", k, false, 1, 0); got == replyFound {
+		t.Errorf("a plain sentence was replaced with %q", got)
+	}
+}
