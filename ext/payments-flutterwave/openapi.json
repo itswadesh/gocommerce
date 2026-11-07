@@ -1,0 +1,19 @@
+{
+  "paths": {
+    "/x/payments-flutterwave/transactions/{tx_ref}/verify": {
+      "post": {
+        "tags": ["checkout"],
+        "summary": "Have Flutterwave asked about a payment now",
+        "description": "For the storefront's return page. Flutterwave sends the shopper back to the checkout's `return_url` with `status`, `tx_ref` and `transaction_id` added; posting the `tx_ref` here asks Flutterwave at once, rather than waiting for the webhook, and records a successful payment through the engine's own check. The `status` on the return URL proves nothing and is not read. The answer is the order's number and payment status, nothing more. An order already paid is answered from the store without asking Flutterwave again, and Flutterwave is asked at most once every 15 seconds for one `tx_ref`; calls in between are answered from the store. 409 when the order has since moved to another payment method. 404 for a `tx_ref` this store did not open, or while Flutterwave is not set up.",
+        "parameters": [
+          {"name": "tx_ref", "in": "path", "required": true, "schema": {"type": "string"}, "description": "The `tx_ref` from the checkout's `client_data.tx_ref`, or the one Flutterwave added to the return URL."}
+        ],
+        "responses": {
+          "200": {"description": "The order's payment status after asking.", "content": {"application/json": {"schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"order": {"type": "string", "description": "The order number."}, "payment_status": {"type": "string", "enum": ["pending", "paid", "failed", "refunded"]}}}}}}}},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"}
+        }
+      }
+    }
+  }
+}
