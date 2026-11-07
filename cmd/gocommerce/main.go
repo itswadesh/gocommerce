@@ -78,6 +78,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/retailassistant"
 	"github.com/itswadesh/gocommerce/ext/reviews"
 	meilisearch "github.com/itswadesh/gocommerce/ext/search-meilisearch"
+	shopassistant "github.com/itswadesh/gocommerce/ext/shop-assistant"
 	"github.com/itswadesh/gocommerce/ext/showcases"
 	"github.com/itswadesh/gocommerce/ext/sitemaps"
 	telegramalerts "github.com/itswadesh/gocommerce/ext/telegram-alerts"
@@ -324,6 +325,7 @@ environment:
 		withPhotos = fs.Bool("photo-products", false, "install the photo-products module: drop a batch of product photos on the products screen and Claude, through the AI gateway, drafts the products and their variants for review (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withCatAI  = fs.Bool("catalog-ai", false, "install the catalog-ai module: \"Improve with AI\" on a product's page proposes a better title, description, highlights, tags, category, SEO copy and alt text, field by field, for the shop to apply and save (brings -ai-gateway with it; the key, cap and prices are set under Settings › Plugins › AI gateway)")
 		withAskAI  = fs.Bool("ask-ai", false, "install the ask-ai module: \"Ask AI\" in the panel answers setup questions from the store's setup guide and screens, and proposes changes to the store's details for a person to apply (brings -ai-gateway with it)")
+		withShopAI = fs.Bool("shop-assistant", false, "install the shop-assistant module: a chat on the storefront that finds products and answers from the store's FAQs, off for every store until it is switched on under Plugins (brings -ai-gateway and -faq with it)")
 		withAds    = fs.Bool("ads", false, "install ads intelligence: a report of orders, sales, profit after product cost and ad spend by source, medium and campaign, spend entered by hand or imported from Google Ads and Meta Ads Manager, and an AI summary (brings -ai-gateway with it)")
 		withAmazon = fs.Bool("import-amazon", false, "install the import-amazon module: create products from Amazon listings through a real Chrome (ANTHROPIC_API_KEY when -ai-gateway is not installed, GEMINI_API_KEY, OPENAI_API_KEY, or IMPORT_AMAZON_LLM_URL + IMPORT_AMAZON_LLM_MODEL for a local model rewrite the copy, or the AI gateway where -ai-gateway is installed and switched on; IMPORT_AMAZON_HEADED=1 shows the browser)")
 	)
@@ -484,7 +486,8 @@ environment:
 		var trade *b2b.Module
 		// First, so the modules that call models can be handed it.
 		var gateway *aigateway.Module
-		if *withAI || *withPhotos || *withCatAI || *withAds || *withAskAI {
+		var faqs *faq.Module
+		if *withAI || *withPhotos || *withCatAI || *withAds || *withAskAI || *withShopAI {
 			// The platform's own Anthropic key and what its calls cost (D151):
 			// a store with no key of its own runs on it, paid from its AI
 			// credit. The Amazon importer, below, reads it only without a gateway.
@@ -507,6 +510,10 @@ environment:
 		}
 		if *withAskAI {
 			modules = append(modules, askai.New(askai.Config{Gateway: gateway}))
+		}
+		if *withShopAI {
+			faqs = faq.New(faq.Config{})
+			modules = append(modules, faqs, shopassistant.New(shopassistant.Config{Gateway: gateway, FAQ: faqs}))
 		}
 		if *withAds {
 			modules = append(modules, ads.New(ads.Config{Gateway: gateway}))
@@ -663,7 +670,7 @@ environment:
 		if *withCMS {
 			modules = append(modules, cms.New(cms.Config{}))
 		}
-		if *withFAQ {
+		if *withFAQ && faqs == nil {
 			modules = append(modules, faq.New(faq.Config{}))
 		}
 		if *withTransl {

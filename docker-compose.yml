@@ -78,6 +78,9 @@ services:
       # "Ask AI" in the panel: setup questions, and changes to the store's
       # details that a person applies. Runs through the gateway above.
       - -ask-ai
+      # The shop assistant on the storefront. Off for every store until the store
+      # switches it on under Plugins; shoppers then spend that store's AI credit.
+      - -shop-assistant
       # Ads intelligence: the ads report, ad spend and its AI summary.
       - -ads
       - serve
