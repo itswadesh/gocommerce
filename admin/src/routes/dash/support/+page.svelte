@@ -60,20 +60,6 @@
             </nav>
         </header>
 
-        <section class="card support-card">
-            <h2 class="tw:text-sm tw:font-semibold">Message us on WhatsApp</h2>
-            <p class="txt-hint">Tell us what you need help with, and which screen you were on.</p>
-            <a class="btn support-whatsapp" href={link} target="_blank" rel="noopener noreferrer">
-                <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                <span class="txt">Chat on WhatsApp</span>
-            </a>
-            <p class="txt-hint support-number">{SHOWN}</p>
-            <p class="support-promise">
-                <i class="ri-shield-check-line" aria-hidden="true"></i>
-                <span>No unwanted, promotional or spam messages. Guaranteed.</span>
-            </p>
-        </section>
-
         {#snippet sendOnWhatsapp(href, label)}
             {#if href}
                 <a class="btn support-whatsapp" {href} target="_blank" rel="noopener noreferrer">
@@ -88,25 +74,41 @@
             {/if}
         {/snippet}
 
-        <section class="card support-card support-form">
-            <h2 class="tw:text-sm tw:font-semibold">Report an issue</h2>
-            <p class="txt-hint">Tell us what went wrong and which screen you were on. You can add a screenshot in WhatsApp.</p>
-            <div class="field support-form-field">
-                <label for="support_issue">What went wrong?</label>
-                <textarea id="support_issue" rows="3" maxlength="1000" bind:value={issue}></textarea>
-            </div>
-            {@render sendOnWhatsapp(issueLink, "Send report on WhatsApp")}
-        </section>
-
-        <section class="card support-card support-form">
-            <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
-            <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
-            <div class="field support-form-field">
-                <label for="support_feature">What should we add?</label>
-                <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
-            </div>
-            {@render sendOnWhatsapp(featureLink, "Send request on WhatsApp")}
-        </section>
+        <div class="support-cards">
+            <section class="card support-card">
+                <h2 class="tw:text-sm tw:font-semibold">Message us on WhatsApp</h2>
+                <p class="txt-hint">Tell us what you need help with, and which screen you were on.</p>
+                <a class="btn support-whatsapp" href={link} target="_blank" rel="noopener noreferrer">
+                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                    <span class="txt">Chat on WhatsApp</span>
+                </a>
+                <p class="txt-hint support-number">{SHOWN}</p>
+                <p class="support-promise">
+                    <i class="ri-shield-check-line" aria-hidden="true"></i>
+                    <span>No unwanted, promotional or spam messages. Guaranteed.</span>
+                </p>
+            </section>
+    
+            <section class="card support-card support-form">
+                <h2 class="tw:text-sm tw:font-semibold">Report an issue</h2>
+                <p class="txt-hint">Tell us what went wrong and which screen you were on. You can add a screenshot in WhatsApp.</p>
+                <div class="field support-form-field">
+                    <label for="support_issue">What went wrong?</label>
+                    <textarea id="support_issue" rows="3" maxlength="1000" bind:value={issue}></textarea>
+                </div>
+                {@render sendOnWhatsapp(issueLink, "Send report on WhatsApp")}
+            </section>
+    
+            <section class="card support-card support-form">
+                <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
+                <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
+                <div class="field support-form-field">
+                    <label for="support_feature">What should we add?</label>
+                    <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
+                </div>
+                {@render sendOnWhatsapp(featureLink, "Send request on WhatsApp")}
+            </section>
+        </div>
 
         <h2 class="support-heading tw:text-sm tw:font-semibold">Read and learn</h2>
         <ul class="support-links">
@@ -157,13 +159,29 @@
         gap: 6px;
         font-weight: 500;
     }
-    .support-form {
-        margin-top: 16px;
+    /* Past this, lines and tiles get too long to read on a wide monitor. */
+    .support-cards,
+    .support-links,
+    .support-card.support-setup-help {
+        max-width: 1200px;
+    }
+    /* One column on a phone, side by side once there is room for two. */
+    .support-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+        gap: 16px;
+    }
+    .support-cards .support-card {
+        margin: 0;
     }
     .support-form-field {
         width: 100%;
     }
-    .support-setup-help {
+    /* A heading and one button: a row when they fit, stacked when they don't. */
+    .support-card.support-setup-help {
+        flex-flow: row wrap;
+        align-items: center;
+        justify-content: space-between;
         margin-top: 24px;
     }
     .support-heading {
@@ -228,7 +246,6 @@
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
-        max-width: 480px;
     }
     .support-card p {
         margin: 0;
