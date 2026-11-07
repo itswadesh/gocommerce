@@ -101,7 +101,7 @@
     
             <section class="card support-card support-form">
                 <h2 class="tw:text-sm tw:font-semibold">Request a new feature for free</h2>
-                <p class="txt-hint">Tell us what would help your store. Asking costs nothing.</p>
+                <p class="txt-hint">Found a feature somewhere and want it in your store? Send us the details, and we will respond within 24 hours. Asking costs nothing.</p>
                 <div class="field support-form-field">
                     <label for="support_feature">What should we add?</label>
                     <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
