@@ -48,7 +48,7 @@
         { id: "QE9hgdVIZJI", label: "Create a collection" },
         { id: "oilaWywnu9E", label: "Import products from a CSV file" },
         { id: "fAOzhuSh-Tk", label: "Set up cash on delivery and payments" },
-        { id: "tWt7c84QaOw", label: "Set up shipping zones and rates" },
+        { id: "tWt7c84QaOw", label: "Set up shipping zones and rates", from: "2026-11-08T13:00:00Z" },
         { id: "8N3YKqye_bU", label: "Add policy pages", from: "2026-11-12T13:00:00Z" },
         { id: "CJVX67nku_k", label: "Connect your own domain", from: "2026-11-14T13:00:00Z" },
         { id: "kVDYeyc9IjY", label: "Create a discount code" },
@@ -158,26 +158,23 @@
             </a>
         </section>
 
-        <h2 class="support-heading tw:text-sm tw:font-semibold">Video tutorials</h2>
-        <ul class="support-links">
-            <li>
-                <a class="card support-link" href={PLAYLIST} target="_blank" rel="noopener noreferrer">
-                    <i class="ri-play-list-line" aria-hidden="true"></i>
-                    <span class="support-link-text">
-                        <span class="support-link-label">Watch them all<span class="support-new-tab"> (opens in a new tab)</span></span>
-                        <span class="txt-hint support-link-hint">Every ShopNx tutorial in one playlist on YouTube.</span>
-                    </span>
-                    <i class="ri-external-link-line" aria-hidden="true"></i>
-                </a>
-            </li>
+        <div class="support-video-head">
+            <h2 class="support-heading tw:text-sm tw:font-semibold">Video tutorials</h2>
+            <a class="support-playlist" href={PLAYLIST} target="_blank" rel="noopener noreferrer">
+                <i class="ri-play-list-line" aria-hidden="true"></i>
+                Watch them all<span class="support-new-tab"> (opens in a new tab)</span>
+            </a>
+        </div>
+        <ul class="support-videos">
             {#each videos as v (v.id)}
                 <li>
-                    <a class="card support-link" href="https://youtu.be/{v.id}" target="_blank" rel="noopener noreferrer">
-                        <i class="ri-youtube-line" aria-hidden="true"></i>
-                        <span class="support-link-text">
-                            <span class="support-link-label">{v.label}<span class="support-new-tab"> (opens in a new tab)</span></span>
+                    <a class="card support-video" href="https://youtu.be/{v.id}" target="_blank" rel="noopener noreferrer">
+                        <!-- YouTube's own thumbnail, so it changes when the video's does. -->
+                        <img src="https://i.ytimg.com/vi/{v.id}/mqdefault.jpg" alt="" width="320" height="180" loading="lazy" decoding="async" />
+                        <span class="support-video-label">
+                            <i class="ri-youtube-line" aria-hidden="true"></i>
+                            <span>{v.label}<span class="support-new-tab"> (opens in a new tab)</span></span>
                         </span>
-                        <i class="ri-external-link-line" aria-hidden="true"></i>
                     </a>
                 </li>
             {/each}
@@ -306,11 +303,73 @@
     .support-whatsapp:active {
         transform: scale(0.98);
     }
+    .support-video-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        max-width: 1200px;
+    }
+    .support-playlist {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 44px;
+        font-weight: 600;
+    }
+    .support-videos {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+        gap: 12px;
+        max-width: 1200px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .support-videos li {
+        display: flex;
+    }
+    .support-video {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        color: inherit;
+        text-decoration: none;
+        transition:
+            box-shadow 200ms ease-out,
+            transform 150ms ease-out;
+    }
+    .support-video img {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        background: var(--surfaceAlt2Color);
+    }
+    .support-video-label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 10px 12px 12px;
+        font-weight: 600;
+    }
+    .support-video:hover,
+    .support-video:focus-visible {
+        box-shadow: 0 2px 10px rgba(16, 24, 40, 0.12);
+    }
+    .support-video:active {
+        transform: scale(0.98);
+    }
     @media (prefers-reduced-motion: reduce) {
         .support-whatsapp {
             transition: none;
         }
         .support-whatsapp:active,
+        .support-video:active,
         .support-link:active {
             transform: none;
         }
