@@ -150,6 +150,10 @@ environment:
   GOCOMMERCE_ADMIN_EMAIL, GOCOMMERCE_ADMIN_PASSWORD
                     if set, "serve" creates this superuser when the database
                     has none, so an unattended deploy comes up signed-in-able
+  GOCOMMERCE_GOOGLE_CLIENT_ID, GOCOMMERCE_GOOGLE_CLIENT_SECRET
+                    offer "Continue with Google" on the panel's sign-in and
+                    sign-up screens; both are needed. Register <panel>/admin/auth/login
+                    as the OAuth client's redirect URI
   GOCOMMERCE_PANEL_URL
                     where this store's panel is reached, e.g.
                     https://shop.example.com: the base of a password-reset
@@ -405,6 +409,8 @@ environment:
 		// about the deployment. It is the base of a password-reset link and of a
 		// recovery email's tracked link.
 		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
+		GoogleClientID:     os.Getenv("GOCOMMERCE_GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOCOMMERCE_GOOGLE_CLIENT_SECRET"),
 		BrandName:          os.Getenv("GOCOMMERCE_BRAND_NAME"),
 		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
 		PlatformEmailFrom:  os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),

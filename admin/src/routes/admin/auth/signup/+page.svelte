@@ -25,6 +25,7 @@
     import { rise } from "$lib/motion.js";
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
+    import GoogleButton from "$lib/components/GoogleButton.svelte";
     import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
     import { phoneFragment, readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
     import { looksLikePhone, toIdentity } from "$lib/identity.js";
@@ -53,6 +54,7 @@
     // "who" is the one box; "password" and "code" are where it leads.
     let step = $state("who");
     const textsCode = $derived(canPhone && looksLikePhone(email));
+    let googleClient = $state("");
     // Where sign-up is shut, the way on is signing in, and the number goes along.
     let loginHref = $state(LOGIN);
 
@@ -61,6 +63,7 @@
         auth.state()
             .then((s) => {
                 canPhone = !!s.phone_signup;
+                googleClient = s.google_client_id || "";
                 if (linkedPhone && !s.signup) loginHref = LOGIN + phoneFragment(linkedPhone);
                 state = !s.installed ? "uninstalled" : s.signup ? "open" : "closed";
             })
@@ -111,7 +114,7 @@
 
 <svelte:head><title>{titled("Create your store")}</title></svelte:head>
 
-<AuthShell>
+<AuthShell hero>
     {#if state === "loading"}
         <div class="block txt-center"><span class="loader lg" aria-label="Loading"></span></div>
     {:else if state === "unreachable"}
@@ -252,6 +255,9 @@
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
+        {#if googleClient && step === "who"}
+            <GoogleButton clientId={googleClient} />
+        {/if}
         {/if}
 
         <p class="auth-alt">

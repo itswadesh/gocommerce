@@ -19,7 +19,8 @@
     import { base } from "$app/paths";
     import { brand } from "$lib/brand.svelte.js";
 
-    let { children } = $props();
+    // hero sets the sign-in and sign-up cards beside a headline on a wide screen.
+    let { children, hero = false } = $props();
 
     // The screens this transition is for. Leaving them (into the panel) is the
     // shell's own business.
@@ -51,7 +52,7 @@
     });
 </script>
 
-<div class="auth-shell">
+<div class="auth-shell" class:auth-with-hero={hero}>
     <header class="auth-bar">
         <span class="app-brand auth-brand">
             <!-- The brand of the address this is opened on (D114): its logo
@@ -70,6 +71,17 @@
         </span>
     </header>
     <div class="auth-main">
+        {#if hero}
+            <aside class="auth-hero">
+                <p class="auth-hero-title">Your store. <span>Ready to sell.</span></p>
+                <p class="auth-hero-lede">Add your products, take payments and ship orders, all from one panel.</p>
+                <ul class="auth-hero-points">
+                    <li><i class="ri-store-2-line" aria-hidden="true"></i>Your own store, on your own web address</li>
+                    <li><i class="ri-secure-payment-line" aria-hidden="true"></i>Online payments and cash on delivery</li>
+                    <li><i class="ri-smartphone-line" aria-hidden="true"></i>Run it from your phone or your computer</li>
+                </ul>
+            </aside>
+        {/if}
         <div class="auth-card" class:auth-card-enter={enter}>
             {@render children?.()}
         </div>

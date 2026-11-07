@@ -22,6 +22,7 @@
      * as an email does, and the installer asks for both at once.
      */
     import { tick } from "svelte";
+    import { goto } from "$app/navigation";
     import { base } from "$app/paths";
     import { auth } from "$lib/api.js";
     import { applyBrand, brand, titled } from "$lib/brand.svelte.js";
@@ -30,6 +31,8 @@
     import { sentence } from "$lib/format.js";
     import AuthShell from "$lib/components/AuthShell.svelte";
     import PhoneCodeForm from "$lib/components/PhoneCodeForm.svelte";
+    import GoogleButton from "$lib/components/GoogleButton.svelte";
+    import { takeGoogleReturn } from "$lib/google-signin.js";
     import { readablePhone, takePhoneFromFragment } from "$lib/phone-link.js";
     import { looksLikePhone, toIdentity } from "$lib/identity.js";
 
@@ -58,6 +61,10 @@
     let canSignUp = $state(false);
     let canPhone = $state(false);
     let phoneOpen = $state(false);
+    let googleClient = $state("");
+    // Coming back from Google: the code is spent once, and the form waits for it.
+    const googleReturn = takeGoogleReturn();
+    let finishingGoogle = $state(googleReturn?.outcome === "signin");
     // "who" is the one box; "password" and "code" are where it leads.
     let step = $state("who");
     const textsCode = $derived(canPhone && looksLikePhone(identity));
@@ -71,6 +78,7 @@
                 canSignUp = !!s.signup;
                 canPhone = !!s.phone_login;
                 phoneOpen = !!s.phone_signup;
+                googleClient = s.google_client_id || "";
                 // The box keeps the number either way; the installer's takes an
                 // email only.
                 if (linkedPhone && !installed) identity = "";
@@ -101,6 +109,26 @@
             step = "password";
         }
         history.replaceState(null, "", window.location.pathname + window.location.search);
+    });
+
+    /*
+     * The code leaves the address first, so it is not in the history or a copied
+     * link, and the screen the person was heading for goes back in its place,
+     * where the shell reads it once the session exists.
+     */
+    $effect(() => {
+        if (!googleReturn) return;
+        const next = googleReturn.next ? `?next=${encodeURIComponent(googleReturn.next)}` : "";
+        goto(`${base}/admin/auth/login${next}`, { replaceState: true, keepFocus: true });
+        if (googleReturn.outcome === "stale") error = "That Google sign-in had expired. Try again.";
+        if (googleReturn.outcome !== "signin") return;
+        auth.loginWithGoogle(googleReturn.signin)
+            .then((record) => onauthenticated?.(record))
+            .catch((err) => {
+                attempt += 1;
+                error = sentence(err.message) || "Google could not sign you in. Try again.";
+            })
+            .finally(() => (finishingGoogle = false));
     });
 
     // The address typed so far travels to the reset screen, so nobody types
@@ -136,7 +164,7 @@
 
 <svelte:head><title>{titled(installed === false ? "Create the first account" : "Sign in")}</title></svelte:head>
 
-<AuthShell>
+<AuthShell hero>
     <header class="auth-head">
         <h1 class="auth-title">{installed === false ? "Create the first account" : "Sign in"}</h1>
         <p class="auth-lede">
@@ -154,8 +182,8 @@
         </div>
     {/if}
 
-    {#if installed === null}
-        <div class="block txt-center"><span class="loader lg" aria-label="Loading"></span></div>
+    {#if installed === null || finishingGoogle}
+        <div class="block txt-center"><span class="loader lg" aria-label={finishingGoogle ? "Signing you in with Google" : "Loading"}></span></div>
     {:else if step === "code"}
         <div in:rise>
             <PhoneCodeForm {onauthenticated} open={phoneOpen} number={toIdentity(identity)} onback={() => (step = "who")} />
@@ -255,6 +283,10 @@
                 <i class="ri-arrow-right-line" aria-hidden="true"></i>
             </button>
         </form>
+
+        {#if installed && googleClient && step === "who"}
+            <GoogleButton clientId={googleClient} />
+        {/if}
 
         {#if step === "password" && installed && !canReset}
             <p class="auth-note">
