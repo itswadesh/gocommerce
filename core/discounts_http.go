@@ -137,9 +137,15 @@ func (a *App) handleGetDiscount(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	sales, salesOrders, err := a.discounts.Sales(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
 	Respond(w, http.StatusOK, DiscountDetail{
 		Discount: d, RedeemedTotal: total,
 		RedeemedOrders: orders, RedeemedOtherCurrencyOrders: other,
+		Sales: sales, SalesOrders: salesOrders,
 	})
 }
 

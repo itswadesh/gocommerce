@@ -23167,6 +23167,13 @@
               "redeemed_other_currency_orders": {
                 "type": "integer",
                 "description": "Live redemptions on orders in some other currency, which `redeemed_total` therefore leaves out. Zero in a store that has never changed currency."
+              },
+              "sales": {
+                "$ref": "#/components/schemas/Money",
+                "description": "What the code’s paid, uncancelled orders came to before delivery and tax, less refunds (D251). A creator’s commission is worked out on it."
+              },
+              "sales_orders": {
+                "type": "integer"
               }
             }
           }

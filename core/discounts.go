@@ -208,6 +208,12 @@ type DiscountDetail struct {
 	// RedeemedOtherCurrencyOrders counts what the currency constraint left out,
 	// so the number above is narrow rather than quietly wrong.
 	RedeemedOtherCurrencyOrders int `json:"redeemed_other_currency_orders"`
+	// Sales is what the code's paid orders came to, before delivery and tax and
+	// less what was refunded, and SalesOrders how many there were. It is the
+	// figure a creator's commission is worked out on (D251): money the store
+	// kept, from orders the code brought in.
+	Sales       Money `json:"sales"`
+	SalesOrders int   `json:"sales_orders"`
 }
 
 // DiscountRedemption is one order that used a rule: the snapshot row joined to
@@ -1228,6 +1234,27 @@ func (s *Discounts) Redeemed(ctx context.Context, discountID int64) (Money, int,
 		return Money{}, 0, 0, err
 	}
 	return money(sum, s.app.Currency(ctx)), orders, other, nil
+}
+
+// Sales is what this rule's paid, uncancelled orders came to in the store's
+// currency: the lines less the discount, less tax an inclusive price carried,
+// less refunds, never below zero per order.
+func (s *Discounts) Sales(ctx context.Context, discountID int64) (Money, int, error) {
+	var sum int64
+	var orders int
+	err := s.app.db.QueryRowContext(ctx, `
+		SELECT coalesce(sum(greatest(o.subtotal_minor - o.discount_minor
+		                    - CASE WHEN o.tax_inclusive THEN o.tax_minor ELSE 0 END
+		                    - o.refunded_minor, 0)), 0)::bigint,
+		       count(*)
+		FROM orders o
+		WHERE o.id IN (SELECT order_id FROM order_discounts WHERE discount_id = $1)
+		  AND o.currency = $2 AND o.status <> 'cancelled' AND o.payment_status = 'paid'`,
+		discountID, s.app.Currency(ctx)).Scan(&sum, &orders)
+	if err != nil {
+		return Money{}, 0, err
+	}
+	return money(sum, s.app.Currency(ctx)), orders, nil
 }
 
 // matchedProducts answers which of these products a scoped rule reaches.
