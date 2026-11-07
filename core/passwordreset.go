@@ -673,6 +673,7 @@ func (s *Superusers) deliverReset(reqCtx context.Context, email, token, code str
 			Channel:  channel,
 			To:       email,
 			Language: s.app.cfg.DefaultLanguage,
+			From:     s.app.identityFrom(channel),
 			Data:     data,
 			Secrets:  []string{"reset_token", "reset_code", "code", "reset_url"},
 		}); err != nil {
@@ -705,6 +706,19 @@ func (s *Superusers) waitForResetDelivery(max time.Duration) {
 // configured for the install (its environment), which no store can edit or
 // read.
 const installScope = "install"
+
+// identityFrom is the sender of an email that opens an account: the platform
+// address the owner's verification email already goes from (D221), so the two
+// cannot drift apart. Without it the provider's own From applies, and an unset
+// Resend From falls back to its test sender, which mails only the account's
+// owner: every reset to anybody else was refused while verification still
+// arrived. Empty, the provider's From applies as before.
+func (a *App) identityFrom(channel string) string {
+	if channel != ChannelEmail {
+		return ""
+	}
+	return a.cfg.PlatformEmailFrom
+}
 
 // identityMailScope is the channel a code or link that opens an account may go
 // out on. A store's template and provider account are its staff's to edit and

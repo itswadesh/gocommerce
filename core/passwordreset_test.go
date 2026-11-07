@@ -290,6 +290,28 @@ func TestWithNoPanelURLTheEmailCarriesACodeAndNoLink(t *testing.T) {
 	}
 }
 
+// A reset goes from the same platform address as the owner's verification
+// email; unset, the provider's own From applies. Production had Resend's From
+// empty, so resets went from its test sender and were refused for everyone.
+func TestTheResetEmailGoesFromThePlatformAddress(t *testing.T) {
+	dsn := requireDB(t)
+	for i, from := range []string{"hi@platform.example", ""} {
+		owner := fmt.Sprintf("owner%d@example.com", i)
+		rec := &recordingNotifier{}
+		cfg := testConfig(dsn)
+		cfg.PlatformEmailFrom = from
+		app, err := New(cfg, &notifyModule{rec: rec})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		newSuperuser(t, app, owner, "a good password")
+		if got := resetMail(t, app, rec, owner).From; got != from {
+			t.Errorf("PlatformEmailFrom %q: reset From = %q", from, got)
+		}
+		_ = app.Close()
+	}
+}
+
 // End to end through the link itself: the URL the operator clicks and the hash
 // the table holds have to agree.
 func TestTheResetEmailLinkActuallyWorks(t *testing.T) {
