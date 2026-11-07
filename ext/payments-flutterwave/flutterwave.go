@@ -703,8 +703,9 @@ func (m *Module) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch tx.Status {
 	case "successful":
 	case "failed":
-		// An order moved to another method since has no Flutterwave attempt to fail.
-		if order.PaymentProvider == m.Code() {
+		// An order moved to another method since has no Flutterwave attempt to fail,
+		// and a transaction made for another tx_ref says nothing about this one.
+		if order.PaymentProvider == m.Code() && tx.TxRef == a.txRef {
 			if _, err := m.pay.MarkFailed(ctx, orderID, "flutterwave reported a failed payment: "+tx.ProcessorResponse); err != nil {
 				fail(http.StatusInternalServerError, "could not apply the failure", err)
 				return
