@@ -175,6 +175,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	// buyer's name, email and address. Whoever may read the order may read it;
 	// whoever may not, may not.
 	app.HandleAdminFunc("GET /api/admin/x/invoices", m.handleList, rightInvoicesRead)
+	// And the buyer, who holds the order's access token, may read their own.
+	app.HandleFunc("GET /x/invoices/{number}", m.handleShopperInvoice)
 	app.HandleAdminFunc("GET /api/admin/x/invoices/{orderId}", m.handleGet, rightInvoicesRead)
 	app.HandleAdminFunc("GET /api/admin/x/invoices/tally", m.handleTallyExport, rightInvoicesRead)
 	app.HandleAdminFunc("GET /api/admin/x/invoices/tally/ledgers", m.handleTallyLedgersGet, rightInvoicesRead)
@@ -459,11 +461,32 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Validationf("orderId must be a positive integer"))
 		return
 	}
+	m.serveDocument(w, r, orderID, func(order *gocommerce.Order) {
+		m.app.MaskOrder(r.Context(), order)
+	})
+}
 
+// handleShopperInvoice is the buyer's own invoice, for the order's access token.
+// A wrong token answers as an order that does not exist, as the order route does.
+func (m *Module) handleShopperInvoice(w http.ResponseWriter, r *http.Request) {
+	order, err := m.orders.GetForGuest(r.Context(), r.PathValue("number"), r.URL.Query().Get("token"))
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	// The token is in the address, so it must not reach a cache or the next site.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	m.serveDocument(w, r, order.ID, func(order *gocommerce.Order) { order.Redact() })
+}
+
+// serveDocument writes an order's invoice, after prepare has taken from the
+// stored order whatever this reader may not see.
+func (m *Module) serveDocument(w http.ResponseWriter, r *http.Request, orderID int64, prepare func(*gocommerce.Order)) {
 	var number string
 	var issuedAt time.Time
 	var snapshot, taxDoc []byte
-	err = m.db.QueryRowContext(r.Context(),
+	err := m.db.QueryRowContext(r.Context(),
 		`SELECT number, issued_at, snapshot, tax_doc FROM invoices_documents WHERE order_id = $1`,
 		orderID).Scan(&number, &issuedAt, &snapshot, &taxDoc)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -484,7 +507,7 @@ func (m *Module) handleGet(w http.ResponseWriter, r *http.Request) {
 	// order actually was, and masking there would write bullets into the
 	// document a real store has to be able to produce. Both shapes below read
 	// from here, so the JSON and the printable page mask together.
-	m.app.MaskOrder(r.Context(), &order)
+	prepare(&order)
 
 	// JSON for a client that wants the data, HTML for a human who wants to
 	// print it. A tax invoice is both from the document as issued, never from
