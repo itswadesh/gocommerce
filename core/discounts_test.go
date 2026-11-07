@@ -751,3 +751,47 @@ func TestAQuoteIsWhatCheckoutCharges(t *testing.T) {
 		t.Errorf("quoting a checked-out cart = %d, want 409", rec.Code)
 	}
 }
+
+// A code's sales are what its paid orders came to before delivery and tax: a
+// creator's commission is worked out on them (D251). An unpaid order and a
+// cancelled one add nothing.
+func TestDiscountSalesCountPaidOrdersOnly(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	product := simpleProduct(t, app, "CREATOR-1", 10000, 10)
+	d := newDiscount(t, app, DiscountInput{
+		Code: "ASHA10", Title: "Asha's followers", Kind: DiscountPercentage, ValueBP: 1000,
+	})
+	paid, err := checkoutWithCode(t, app, "ASHA10", product.DefaultVariant().ID, 2, "")
+	if err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if _, err := app.Pay().MarkPaid(ctx, paid.ID, "cash"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if _, err := checkoutWithCode(t, app, "ASHA10", product.DefaultVariant().ID, 1, ""); err != nil {
+		t.Fatalf("unpaid checkout: %v", err)
+	}
+	cancelled, err := checkoutWithCode(t, app, "ASHA10", product.DefaultVariant().ID, 1, "")
+	if err != nil {
+		t.Fatalf("third checkout: %v", err)
+	}
+	if _, err := app.Pay().MarkPaid(ctx, cancelled.ID, "cash"); err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	if _, err := app.Order().Cancel(ctx, cancelled.ID, "test"); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	sales, orders, err := app.Discounts().Sales(ctx, d.ID)
+	if err != nil {
+		t.Fatalf("sales: %v", err)
+	}
+	want := paid.Subtotal.AmountMinor - paid.Discount.AmountMinor
+	if paid.TaxInclusive {
+		want -= paid.Tax.AmountMinor
+	}
+	if orders != 1 || sales.AmountMinor != want {
+		t.Fatalf("sales = %d over %d orders, want %d over 1", sales.AmountMinor, orders, want)
+	}
+}

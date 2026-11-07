@@ -297,8 +297,19 @@
             hidden: false,
             listed: false,
             active: true,
+            creator: "",
+            commission: "",
         };
     }
+
+    /* A creator code (D251): a code given to one creator, whose commission is a
+       share of the sales it brings. Kept on the discount's metadata, so the
+       engine only has to report the sales. */
+    const creatorOf = (d) => (typeof d?.metadata?.creator === "string" ? d.metadata.creator : "");
+    const commissionBpOf = (d) => {
+        const bp = Number(d?.metadata?.commission_bp);
+        return Number.isInteger(bp) && bp > 0 && bp <= 10000 ? bp : 0;
+    };
 
     function openNew() {
         editing = null;
@@ -335,6 +346,8 @@
             hidden: !!d.hidden,
             listed: !!d.listed,
             active: d.active,
+            creator: creatorOf(d),
+            commission: commissionBpOf(d) ? String(commissionBpOf(d) / 100) : "",
         };
         targetNames = new Map();
         targetsMissing = new Set();
@@ -546,6 +559,20 @@
         body.ends_at = form.ends_at ? new Date(form.ends_at).toISOString() : null;
         const usageLimit = fieldText(form.usage_limit);
         body.usage_limit = usageLimit ? parseInt(usageLimit, 10) : null;
+        // The rest of the metadata is kept as it was: a module may have put
+        // its own keys there.
+        const commission = String(form.commission ?? "").trim();
+        const bp = commission ? Math.round(parseFloat(commission) * 100) : 0;
+        if (commission && !(bp > 0 && bp <= 10000)) {
+            toast.error("Enter a commission between 0 and 100 percent, or leave it empty.");
+            return null;
+        }
+        const meta = { ...(editing?.metadata ?? {}) };
+        delete meta.creator;
+        delete meta.commission_bp;
+        if (form.creator.trim()) meta.creator = form.creator.trim();
+        if (form.creator.trim() && bp) meta.commission_bp = bp;
+        body.metadata = meta;
         return body;
     }
 
@@ -848,6 +875,7 @@
                             </td>
                             <td class="col-field-type-text" data-name="Title">
                                 <span class="txt-ellipsis">{d.title}</span>
+                                {#if creatorOf(d)}<span class="label sm m-l-5" title="A creator code">{creatorOf(d)}</span>{/if}
                             </td>
                             <td class="col-field-type-text" data-name="Applies to">
                                 {#if applies(d)}
@@ -1218,6 +1246,22 @@
             some people should know.
         </div>
 
+        <h6 class="section-title m-t-base">Creator</h6>
+        <div class="fields">
+            <div class="field">
+                <label for="d-creator">Creator's name</label>
+                <input id="d-creator" type="text" maxlength="120" bind:value={form.creator} placeholder="Asha Jewels on Instagram" />
+            </div>
+            <div class="field">
+                <label for="d-commission">Commission (%)</label>
+                <input id="d-commission" type="text" inputmode="decimal" bind:value={form.commission} placeholder="10" disabled={!form.creator.trim()} />
+            </div>
+        </div>
+        <div class="field-help">
+            For a code you give to one creator to share with their followers. This screen then shows
+            the sales the code brought in and the commission they have earned. Paying it is up to you.
+        </div>
+
         <div class="field m-t-sm">
             <input id="d-active" type="checkbox" bind:checked={form.active} />
             <label for="d-active">Active</label>
@@ -1373,6 +1417,20 @@
         <div class="field-help">
             Nothing is used up by trying it — the count only moves at checkout.
         </div>
+
+        {#if can("orders.read") && detail && creatorOf(editing)}
+            <h6 class="section-title m-t-base">{creatorOf(editing)}'s sales</h6>
+            <div>
+                <strong>{formatMoney(detail.sales)}</strong>
+                from {detail.sales_orders} paid {pluralize(detail.sales_orders, "order")}{#if commissionBpOf(editing)},
+                    so <strong>{formatMoney({ amount_minor: Math.round((detail.sales.amount_minor * commissionBpOf(editing)) / 10000), currency: detail.sales.currency })}</strong>
+                    commission at {commissionBpOf(editing) / 100}%{/if}.
+            </div>
+            <div class="field-help">
+                Sales are what the code's paid orders came to before delivery and tax, less refunds.
+                Cancelled and unpaid orders are left out.
+            </div>
+        {/if}
 
         {#if can("orders.read")}
             <h6 class="section-title m-t-base">Where it has been used</h6>
