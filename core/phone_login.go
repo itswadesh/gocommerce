@@ -370,6 +370,7 @@ func (s *Superusers) deliverLoginCode(reqCtx context.Context, phone, code string
 			return
 		}
 		note.Language = s.app.cfg.DefaultLanguage
+		note.From = s.app.identityFrom(note.Channel)
 		note.Data = map[string]string{
 			"code": code, "store_name": brand.Name,
 			"expires_in_minutes": strconv.Itoa(int(phoneCodeTTL / time.Minute)),

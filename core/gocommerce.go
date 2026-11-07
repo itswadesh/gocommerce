@@ -181,7 +181,8 @@ type Config struct {
 	// and counts, once a code has proved the number (D215). Empty, nobody may.
 	PlatformOwnerPhone string
 	// PlatformEmailFrom is the sender of the email that person sends a store's
-	// owner to verify an address (D221). The email provider must accept it.
+	// owner to verify an address (D221), and of every password-reset and
+	// sign-in-code email (identityFrom). The email provider must accept it.
 	PlatformEmailFrom string
 	// Brands are the names this install answers under, each with its own
 	// admin domain and base domain (brands.go, D114). Empty, the install is
