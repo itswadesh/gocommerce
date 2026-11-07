@@ -218,7 +218,7 @@ func (m *Media) attachSamplePhotos(ctx context.Context, p *Product, s sampleProd
 	return nil
 }
 
-//go:embed sample/1/*.webp sample/2/*.webp
+//go:embed sample/1/*.webp sample/2/*.webp sample/3/*.webp
 var samplePhotos embed.FS
 
 // SampleMediaPrefix is where the engine serves the sample shop's pictures,
@@ -229,6 +229,11 @@ var samplePhotos embed.FS
 // the sample shop before D159, and for a merchant who put one of its photos
 // on a product of their own, which D96 made theirs.
 const SampleMediaPrefix = "/sample-media/2/"
+
+// SamplePlaceholderPrefix is where the sample shop's banners find their pictures
+// (D242): plain placeholders that say what size to replace them with. A store
+// that added the sample shop before them keeps the photographs it links to.
+const SamplePlaceholderPrefix = "/sample-media/3/"
 
 // handleSamplePhoto serves one sample picture from the binary. Public, like a
 // store's own media, because a storefront shows it to anybody.

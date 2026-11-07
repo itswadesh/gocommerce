@@ -731,8 +731,10 @@ shop to look around, so every screen has something in it:
   confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
 - With the banners module, **three slides** on the home page (Festive edit,
-  Women, Men), each a row of the products' photographs, and a **Shop by
-  collection** grid of the two collections. The categories carry pictures of
+  Women, Men) and a **Shop by collection** grid of the two collections, on
+  placeholder pictures that say the size to replace them with. They are served
+  at `/sample-media/3/`. A store that added the sample shop earlier keeps the
+  photographs its banners link to. The categories carry pictures of
   their own (`metadata.image`), which the storefront's own category tiles show.
 - With the other modules installed, **a review on the first eleven products** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and

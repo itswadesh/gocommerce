@@ -10,20 +10,20 @@ import (
 // leading to a part of the sample shop, and a grid of its collections. Not of
 // its categories: a storefront's home page has a category section of its own,
 // which the sample categories' pictures fill, and the same tiles twice would
-// read as a mistake. The pictures are the sample shop's photographs, which the
-// engine serves from its own binary (gocommerce.SampleMediaPrefix) and credits
-// in docs/admin-panel.md; each slide's is a row of the goods it links to.
+// read as a mistake. The pictures are placeholders the engine serves from its
+// own binary (gocommerce.SamplePlaceholderPrefix, D242), which say what size to
+// replace them with, because a banner is the first thing a store makes its own.
 
 var sampleSlides = []struct{ title, kind, slug, picture string }{
-	{"Festive edit", "collections", "festive-edit", "banner-festive"},
-	{"Women", "categories", "women", "banner-women"},
-	{"Men", "categories", "men", "banner-men"},
+	{"Festive edit", "collections", "festive-edit", "banner-1"},
+	{"Women", "categories", "women", "banner-2"},
+	{"Men", "categories", "men", "banner-3"},
 }
 
-// The tile for each sample collection is a photograph of one of its products.
+// Each sample collection's tile has its own placeholder.
 var sampleTiles = map[string]string{
-	"new-arrivals": "floral-co-ord-set-orchid-front",
-	"festive-edit": "satin-saree-magenta-front",
+	"new-arrivals": "tile-1",
+	"festive-edit": "tile-2",
 }
 
 const sampleGrid = "Shop by collection"
@@ -62,8 +62,8 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		}
 		ins = append(ins, BannerInput{
 			Placement: PlacementSlide, Title: s.title, Link: "/" + s.kind + "/" + s.slug,
-			ImageURL:       gocommerce.SampleMediaPrefix + s.picture + "-wide.webp",
-			MobileImageURL: gocommerce.SampleMediaPrefix + s.picture + "-phone.webp",
+			ImageURL:       gocommerce.SamplePlaceholderPrefix + s.picture + "-wide.webp",
+			MobileImageURL: gocommerce.SamplePlaceholderPrefix + s.picture + "-phone.webp",
 		})
 	}
 	for _, c := range shop.Collections {
@@ -73,7 +73,7 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		}
 		ins = append(ins, BannerInput{
 			Placement: PlacementGrid, GroupTitle: sampleGrid, Title: c.Title, Link: "/collections/" + c.Slug,
-			ImageURL: gocommerce.SampleMediaPrefix + picture + ".webp",
+			ImageURL: gocommerce.SamplePlaceholderPrefix + picture + ".webp",
 		})
 	}
 	added := 0
