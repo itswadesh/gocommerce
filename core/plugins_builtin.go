@@ -236,4 +236,18 @@ var builtinPlugins = []PluginDef{
 				Help: "Its products are suggested in the collection's order, less what the basket already holds."},
 		},
 	},
+	// A line under the product price about paying in instalments (D247). It
+	// states a monthly amount only for an offer the store says it set up with
+	// its gateway; the engine cannot check that, so both fields start empty and
+	// an empty one claims nothing: no months, no amount; no minimum, every price.
+	{
+		Key: "emi-note", Home: homeStorefrontExtras, Title: "EMI note", Icon: "ri-bank-card-line", Category: "storefront",
+		Description: "A short line under the price on product pages: \"EMI available at checkout\", or, for a no-cost EMI offer you have set up with your payment gateway, \"No-cost EMI from ₹3,334/month\". Shown only in Indian rupees.",
+		Fields: []PluginField{
+			{Key: "no_cost_months", Label: "No-cost EMI months", Kind: "number", Public: true,
+				Help: "Fill this in only if your payment gateway has a no-cost EMI offer for this many months on your account, for example 3. The line then shows the price divided by it, rounded up to the rupee. Empty, it says only that EMI is available at checkout."},
+			{Key: "min_price", Label: "Show from price", Kind: "number", Public: true,
+				Help: "Products cheaper than this, in rupees, show no line: 3000 is ₹3,000. Use your gateway's EMI minimum. Empty shows it on every product."},
+		},
+	},
 }
