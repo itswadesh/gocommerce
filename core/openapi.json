@@ -18580,6 +18580,312 @@
           }
         }
       }
+    },
+    "/api/carts/{token}/gift-card": {
+      "put": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "Put a gift card on a cart",
+        "description": "Answers with what the card has left. Nothing is held: checkout decides again under its own lock and spends what the order needs, up to the balance. A switched-off, expired, empty or other-currency card is refused with a message that says which.",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "Spaces and dashes are ignored, and case does not matter."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the card has left.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GiftCardBalance"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "cart"
+        ],
+        "summary": "Take the gift card off a cart",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Taken off."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/gift-cards": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "List gift cards",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Match the email, the last four characters or the order number it was bought on."
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Offset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Gift cards, newest first, without their codes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GiftCard"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ListMeta"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Issue a gift card",
+        "description": "In the store’s currency. The response carries the whole code for the operator to pass on.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount_minor"
+                ],
+                "properties": {
+                  "amount_minor": {
+                    "type": "integer"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new card, with its code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GiftCard"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/gift-cards/{id}": {
+      "get": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Get a gift card with its history",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The card.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GiftCard"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Switch a gift card on or off, or change its note or expiry",
+        "description": "The amount cannot change: more money is a new card.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The card.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GiftCard"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -19829,6 +20135,10 @@
           "requires_shipping": {
             "type": "boolean",
             "description": "Whether the thing is sent at all. False for a download, a service or a gift card: nothing is charged to send it, and a basket holding nothing else is asked for no delivery option. Shopify's Variant Requires Shipping."
+          },
+          "gift_card": {
+            "type": "boolean",
+            "description": "Each unit sold becomes a gift card worth its price once the order is paid."
           }
         }
       },
@@ -20131,6 +20441,10 @@
             "type": "boolean",
             "default": true,
             "description": "Whether the thing is sent at all. False for a download, a service or a gift card: nothing is charged to send it, and a basket holding nothing else is asked for no delivery option. Shopify's Variant Requires Shipping."
+          },
+          "gift_card": {
+            "type": "boolean",
+            "description": "Each unit sold becomes a gift card worth its price once the order is paid."
           }
         }
       },
@@ -20707,6 +21021,17 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "gift_card": {
+            "$ref": "#/components/schemas/Money",
+            "description": "What gift cards paid (D250). `total` is what is left for the payment method, so the full value is `total` plus this."
+          },
+          "gift_cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssuedGiftCard"
+            },
+            "description": "Cards this order bought, with their codes. On a single order only."
           }
         }
       },
@@ -25304,6 +25629,124 @@
           "service": {
             "type": "boolean",
             "description": "A SAC (services) code rather than an HSN one."
+          }
+        }
+      },
+      "GiftCardUse": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Negative when the card paid for something, positive when an order it paid for was cancelled."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "integer"
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GiftCard": {
+        "type": "object",
+        "description": "A code with a balance, spent at checkout as a way of paying (D250). `code` is the whole code and is left out of lists.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "code": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "initial": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "balance": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "email": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "The order it was bought on, if any."
+          },
+          "order_number": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GiftCardUse"
+            }
+          }
+        }
+      },
+      "GiftCardBalance": {
+        "type": "object",
+        "properties": {
+          "last4": {
+            "type": "string"
+          },
+          "balance": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "IssuedGiftCard": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "initial": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "balance": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "active": {
+            "type": "boolean"
           }
         }
       }

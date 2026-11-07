@@ -589,6 +589,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountTaxonomyRoutes()
 	a.mountMasterListRoutes()
 	a.mountDiscountRoutes()
+	a.mountGiftCardRoutes()
 	a.mountPricingRoutes()
 	a.mountChannelRoutes()
 	a.mountScreenRoutes()

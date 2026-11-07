@@ -123,6 +123,11 @@ func coreMigrations() []Migration {
 		{ID: "0105_superuser_email_proved", SQL: migration0105SuperuserEmailProved},
 		{ID: "0106_superuser_email_verifications", SQL: migration0106SuperuserEmailVerifications},
 		{ID: "0107_superuser_owner_email_sent", SQL: migration0107SuperuserOwnerEmailSent},
+		{ID: "0108_gift_cards", SQL: migration0108GiftCards},
+		ScopeMigration("0109_scope_gift_cards", "gift_cards", "gift_card_uses"),
+		{ID: "0110_gift_card_codes", SQL: migration0110GiftCardCodes},
+		// A code is the money on it, and a cart's typed code is the same code.
+		WithholdFromReports("0111_withhold_gift_card_codes", "gift_cards.code", "carts.gift_card_code"),
 	}
 }
 

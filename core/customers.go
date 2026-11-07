@@ -58,7 +58,7 @@ type Customer struct {
 // not in the group.
 const (
 	customerOrderCount = `count(*) FILTER (WHERE o.status <> 'cancelled')`
-	customerSpent      = `coalesce(sum(o.total_minor - o.refunded_minor) FILTER (WHERE o.payment_status = 'paid'), 0)`
+	customerSpent      = `coalesce(sum(o.total_minor + o.gift_card_minor - o.refunded_minor) FILTER (WHERE o.payment_status = 'paid'), 0)`
 	customerFirstOrder = `min(o.created_at)`
 	customerLastOrder  = `max(o.created_at)`
 )

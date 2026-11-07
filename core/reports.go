@@ -384,7 +384,7 @@ func (r *Reports) Sales(ctx context.Context, q SalesQuery) (*SalesReport, error)
 		           date_trunc($3::text, o.created_at AT TIME ZONE $4::text) AS bucket,
 		           o.status, o.payment_status, o.tax_inclusive,
 		           o.subtotal_minor, o.discount_minor, o.shipping_minor,
-		           o.tax_minor, o.total_minor, o.refunded_minor,
+		           o.tax_minor, o.total_minor, o.gift_card_minor, o.refunded_minor,
 		           o.status = ANY($6::text[]) AS sale
 		      FROM orders o
 		     WHERE o.created_at >= $1 AND o.created_at < $2
@@ -399,9 +399,9 @@ func (r *Reports) Sales(ctx context.Context, q SalesQuery) (*SalesReport, error)
 		           coalesce(sum(subtotal_minor - discount_minor
 		                        - CASE WHEN tax_inclusive THEN tax_minor ELSE 0 END)
 		                                        FILTER (WHERE sale), 0) AS net,
-		           coalesce(sum(total_minor)    FILTER (WHERE sale), 0) AS total,
+		           coalesce(sum(total_minor + gift_card_minor) FILTER (WHERE sale), 0) AS total,
 		           count(*)                     FILTER (WHERE sale AND payment_status = 'paid') AS paid_orders,
-		           coalesce(sum(total_minor)    FILTER (WHERE sale AND payment_status = 'paid'), 0) AS paid_total,
+		           coalesce(sum(total_minor + gift_card_minor) FILTER (WHERE sale AND payment_status = 'paid'), 0) AS paid_total,
 		           coalesce(sum(refunded_minor) FILTER (WHERE sale AND payment_status = 'paid'), 0) AS paid_refunded,
 		           count(*)                     FILTER (WHERE sale AND payment_status IN ('pending','failed')) AS owed_orders,
 		           coalesce(sum(total_minor)    FILTER (WHERE sale AND payment_status IN ('pending','failed')), 0) AS owed_total,

@@ -484,6 +484,7 @@ type App struct {
 	defaultStore string
 	media        *Media
 	discounts    *Discounts
+	giftCards    *GiftCards
 	upsells      *Upsells
 	// postcodes answers the PIN code directory: the built-in one, the
 	// install's file, or nil when Config.PostcodesFile is "off".
@@ -791,6 +792,7 @@ func (a *App) buildServices() {
 	a.storePasswordTries = newWindowLimit(storePasswordTriesPerWindow, time.Hour)
 	a.media = &Media{app: a}
 	a.discounts = &Discounts{app: a}
+	a.giftCards = &GiftCards{app: a}
 	a.upsells = &Upsells{app: a}
 	a.locations = &Locations{app: a}
 	a.invitations = &Invitations{app: a}
