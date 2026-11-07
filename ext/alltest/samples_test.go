@@ -80,7 +80,7 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 	}
 	rec = gctest.Request(t, app, http.MethodGet, "/x/banners?page=home", nil)
 	if body := rec.Body.String(); !strings.Contains(body, `"/collections/festive-edit"`) || !strings.Contains(body, `"Shop by collection"`) ||
-		!strings.Contains(body, `"/sample-media/2/banner-festive-phone.webp"`) {
+		!strings.Contains(body, `"/sample-media/3/banner-1-phone.webp"`) {
 		t.Fatalf("home banners = %s, want the sample slides and the collection grid", body)
 	}
 	// Every picture a banner names is one the engine serves.
