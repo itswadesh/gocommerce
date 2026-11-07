@@ -29,9 +29,9 @@
 
     // Each opens as its own tab, so the panel stays where the person left it.
     const READING = [
-        { href: "https://kitcommerce.store/docs/", icon: "ri-book-open-line", label: "Documentation", hint: "How the platform works. Written mostly for developers." },
+        { href: "https://shopnx.in/help", icon: "ri-book-open-line", label: "Help guides", hint: "Step-by-step guides for running your store." },
         { href: `${base}/docs`, icon: "ri-code-s-slash-line", label: "API reference", hint: "For connecting your own apps and tools." },
-        { href: "https://kitcommerce.store/updates/", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
+        { href: "https://shopnx.in/updates", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
     ];
     // Where stores most often need to go. Rights match the sidebar's (nav.js), so
     // nobody is sent to a screen that would refuse them.
