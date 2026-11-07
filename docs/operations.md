@@ -549,8 +549,8 @@ proxy in front of it (`ADDRESS_HEADER`, `XFF_DEPTH`), and the storefront replace
 `X-Forwarded-For` with it. List the storefront service here and the trade portal's
 sign-ins and the dealer form count each shopper apart (D236). The file trusts Docker's
 private ranges unless told otherwise, so anything else on those networks is believed
-too. Behind Cloudflare nothing more is needed: the storefront reads `CF-Connecting-IP`
-on a request from Cloudflare's published ranges. Behind another CDN, set
+too. Behind Cloudflare nothing more is needed: the storefront and the engine each read
+`CF-Connecting-IP` on a request from Cloudflare's published ranges. Behind another CDN, set
 `STOREFRONT_XFF_DEPTH=2`.
 
 ### Several brands

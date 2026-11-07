@@ -129,3 +129,41 @@ func TestATrustedProxyCountsEachShopperAgainstTheirOwnLimit(t *testing.T) {
 		t.Errorf("a shopper the attacker named = %d, want 404: their budget was never spent", code)
 	}
 }
+
+// Traefik leaves only the edge it heard from, so the visitor is in Cloudflare's
+// header, which counts only when the edge really is Cloudflare's.
+func TestBehindCloudflareBelievesTheHeaderOnlyFromCloudflare(t *testing.T) {
+	const docker = "10.0.1.71:57004"
+	trusted, err := ParseTrustedProxies("10.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{cfg: Config{TrustedProxies: trusted}}
+	for _, c := range []struct{ name, remote, xff, cf, want string }{
+		{"through Cloudflare and a proxy", docker, "172.71.198.18", "203.0.113.9", "203.0.113.9"},
+		{"over IPv6", docker, "2606:4700::1", "2001:db8::9", "2001:db8::9"},
+		{"no header", docker, "172.71.198.18", "", "172.71.198.18"},
+		{"a header that is not an address", docker, "172.71.198.18", "nonsense", "172.71.198.18"},
+		{"a visitor filling it in past the proxy", docker, "198.51.100.7", "203.0.113.9", "198.51.100.7"},
+		{"straight to the engine", "198.51.100.7:4000", "172.71.198.18", "203.0.113.9", "198.51.100.7"},
+		{"a storefront naming the shopper", docker, "203.0.113.9", "", "203.0.113.9"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = c.remote
+			if c.xff != "" {
+				r.Header.Set("X-Forwarded-For", c.xff)
+			}
+			if c.cf != "" {
+				r.Header.Set("CF-Connecting-IP", c.cf)
+			}
+			var got string
+			app.trustedProxiesMW(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				got = clientIP(r)
+			})).ServeHTTP(httptest.NewRecorder(), r)
+			if got != c.want {
+				t.Errorf("counted as %s, want %s", got, c.want)
+			}
+		})
+	}
+}
