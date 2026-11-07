@@ -49,6 +49,12 @@ func (a *App) trustedProxiesMW(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Temporary, to be removed once read: says what one test request looked like.
+		if r.URL.Path == "/diag-forwarded-010ba0d20a385f36" {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("remote=" + r.RemoteAddr + " xff=" + strings.Join(r.Header.Values("X-Forwarded-For"), "|") + " trusted=" + fmt.Sprint(trusted)))
+			return
+		}
 		if peer, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
 			remote := peer.Addr().Unmap()
 			if addr := clientAddr(remote, r.Header.Values("X-Forwarded-For"), trusted); addr != remote {
