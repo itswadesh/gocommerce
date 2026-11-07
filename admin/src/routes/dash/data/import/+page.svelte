@@ -423,7 +423,7 @@
                     Either layout: the store's own, or a file exported from Shopify, as it is.
                     The engine reads which off the first line.
                     {#if kind === "products"}
-                        <!-- Template files to fill in: GoCommerce native format or Shopify format,
+                        <!-- Template files to fill in: ShopNx native format or Shopify format,
                              each with instructional # notes at the top and an example draft product. -->
                         <div class="m-t-sm">
                             <div class="flex gap-10 flex-wrap">
@@ -433,7 +433,7 @@
                                     onclick={() => downloadFile("/api/admin/import/products/template?format=gocommerce", "products-template-gocommerce.csv", "text/csv")}
                                 >
                                     <i class="ri-file-download-line" aria-hidden="true"></i>
-                                    <span class="txt">GoCommerce template</span>
+                                    <span class="txt">ShopNx template</span>
                                 </button>
                                 <button
                                     type="button"
@@ -446,7 +446,7 @@
                             </div>
                             <div class="m-t-xs">
                                 <span class="txt-hint txt-sm">
-                                    Sample CSVs with instructions and draft examples: choose GoCommerce native (integer minor units and option axes) or Shopify's layout (decimal prices).
+                                    Sample CSVs with instructions and draft examples: choose ShopNx native (integer minor units and option axes) or Shopify's layout (decimal prices).
                                 </span>
                             </div>
                         </div>

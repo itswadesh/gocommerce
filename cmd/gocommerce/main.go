@@ -336,7 +336,7 @@ environment:
 		command = fs.Arg(0)
 	}
 	if command == "version" {
-		fmt.Println("GoCommerce", gocommerce.Version)
+		fmt.Println("ShopNx", gocommerce.Version)
 		return nil
 	}
 
@@ -1026,7 +1026,7 @@ func doctorCmd(ctx context.Context, app *gocommerce.App, asJSON bool, brandsErr 
 		gocommerce.StatusWarn: "warn",
 		gocommerce.StatusFail: "FAIL",
 	}
-	fmt.Printf("GoCommerce %s — %s\n\n", rep.Version, rep.At.Format(time.RFC3339))
+	fmt.Printf("ShopNx %s — %s\n\n", rep.Version, rep.At.Format(time.RFC3339))
 	for _, c := range rep.Checks {
 		fmt.Printf("  %s  %-18s %s\n", mark[c.Status], c.Name, c.Detail)
 		if c.Hint != "" {

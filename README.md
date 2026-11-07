@@ -1,8 +1,10 @@
-# GoCommerce
+# ShopNx
+
+This engine was called GoCommerce. The repository, Go module, default brand name, `GOCOMMERCE_` settings and `X-GoCommerce-Signature` webhook header keep that name for now, so nothing that depends on them breaks.
 
 **Commerce primitives in Go, without a commerce monolith.**
 
-GoCommerce is a small, composable commerce engine. It owns the hard parts —
+ShopNx is a small, composable commerce engine. It owns the hard parts —
 products and variants, inventory, carts, checkout, orders, payments,
 fulfillment and durable events — over a PostgreSQL database. Integrations are
 ordinary Go packages you wire together in `main()`.
