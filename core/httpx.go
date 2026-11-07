@@ -432,6 +432,14 @@ func (a *App) corsMW(next http.Handler) http.Handler {
 	})
 }
 
+// logsRequestLine says which requests get a line: the API (D230), and a webhook
+// wherever a module mounted it (D239), since that line is how anybody can tell
+// a provider reached this server at all.
+func logsRequestLine(path string) bool {
+	return strings.HasPrefix(path, "/api/") ||
+		(strings.HasPrefix(path, "/x/") && strings.HasSuffix(path, "/webhook"))
+}
+
 // logMW gives each request its trace id and writes its log line.
 //
 // The trace is decided here because this is the outermost place that sees
@@ -458,9 +466,9 @@ func (a *App) logMW(next http.Handler) http.Handler {
 		if re := requestErrorsFrom(r.Context()); re != nil {
 			store = re.store
 		}
-		// Only the API gets a line (D230): Traefik's polls, assets and module routes
-		// would bury it. A server fault anywhere still logs its error from RespondError.
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		// Traefik's polls, assets and other module routes would bury the lines that
+		// matter. A server fault anywhere still logs its error from RespondError.
+		if !logsRequestLine(r.URL.Path) {
 			return
 		}
 		a.log.Info("request",

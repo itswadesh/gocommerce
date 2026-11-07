@@ -884,7 +884,7 @@ can be retried on its own.
 any Go service: latency, error rate, connection-pool saturation.
 
 **One request, every record it left.** Each request gets a trace id, returned
-in the `X-Trace-Id` response header and, on a route under `/api/`, printed on its
+in the `X-Trace-Id` response header and, on a route under `/api/` or a module's webhook, printed on its
 `request` log line beside the `store` it was for. Other routes write no such line. A caller may send its own in the same header —
 8 to 64 letters, digits, `-` or `_`; anything else is replaced — so a
 storefront's support ticket can quote the id the shopper's browser saw. Any
