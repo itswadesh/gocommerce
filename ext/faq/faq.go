@@ -168,6 +168,15 @@ func (m *Module) list(ctx context.Context, publishedOnly bool) ([]*Entry, error)
 	return out, rows.Err()
 }
 
+// Published is what a shopper may read, in the shop's order: nothing while the
+// plugin is off, for handlePublic's reason. Another module answers from it.
+func (m *Module) Published(ctx context.Context) ([]*Entry, error) {
+	if !m.enabled(ctx) {
+		return []*Entry{}, nil
+	}
+	return m.list(ctx, true)
+}
+
 func validate(in EntryInput) (EntryInput, error) {
 	in.Question = strings.TrimSpace(in.Question)
 	in.Answer = strings.TrimSpace(in.Answer)

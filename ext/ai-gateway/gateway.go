@@ -215,8 +215,10 @@ func (m *Module) registerPlugin(app *gocommerce.App) {
 	// On an install with a key of its own, a store needs nothing but credit:
 	// the gateway is on until the store switches it off, its own key and cap
 	// are optional, and pictures may be sent, so "Create from photos" works as
-	// it is. Every call is still started by a person pressing an AI button;
-	// contact details and message bodies stay in until the owner says.
+	// it is. A call is started by a person pressing an AI button, with one
+	// exception a store opts into: its shoppers, once it switches the shop
+	// assistant on (D244). Contact details and message bodies stay in until the
+	// owner says.
 	platform := m.platform != nil
 	own, capNote, keyLabel, keyHelp := "", "", "API key",
 		"This store's own key, from console.anthropic.com or platform.openai.com. Calls are billed to it."

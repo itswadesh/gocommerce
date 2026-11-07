@@ -1,0 +1,125 @@
+{
+  "paths": {
+    "/x/shop-assistant/status": {
+      "get": {
+        "tags": ["shop-assistant"],
+        "summary": "Whether a storefront should show the assistant",
+        "description": "True only while the store has switched the assistant on, its AI gateway can make calls and it shares message bodies. No reason is given: those are the owner's to read, in the panel.",
+        "responses": {
+          "200": {
+            "description": "Whether to show it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["enabled"],
+                      "properties": {"enabled": {"type": "boolean"}}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x/shop-assistant/turn": {
+      "post": {
+        "tags": ["shop-assistant"],
+        "summary": "Answer a shopper's message",
+        "description": "Stateless: the browser holds the conversation and sends it each time, and the server stores none of it. Spends the store's AI credit. Limited to 200 turns per store per day and 30 per visitor per 10 minutes. Products come from the catalogue and answers from the store's FAQs; the reply is plain text with no price or link in it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["messages"],
+                "properties": {
+                  "messages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "required": ["role", "text"],
+                      "properties": {
+                        "role": {"type": "string", "enum": ["user", "assistant"]},
+                        "text": {"type": "string", "maxLength": 1000}
+                      }
+                    }
+                  },
+                  "channel": {"type": "string", "description": "The storefront's channel code, as on GET /api/products."}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer. closest says the cards match only part of what was asked for. A card's variant_id is null when the shopper has something to choose first or it cannot be bought now, and the storefront then opens the product. handover says to offer the shop's contact form.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "required": ["reply", "products", "closest", "faqs", "handover"],
+                      "properties": {
+                        "reply": {"type": "string"},
+                        "products": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["product_id", "slug", "title", "price", "variant_id"],
+                            "properties": {
+                              "product_id": {"type": "integer"},
+                              "slug": {"type": "string"},
+                              "title": {"type": "string"},
+                              "image_url": {"type": "string"},
+                              "price": {
+                                "type": "object",
+                                "properties": {"amount_minor": {"type": "integer"}, "currency": {"type": "string"}}
+                              },
+                              "compare_at_price": {
+                                "type": "object",
+                                "properties": {"amount_minor": {"type": "integer"}, "currency": {"type": "string"}}
+                              },
+                              "variant_id": {"type": "integer", "nullable": true}
+                            }
+                          }
+                        },
+                        "closest": {"type": "boolean"},
+                        "faqs": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["id", "question", "answer"],
+                            "properties": {
+                              "id": {"type": "integer"},
+                              "question": {"type": "string"},
+                              "answer": {"type": "string"}
+                            }
+                          }
+                        },
+                        "handover": {"type": "boolean"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {"$ref": "#/components/responses/ValidationError"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "429": {"description": "Too many turns. Retry-After says how many seconds to wait."}
+        }
+      }
+    }
+  }
+}

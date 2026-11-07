@@ -419,6 +419,9 @@ shows a two-rung ladder that climbs on the model's own confidence and on a
 `ext/reviews`' `reviews.summarize` shows one whose answer must cite only what
 it was sent, with a `Deterministic` step that answers without a model,
 `ext/ask-ai`'s `ask-ai.turn` shows a task whose answer may propose a change,
+`ext/shop-assistant`'s `shop-assistant.turn` shows one a stranger starts, with
+their words as Required message-bodies data and every value in its answer held
+to what the store has (D244),
 and [the design](../docs/ai-b2b/m1-ai-gateway.md) has the whole contract.
 
 A model never writes. A module that wants one to suggest a change registers an

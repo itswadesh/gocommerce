@@ -299,6 +299,17 @@ make calls for it; Plugins › AI gateway › "Share store facts" (on unless a s
 switches it off) says whether it may see the store's trading name, country,
 currency, timezone and setup steps. It never sees contact details.
 
+The shop assistant (`-shop-assistant`, D244) is the one model call a stranger can
+start, so it is off for every store. A store turns it on with Plugins › Shop
+assistant and Plugins › AI gateway › "Share message bodies", and a storefront
+shows it only with both on and credit-paying AI set up. Each answer spends the
+store's AI credit, up to 200 a day per store and 30 per visitor in 10 minutes.
+The visitor limit counts addresses, so `GOCOMMERCE_TRUSTED_PROXIES` has to list
+the storefront's server and any proxy in front ([Behind a proxy](#behind-a-proxy)):
+without that every shopper is one address and they share 30 turns. It stores no
+conversation; the AI usage screen shows each run's cost, and why a run ended
+without an answer, which a shopper is never told.
+
 - **The key.** Set `ANTHROPIC_API_KEY` in the host's environment tab (Dokploy:
   the compose service's Environment) and redeploy. It is the platform's own
   Anthropic key: every store's AI runs on it, and each call is paid from that
@@ -519,7 +530,7 @@ because a store's saved password is sent wherever it points.
 
 The engine counts several limits per address: sign-in and sign-up attempts,
 password resets, accepting an invitation, opening an order with its number,
-the contact and dealer forms, and a showcase's events. The address is the
+the contact and dealer forms, a showcase's events, and the shop assistant. The address is the
 connection's. Behind a proxy, a storefront's server included, that is the
 proxy's for every shopper, so one shopper who reaches a limit reaches it for
 the whole store.
