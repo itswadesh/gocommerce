@@ -11,49 +11,79 @@
  * in the markup, not here.
  */
 
-/* ------------------------------------------------------------------ accent */
+/* ----------------------------------------------------------------- palette */
 
 /*
- * Olive, replacing PocketBase's blue.
+ * shopnx.in's palette: warm cream surfaces, charcoal text and buttons, and a
+ * gold accent, all taken from the site so the panel and the site read as one
+ * product (D-entry in docs/decisions.md, 2026-11-07). It replaces PocketBase's
+ * cool greys and the olive accent this panel had before.
  *
- * This is not a colour swap. PocketBase's accent is dark enough to carry white
- * text, so `vars.css` hardcodes `#fff` for everything sitting on it — the
- * header bar, its links, its focus rings. White on #89a24c is about 2.9:1,
- * below the 4.5:1 floor, so the accent's *foreground* has to invert with it.
- * That is what the rest of this block does.
- *
- * The near-blacks below are tinted toward the accent rather than reusing
- * PocketBase's neutral #25272d: an olive bar wants an olive shadow, and the
- * neutral reads faintly blue against it.
+ * Overriding PocketBase's tokens rather than its rules recolours every screen
+ * at once, migrated or not; design.css carries the same palette for the
+ * Tailwind screens. A dropdown holds its own copy of every token, so it is
+ * named as well. Light only, by selector: vars.css's dark block is no more
+ * specific than `:root` and loads first, so a bare `:root` here would paint
+ * these cream steps into dark mode too.
+ */
+:root:not([data-color-scheme="dark"]),
+:root:not([data-color-scheme="dark"]) .dropdown {
+    --primaryColor: #292725;
+
+    --secondaryColor: #f0e9da;
+    --secondaryAlt1Color: #e8dfcc;
+    --secondaryAlt2Color: #ddd3bf;
+
+    --surfaceColor: #fffdf8;
+    --surfaceAlt1Color: #fbf7ee;
+    --surfaceAlt2Color: #f0e9da;
+    --surfaceAlt3Color: #e8dfcc;
+    --surfaceAlt4Color: #ddd3bf;
+    --surfaceAlt5Color: #d3c8b2;
+    --surfaceTxtColor: #242321;
+    --surfaceTxtHintColor: #605c55;
+    --surfaceTxtDisabledColor: #a39d92;
+
+    --selectionColor: rgba(180, 145, 81, 0.3);
+}
+
+/* Dark keeps PocketBase's steps (vars.css mixes each from the surface), on a
+   warm near-black instead of a neutral one. */
+[data-color-scheme="dark"],
+[data-color-scheme="dark"] .dropdown {
+    --primaryColor: #131210;
+    --surfaceColor: #1c1a17;
+    --surfaceTxtColor: #efe9dd;
+}
+
+/*
+ * The gold of shopnx.in. It is light enough that white on it fails contrast
+ * (about 2.9:1), so whatever sits on the accent is the site's charcoal.
  */
 :root {
-    --accentColor: #89a24c;
-    --accentTxtColor: #1e2416;
-    /*
-     * vars.css derives the hint step by fading the text toward transparent,
-     * which works on a light accent and fails on a mid-tone one — 40% of this
-     * text over this green lands around 2.6:1, and the idle nav items become
-     * decoration. Naming an explicit colour keeps that step legible instead.
-     */
-    --accentTxtHintColor: #2b3320;
+    --accentColor: #b49151;
+    --accentTxtColor: #242321;
+    /* vars.css fades the text for the hint step, which on a mid-tone accent
+       drops it below a readable contrast; an explicit colour keeps it legible. */
+    --accentTxtHintColor: #2b2519;
 }
 
 html .accent-surface {
-    --surfaceTxtColor: #1e2416;
-    --surfaceTxtHintColor: #2b3320;
-    /* The focus ring is otherwise a lightened tint of the surface, which on a
-       green bar is more green and vanishes. Focus has to stay visible. */
-    --selectionColor: #1e2416;
+    --surfaceTxtColor: #242321;
+    --surfaceTxtHintColor: #2b2519;
+    /* The focus ring is otherwise a lightened tint of the surface, which on
+       gold is more gold and vanishes. Focus has to stay visible. */
+    --selectionColor: #242321;
 }
 
 /*
  * `.txt-accent` puts the accent on a page surface rather than under it, where
- * the contrast problem runs the other way: #89a24c on white is 2.9:1 — a
- * colour you can see but not read. Light mode gets a deepened moss; dark mode
- * can use the accent itself, which is already 6:1 against #1c1c1c.
+ * the contrast runs the other way: #b49151 on cream is about 2.7:1, a colour
+ * you can see but not read. Light mode takes the site's deep gold (#805c16,
+ * about 5.5:1); dark mode can use the accent itself.
  */
 .txt-accent {
-    color: #5c6d33 !important;
+    color: #805c16 !important;
 }
 [data-color-scheme="dark"] .txt-accent {
     color: var(--accentColor) !important;
@@ -157,7 +187,7 @@ body {
  * ground, and putting a grey behind it would only mute it.
  */
 :root {
-    --pageColor: #f1f1f1;
+    --pageColor: #fbf7ee;
 }
 [data-color-scheme="dark"] {
     --pageColor: var(--surfaceColor);
@@ -4054,7 +4084,10 @@ button.media-check {
 }
 .app-brand-mark {
     flex: none;
-    fill: currentColor;
+    /* shopnx.in's bag is an outline, not a fill. */
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.6;
     color: var(--surfaceTxtColor);
 }
 .app-brand-name {
@@ -7997,8 +8030,8 @@ kbd + kbd {
  * ink rather than fixed, so it moves with the theme already.
  */
 :root:not([data-color-scheme="dark"]) {
-    --surfaceTxtHintColor: #5f686e;
-    --muted-foreground: oklch(49% 0 0);
+    --surfaceTxtHintColor: #5c5850;
+    --muted-foreground: #5c5850;
 }
 
 /* --------------------------------------------------------- best sellers */
