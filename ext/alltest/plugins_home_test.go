@@ -38,6 +38,7 @@ func TestThePluginsScreenListsOnlyAddOns(t *testing.T) {
 		"news-ticker":      "/dash/themes/extras",
 		"sold-count":       "/dash/themes/extras",
 		"cart-suggestions": "/dash/themes/extras",
+		"emi-note":         "/dash/themes/extras",
 		"trust-badges":     "/dash/themes/extras",
 		"social-sharing":   "/dash/themes/extras",
 		"telegram-alerts":  "/dash/notifications/telegram",

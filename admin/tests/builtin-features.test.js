@@ -33,7 +33,7 @@ test("the Plugins screen lists only the plugins with no home of their own", () =
 // not listed.
 const SWITCHES = {
     "themes/banners": ["banners"],
-    "themes/extras": ["hello-bar", "news-ticker", "trust-badges", "social-sharing"],
+    "themes/extras": ["hello-bar", "news-ticker", "trust-badges", "social-sharing", "emi-note"],
     themes: ["layouts"],
     menus: ["navigation"],
     faq: ["faq"],
