@@ -4,7 +4,9 @@
      * the store's name, so nobody has to be asked which store it is, and they can
      * change it in WhatsApp before sending.
      */
+    import { base } from "$app/paths";
     import { titled } from "$lib/brand.svelte.js";
+    import { can } from "$lib/session.svelte.js";
     import { myStores } from "$lib/stores.svelte.js";
 
     // ponytail: one number for the whole panel. Move it to the brand's settings
@@ -15,6 +17,24 @@
     const store = $derived(myStores.current?.name);
     const message = $derived(store ? `Hi, I need help with my store ${store}.` : "Hi, I need help with my store.");
     const link = $derived(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(message)}`);
+
+    // Each opens as its own tab, so the panel stays where the person left it.
+    const READING = [
+        { href: "https://kitcommerce.store/docs/", icon: "ri-book-open-line", label: "Documentation", hint: "How the platform works. Written mostly for developers." },
+        { href: `${base}/docs`, icon: "ri-code-s-slash-line", label: "API reference", hint: "For connecting your own apps and tools." },
+        { href: "https://kitcommerce.store/updates/", icon: "ri-megaphone-line", label: "What's new", hint: "New features and fixes, as they ship." },
+    ];
+    // Where stores most often need to go. Rights match the sidebar's (nav.js), so
+    // nobody is sent to a screen that would refuse them.
+    const SETUP = [
+        { href: "/dash/settings", icon: "ri-store-2-line", label: "Store details", hint: "Name, address, currency and timezone." },
+        { href: "/dash/settings/payments", icon: "ri-bank-card-line", label: "Payment methods", hint: "Choose how shoppers pay.", right: "plugins.read" },
+        { href: "/dash/shipping-settings", icon: "ri-truck-line", label: "Shipping and delivery", hint: "Zones, rates and carriers.", right: "shipping.read" },
+        { href: "/dash/settings/domains", icon: "ri-global-line", label: "Domains", hint: "Use your own web address." },
+        { href: "/dash/data/import", icon: "ri-upload-2-line", label: "Import products", hint: "Bring in a CSV, including one from Shopify.", right: "data.import" },
+        { href: "/dash/settings/teams", icon: "ri-group-line", label: "Team", hint: "Invite people and set what they can do.", right: "team.read" },
+    ];
+    const setup = $derived(SETUP.filter((l) => !l.right || can(l.right)));
 </script>
 
 <svelte:head><title>{titled("Support")}</title></svelte:head>
@@ -36,10 +56,99 @@
             </a>
             <p class="txt-hint support-number">{SHOWN}</p>
         </section>
+
+        <h2 class="support-heading tw:text-sm tw:font-semibold">Read and learn</h2>
+        <ul class="support-links">
+            {#each READING as l (l.href)}
+                <li>
+                    <a class="card support-link" href={l.href} target="_blank" rel="noopener noreferrer">
+                        <i class={l.icon} aria-hidden="true"></i>
+                        <span class="support-link-text">
+                            <span class="support-link-label">{l.label}<span class="support-new-tab"> (opens in a new tab)</span></span>
+                            <span class="txt-hint support-link-hint">{l.hint}</span>
+                        </span>
+                        <i class="ri-external-link-line" aria-hidden="true"></i>
+                    </a>
+                </li>
+            {/each}
+        </ul>
+
+        <h2 class="support-heading tw:text-sm tw:font-semibold">Set up your store</h2>
+        <ul class="support-links">
+            {#each setup as l (l.href)}
+                <li>
+                    <a class="card support-link" href="{base}{l.href}">
+                        <i class={l.icon} aria-hidden="true"></i>
+                        <span class="support-link-text">
+                            <span class="support-link-label">{l.label}</span>
+                            <span class="txt-hint support-link-hint">{l.hint}</span>
+                        </span>
+                        <i class="ri-arrow-right-s-line" aria-hidden="true"></i>
+                    </a>
+                </li>
+            {/each}
+        </ul>
     </div>
 </div>
 
 <style>
+    .support-heading {
+        margin: 24px 0 8px;
+    }
+    .support-links {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    .support-links li {
+        display: flex;
+    }
+    .support-link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 44px;
+        margin: 0;
+        color: inherit;
+        text-decoration: none;
+        transition:
+            box-shadow 200ms ease-out,
+            transform 150ms ease-out;
+    }
+    .support-link:hover,
+    .support-link:focus-visible {
+        box-shadow: 0 2px 10px rgba(16, 24, 40, 0.12);
+    }
+    .support-link:active {
+        transform: scale(0.98);
+    }
+    .support-link-text {
+        flex: 1;
+        min-width: 0;
+    }
+    .support-link-label,
+    .support-link-hint {
+        display: block;
+    }
+    .support-link-label {
+        font-weight: 600;
+    }
+    .support-link-hint {
+        font-size: var(--smFontSize);
+    }
+    /* For a screen reader: sighted people have the icon. */
+    .support-new-tab {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
     .support-card {
         display: flex;
         flex-direction: column;
@@ -61,7 +170,8 @@
         .support-whatsapp {
             transition: none;
         }
-        .support-whatsapp:active {
+        .support-whatsapp:active,
+        .support-link:active {
             transform: none;
         }
     }
