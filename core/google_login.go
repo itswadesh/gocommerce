@@ -269,6 +269,7 @@ func (a *App) handleAuthWithGoogle(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if created {
 		a.log.Info("superuser created", "id", su.ID, "via", "google")
+		a.trackSignUp(su, "google")
 		status = http.StatusCreated
 	}
 	a.respondSignedIn(w, r, status, su, sess)

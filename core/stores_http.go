@@ -311,6 +311,9 @@ func (a *App) handleCreateStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("store created", "store", st.ID, "slug", st.Slug)
+	if owner != 0 {
+		a.trackGA("su:"+strconv.FormatInt(owner, 10), "store_created", nil)
+	}
 	a.setStoreCookie(w, r, st.ID)
 	Respond(w, http.StatusCreated, createdStore{storeEntry: entry, SampleContent: samples})
 }

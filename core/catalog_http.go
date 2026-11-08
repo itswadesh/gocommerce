@@ -340,6 +340,7 @@ func (a *App) handleCreateProduct(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, r, err)
 		return
 	}
+	a.trackFirstProduct(r.Context())
 	Respond(w, http.StatusCreated, p)
 }
 

@@ -415,6 +415,8 @@ environment:
 		PanelURL:           os.Getenv("GOCOMMERCE_PANEL_URL"),
 		GoogleClientID:     os.Getenv("GOCOMMERCE_GOOGLE_CLIENT_ID"),
 		GoogleClientSecret: os.Getenv("GOCOMMERCE_GOOGLE_CLIENT_SECRET"),
+		GAMeasurementID:    os.Getenv("GA_MEASUREMENT_ID"),
+		GAAPISecret:        os.Getenv("GA_API_SECRET"),
 		BrandName:          os.Getenv("GOCOMMERCE_BRAND_NAME"),
 		PlatformOwnerPhone: os.Getenv("GOCOMMERCE_PLATFORM_OWNER_PHONE"),
 		PlatformEmailFrom:  os.Getenv("GOCOMMERCE_PLATFORM_EMAIL_FROM"),
