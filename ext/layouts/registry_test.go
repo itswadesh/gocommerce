@@ -424,12 +424,12 @@ func TestASectionChoosesItsLook(t *testing.T) {
 	want := map[string]map[string]any{
 		"h":    {"style": "fade", "secondary_button_text": "Our story", "secondary_button_link": "/pages/about"},
 		"b":    {"style": "marquee"},
-		"g":    {"divider": "line"},
+		"g":    {"style": "grid", "divider": "line"},
 		"q":    {"divider": "band"},
 		"s":    {},
 		"oldh": {"style": "block"},
 		"oldb": {"style": "band"},
-		"oldg": {"divider": "none"},
+		"oldg": {"style": "grid", "divider": "none"},
 	}
 	for _, s := range got.Sections {
 		kept := map[string]any{}
@@ -472,11 +472,11 @@ func TestTilesCollectionsAndShelvesChooseTheirLook(t *testing.T) {
 	want := map[string]map[string]any{
 		"m":    {"style": "captioned", "items": 6},
 		"c":    {"style": "overlay"},
-		"g":    {"mobile_layout": "row"},
+		"g":    {"style": "grid", "mobile_layout": "row"},
 		"h":    {"style": "block"},
 		"oldm": {"style": "tiles", "items": 1},
 		"oldc": {"style": "below"},
-		"oldg": {"mobile_layout": "grid"},
+		"oldg": {"style": "grid", "mobile_layout": "grid"},
 	}
 	for _, s := range got.Sections {
 		kept := map[string]any{}
