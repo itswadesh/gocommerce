@@ -1216,6 +1216,16 @@ func TestTheVocabularyIsReachable(t *testing.T) {
 		t.Fatalf("cancel the parcel: %v", err)
 	}
 
+	// A gift card issued by hand, then switched off.
+	card, err := app.GiftCards().Issue(ctx, GiftCardInput{AmountMinor: 500})
+	if err != nil {
+		t.Fatalf("issue a gift card: %v", err)
+	}
+	cardOff := false
+	if _, err := app.GiftCards().Update(ctx, card.ID, GiftCardPatch{Active: &cardOff}); err != nil {
+		t.Fatalf("switch the gift card off: %v", err)
+	}
+
 	// pending names the actions whose call sites live in files this change does
 	// not own: the guarded admin-placed-order write in checkout.go, bulk import
 	// in transfer.go, the options service, invitations and role sets. Each one
