@@ -1,9 +1,37 @@
 package gocommerce
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 )
+
+// The log line names who took the message, and says nobody did only when that
+// is true: it used to read "no delivery backend installed" beside Resend's own
+// "email sent" for the same reset.
+func TestTheLogLineSaysWhoTookTheMessage(t *testing.T) {
+	note := Notification{Event: "superuser.password_reset", Channel: ChannelEmail, To: "a@example.com"}
+	for _, withBackend := range []bool{true, false} {
+		var buf bytes.Buffer
+		set := &notifierSet{}
+		set.add(ChannelEmail, logNotifier{log: slog.New(slog.NewTextHandler(&buf, nil))}, "core")
+		if withBackend {
+			set.add(ChannelEmail, &recordingNotifier{}, "notify-resend")
+		}
+		if err := set.send(context.Background(), note); err != nil {
+			t.Fatal(err)
+		}
+		line := buf.String()
+		if got := strings.Contains(line, "no delivery backend installed"); got == withBackend {
+			t.Errorf("backend installed %v, log line: %s", withBackend, line)
+		}
+		if withBackend && !strings.Contains(line, "handed to notify-resend") {
+			t.Errorf("the line does not name the backend: %s", line)
+		}
+	}
+}
 
 // A module that words its own messages about orders — an alert to the owner
 // rather than a note to the shopper — renders them over the same flat data the
