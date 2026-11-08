@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -135,11 +136,13 @@ func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf 
 	targets := carriers(ctx, n.forChannel(note.Channel), note)
 	outcome := notificationOutcome{resendOf: resendOf}
 	var failures []error
+	var logger *logNotifier
 	for _, target := range targets {
-		if _, isLog := target.notifier.(logNotifier); isLog {
+		if l, isLog := target.notifier.(logNotifier); isLog {
 			// The log is where a message goes when nothing else will carry
-			// it; it is not a backend the row should claim delivered.
-			_ = target.notifier.Notify(ctx, note)
+			// it; it is not a backend the row should claim delivered. It is
+			// written last, so the line can say who else took the message.
+			logger = &l
 			continue
 		}
 		if !ready(ctx, target.notifier) {
@@ -154,6 +157,9 @@ func (n *notifierSet) sendFrom(ctx context.Context, note Notification, resendOf 
 		} else {
 			outcome.delivered = true
 		}
+	}
+	if logger != nil {
+		logger.write(note, outcome.backends)
 	}
 	err := errors.Join(failures...)
 	if n.record != nil {
@@ -217,14 +223,25 @@ func worthRetrying(err error) error {
 type logNotifier struct{ log *slog.Logger }
 
 func (l logNotifier) Notify(ctx context.Context, n Notification) error {
+	l.write(n, nil)
+	return nil
+}
+
+// write logs n, naming the backends that also took it. It said "no delivery
+// backend installed" whatever happened, so a reset Resend had just sent read in
+// the log as one nobody sent.
+func (l logNotifier) write(n Notification, backends []string) {
 	to := n.To
 	if n.Channel != ChannelEmail {
 		to = MaskPhone(to)
 	}
-	l.log.Info("notification (no delivery backend installed)",
+	msg := "notification (no delivery backend installed)"
+	if len(backends) > 0 {
+		msg = "notification handed to " + strings.Join(backends, ", ")
+	}
+	l.log.Info(msg,
 		"event", n.Event, "channel", n.Channel, "to", to,
 		"language", n.Language, "order", n.Data["order_number"])
-	return nil
 }
 
 // subscribeNotifications wires order events to notification delivery.
