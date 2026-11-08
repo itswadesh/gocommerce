@@ -189,6 +189,11 @@ func (a *App) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.log.Info("superuser created", "who", su.who(), "via", "signup")
+	method := "email"
+	if su.Phone != "" {
+		method = "phone"
+	}
+	a.trackSignUp(su, method)
 	Respond(w, http.StatusCreated, authResponse{
 		Token:     sess.Token,
 		ExpiresAt: sess.ExpiresAt.UTC(),

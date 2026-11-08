@@ -177,6 +177,13 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleTokenURL     string
+	// GAMeasurementID and GAAPISecret send the hosted funnel (sign_up,
+	// store_created, first_product_added) to Google Analytics from the server
+	// (ga.go); it needs both, and either empty sends nothing. GAEndpoint is
+	// Google's collect URL when empty, and a test's stand-in otherwise.
+	GAMeasurementID string
+	GAAPISecret     string
+	GAEndpoint      string
 	// PlatformOwnerPhone is the one person who may read every store's owners
 	// and counts, once a code has proved the number (D215). Empty, nobody may.
 	PlatformOwnerPhone string

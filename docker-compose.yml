@@ -130,6 +130,10 @@ services:
       # "Continue with Google" on the panel. Unset, the button is not shown.
       GOCOMMERCE_GOOGLE_CLIENT_ID: ${GOCOMMERCE_GOOGLE_CLIENT_ID:-}
       GOCOMMERCE_GOOGLE_CLIENT_SECRET: ${GOCOMMERCE_GOOGLE_CLIENT_SECRET:-}
+      # The hosted funnel (sign_up, store_created, first_product_added) sent
+      # to Google Analytics by the server. Unset, nothing is sent.
+      GA_MEASUREMENT_ID: ${GA_MEASUREMENT_ID:-}
+      GA_API_SECRET: ${GA_API_SECRET:-}
       # Where emails send a store's buyers and shoppers. {domain} is each
       # store's own address, so one setting serves every store (D236). The
       # storefront forwards /portal to this engine and has its own account

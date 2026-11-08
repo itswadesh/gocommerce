@@ -797,6 +797,7 @@ func (a *App) handleAuthWithPhone(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if created {
 		a.log.Info("superuser created", "id", su.ID, "via", "phone")
+		a.trackSignUp(su, "phone")
 		status = http.StatusCreated
 	}
 	a.respondSignedIn(w, r, status, su, sess)
