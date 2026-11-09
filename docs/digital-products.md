@@ -2,8 +2,9 @@
 
 Files a buyer downloads once the order is paid: ebooks, templates, presets,
 fonts, printables, course material. Decision D254 in `PLAN.md`. Built as the
-module `ext/digital`, switched on with `-digital` (it is in
-`docker-compose.yml`), plus three small changes to core.
+module `ext/digital`, always installed (there is no switch, as in Shopify:
+a product is a download because it is marked not physical and has files), plus
+three small changes to core.
 
 ## What a seller does
 
