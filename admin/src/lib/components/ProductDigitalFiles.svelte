@@ -231,6 +231,7 @@
                             type="button"
                             class="btn circle sm transparent secondary"
                             aria-label="Download {f.filename}"
+                            {disabled}
                             onclick={() => downloadBinary(`/api/admin/x/digital/files/${f.id}/content`, f.filename)}
                         >
                             <i class="ri-download-line" aria-hidden="true"></i>
