@@ -338,6 +338,9 @@ type ReturnEventLine struct {
 type ShipmentEvent struct {
 	FulfillmentID int64  `json:"fulfillment_id"`
 	Carrier       string `json:"carrier,omitempty"`
+	// Provider is the fulfillment provider that booked the parcel: "manual", a
+	// carrier module's code, or "digital" for files handed over on payment.
+	Provider string `json:"provider,omitempty"`
 	// RemainingUnits rather than a `complete` flag: zero says the same thing,
 	// and the number also says how much is still owed, which `status` does not.
 	RemainingUnits int                 `json:"remaining_units"`

@@ -20696,6 +20696,10 @@
             "type": "boolean",
             "description": "The live price differs from the snapshot, so checkout will refuse until the shopper confirms."
           },
+          "requires_shipping": {
+            "type": "boolean",
+            "description": "Whether the line is sent at all. A basket where no line is needs only a country (and state, for tax) at checkout: no street address and no delivery option."
+          },
           "available": {
             "type": "integer",
             "description": "-1 when the variant does not track inventory."

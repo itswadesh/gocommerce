@@ -157,6 +157,16 @@ type FulfillmentProvider interface {
 	Ship(ctx context.Context, order *Order, req ShipRequest) (Shipment, error)
 }
 
+// SelfAnnouncing is an optional capability of a FulfillmentProvider that hands
+// the goods over itself and tells the shopper so in its own words: files a
+// buyer downloads once the order is paid (D254). Its parcels still raise
+// order.shipped and order.delivered for every other consumer, but the engine
+// sends no "on its way" or "delivered" message for them, which would be two
+// wrong emails about something nobody posted.
+type SelfAnnouncing interface {
+	AnnouncesItself() bool
+}
+
 // TrackingReceiver is an optional capability of a FulfillmentProvider whose
 // carrier calls back with tracking. The engine serves Tracking() at
 // POST /api/tracking-updates/{TrackingHook()}.

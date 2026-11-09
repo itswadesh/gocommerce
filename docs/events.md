@@ -173,6 +173,7 @@ Every `order.*` event carries an `OrderEvent`:
   "shipment": {
     "fulfillment_id": 7,
     "carrier": "ups",
+    "provider": "shiprocket",
     "remaining_units": 3,
     "lines": [
       { "sku": "TEE-001", "title": "Cotton tee", "variant_label": "M / Black", "quantity": 2 }

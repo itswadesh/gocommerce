@@ -356,6 +356,13 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				break
 			}
 		}
+		// A parcel needs somewhere to go; a download does not (D254). A quote
+		// is asked before the shopper has typed a street, so it is not held to it.
+		if physical && quote == nil {
+			if err := in.Address.Validate(); err != nil {
+				return err
+			}
+		}
 		var quotes []ShippingQuote
 		rated := false
 		if physical {
@@ -933,7 +940,14 @@ func validateCheckoutInput(ctx context.Context, in *CheckoutInput) error {
 	if counter {
 		return nil
 	}
-	return in.Address.Validate()
+	// Only the country here: whether the rest of the address is needed depends
+	// on the basket, which is not read until the cart is locked. A basket with
+	// nothing to send still names where the buyer is, because tax is charged
+	// by it (D254).
+	if strings.TrimSpace(in.Address.Country) == "" {
+		return Validationf("address is missing country")
+	}
+	return nil
 }
 
 // requestHash fingerprints a checkout request so a repeated Idempotency-Key
