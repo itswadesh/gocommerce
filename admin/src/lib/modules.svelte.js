@@ -76,6 +76,9 @@ const PROBES = {
     layouts: { path: "/api/admin/x/layouts/sections", right: "layouts.read" },
     wishlist: { path: "/api/admin/x/wishlist/lists?limit=1", right: "customers.read" },
     customizer: { path: "/api/admin/x/customizer/fonts", right: "customizer.read" },
+    // A card on the product page. Product 0 is refused as a bad id, which still
+    // says the route is mounted.
+    digital: { path: "/api/admin/x/digital/products/0/files", right: "catalog.read" },
     // Three screens behind three unrelated rights, so any one of them is
     // reason to ask. The path is the companies list either way: an operator
     // holding only leads.read gets a 403 there, which still means installed.

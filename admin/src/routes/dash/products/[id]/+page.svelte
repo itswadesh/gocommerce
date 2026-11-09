@@ -52,6 +52,7 @@
     import ProductHighlights from "$lib/components/ProductHighlights.svelte";
     import ProductImprove from "$lib/components/ProductImprove.svelte";
     import ProductCustomizer from "$lib/components/ProductCustomizer.svelte";
+    import ProductDigitalFiles from "$lib/components/ProductDigitalFiles.svelte";
     import { hasModule } from "$lib/modules.svelte.js";
     import { MAX_BADGE, badgeOf, freeGiftOf, highlightLines, highlightRows, lineProblem } from "$lib/highlights.js";
     import RecordHistory from "$lib/components/RecordHistory.svelte";
@@ -75,6 +76,8 @@
     let upsellsDirty = $state(false);
     let customizer = $state(null);
     let customizerDirty = $state(false);
+    let digitalFiles = $state(null);
+    let digitalDirty = $state(false);
     /* The matrix, so the page's Save can apply the option draft it holds. */
     let matrix = $state(null);
     let collections = $state([]);
@@ -926,6 +929,7 @@
         discardCount++;
         upsells?.reset();
         customizer?.reset();
+        digitalFiles?.reset();
     }
 
     function applyImprove(next, count) {
@@ -972,7 +976,7 @@
             toast.error("Some fields still need attention.");
             return;
         }
-        const cardProblem = upsells?.invalid() || customizer?.invalid();
+        const cardProblem = upsells?.invalid() || customizer?.invalid() || digitalFiles?.invalid();
         if (cardProblem) {
             toast.error(cardProblem);
             return;
@@ -1179,6 +1183,7 @@
 
             await upsells?.save();
             await customizer?.save();
+            await digitalFiles?.save();
 
             product = await api.get(`/api/admin/products/${product.id}`);
             seed(product);
@@ -1371,7 +1376,7 @@
         <!-- Nothing to save without catalog.write, so no bar and no
              Ctrl+S: a save that can only be refused is worse than no save. -->
         <SaveBar
-            dirty={(dirty || axesDirty || upsellsDirty || customizerDirty) && writable}
+            dirty={(dirty || axesDirty || upsellsDirty || customizerDirty || digitalDirty) && writable}
             {saving}
             message="Unsaved changes"
             saveLabel="Save"
@@ -1841,6 +1846,18 @@
                             bind:this={customizer}
                             bind:dirty={customizerDirty}
                             productId={product.id}
+                        />
+                    {/if}
+
+                    {#if hasModule("digital") && can("catalog.read")}
+                        <ProductDigitalFiles
+                            bind:this={digitalFiles}
+                            bind:dirty={digitalDirty}
+                            bind:physical={form.requires_shipping}
+                            bind:tracked={form.track_inventory}
+                            productId={product.id}
+                            variants={product.variants ?? []}
+                            disabled={!writable}
                         />
                     {/if}
 
