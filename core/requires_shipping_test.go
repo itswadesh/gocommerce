@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -142,6 +143,12 @@ func TestABasketWithNothingToSendNeedsNoStreetAddress(t *testing.T) {
 	}
 	if got.Lines[0].RequiresShipping {
 		t.Error("the download's cart line says it is sent")
+	}
+
+	z := zone(t, app, "India", []string{"IN"}, nil)
+	rate(t, app, z.ID, "Standard", 500, 0, nil)
+	if rec := do(t, app, http.MethodGet, "/api/checkout/rates?cart="+cart.Token+"&country=IN"); !strings.Contains(rec.Body.String(), `"rates":[]`) {
+		t.Errorf("delivery options for a download = %s, want none", rec.Body)
 	}
 
 	billing := CheckoutInput{CartID: cart.Token, Email: "buyer@example.com", Name: "A Buyer",
