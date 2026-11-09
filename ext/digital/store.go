@@ -122,7 +122,9 @@ func (c *chunkReader) Seek(offset int64, whence int) (int64, error) {
 func cleanFilename(name string) string {
 	name = path.Base(strings.ReplaceAll(name, `\`, "/"))
 	name = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || r == '"' || r == '/' {
+		// Format characters too: a right-to-left override makes "x202Efdp.exe"
+		// read as an innocent PDF. The rest are what Windows refuses in a name.
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || strings.ContainsRune(`"/<>:|?*`, r) {
 			return -1
 		}
 		return r
@@ -137,15 +139,23 @@ func cleanFilename(name string) string {
 	return name
 }
 
-// servedType is the Content-Type a file goes out with. One the browser would
-// run — a page, a picture made of markup, a script — is sent as bytes, so a
-// seller's upload can never execute on the engine's origin.
+// servedType is the Content-Type a file goes out with: its own when it is a
+// kind people sell and no browser runs, and plain bytes otherwise. A list of
+// what is allowed rather than of what is not, so a type nobody thought of
+// (text/xsl, say) is bytes too; attachment, nosniff and the sandbox already
+// stop it running, and this is the layer under them.
 func servedType(stored string) string {
 	t := strings.ToLower(strings.TrimSpace(strings.SplitN(stored, ";", 2)[0]))
-	switch {
-	case t == "", strings.Contains(t, "html"), strings.Contains(t, "xml"), strings.Contains(t, "svg"),
-		strings.Contains(t, "javascript"), strings.Contains(t, "ecmascript"), t == "text/css":
-		return "application/octet-stream"
+	switch t {
+	case "application/pdf", "application/zip", "application/x-zip-compressed", "application/epub+zip",
+		"application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+		"text/plain", "text/csv", "image/png", "image/jpeg", "image/gif", "image/webp":
+		return t
 	}
-	return t
+	for _, prefix := range []string{"audio/", "video/", "font/", "application/vnd.openxmlformats-officedocument."} {
+		if strings.HasPrefix(t, prefix) {
+			return t
+		}
+	}
+	return "application/octet-stream"
 }

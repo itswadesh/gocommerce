@@ -47,18 +47,25 @@ order page still shows the downloads.
   its SHA-256 is stored, and it is good for one file of one order line. The
   first request on a link counts one download against the limit; the browser
   asking again on the same link inside its ten minutes (Android's download
-  manager does, and a resumed download does) does not count again.
+  manager does, and a resumed download does) does not count again, and a
+  HEAD never counts. The ETag names the file's version, so a download resumed
+  after a Replace starts again rather than splicing two files. The link is in
+  the URL path, so it can reach an access log; it dies in ten minutes and with
+  any revoke.
 - **Refunded in full, cancelled, or marked unpaid revokes every grant on the
   order.** A partial refund leaves them open: the money says nothing about
   which line went back. Marked paid again restores grants that "unpaid"
-  revoked. An operator can revoke or restore one grant from the API.
+  revoked. An operator can revoke one grant from the API, and restore one
+  (count back to zero, seven more days if it had expired) only while the order
+  is paid.
 - **The engine's own "on its way" and "delivered" messages are not sent for a
   digital parcel** (`SelfAnnouncing`); the module's "Your downloads are ready"
   is. `order.shipped` and `order.delivered` are still raised for every other
   consumer, with `shipment.provider` set to `digital`.
 - **Files are served with `Content-Disposition: attachment`, `nosniff`, a
-  sandboxing CSP and `no-store`**, and an HTML, SVG, XML or script file is sent
-  as `application/octet-stream`, so nothing a seller uploads can run on the
+  sandboxing CSP and `no-store`**, and only an allowlisted type (PDF, ZIP, EPUB, Office, plain
+  text, CSV, raster images, audio, video, fonts) keeps its own Content-Type;
+  everything else, HTML, SVG and XML included, is `application/octet-stream`, so nothing a seller uploads can run on the
   engine's origin.
 
 ## Core changes
@@ -68,6 +75,7 @@ order page still shows the downloads.
   invoice are worked out from).
 - A cart line carries `requires_shipping`, so a storefront can skip the
   address and delivery steps and say "Instant download".
+- `GET /api/checkout/rates` answers no options for such a basket.
 - `ShipmentEvent` carries the provider, and a provider implementing
   `SelfAnnouncing` sends its own message instead of the engine's.
 

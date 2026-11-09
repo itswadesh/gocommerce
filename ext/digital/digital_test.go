@@ -347,11 +347,62 @@ func TestRefundRevokes(t *testing.T) {
 		t.Errorf("mint after refund = %s, want download_revoked", code)
 	}
 
-	if rec := gctest.AdminRequest(t, f.app, http.MethodPost, fmt.Sprintf("/api/admin/x/digital/grants/%d/restore", list[0].ID), nil); rec.Code != http.StatusOK {
+	// The money went back, so the file stays closed whoever asks.
+	if rec := gctest.AdminRequest(t, f.app, http.MethodPost, fmt.Sprintf("/api/admin/x/digital/grants/%d/restore", list[0].ID), nil); rec.Code != http.StatusConflict {
+		t.Errorf("restore on a refunded order = %d, want 409", rec.Code)
+	}
+
+	// On a paid order an operator closes one download and opens it again,
+	// its count back at zero.
+	o2 := f.buy("prepaid", p.Variants[0].ID)
+	f.pay(o2)
+	_, list = f.downloads(o2, o2.AccessToken)
+	grant := fmt.Sprintf("/api/admin/x/digital/grants/%d/", list[0].ID)
+	if rec := gctest.AdminRequest(t, f.app, http.MethodPost, grant+"revoke", nil); rec.Code != http.StatusOK {
+		t.Fatalf("revoke = %d: %s", rec.Code, rec.Body)
+	}
+	if _, code := f.mint(o2, o2.AccessToken, list[0].ID); code != "download_revoked" {
+		t.Errorf("mint after revoke = %s", code)
+	}
+	if rec := gctest.AdminRequest(t, f.app, http.MethodPost, grant+"restore", nil); rec.Code != http.StatusOK {
 		t.Fatalf("restore = %d: %s", rec.Code, rec.Body)
 	}
-	if _, code := f.mint(o, o.AccessToken, list[0].ID); code != "" {
+	if _, code := f.mint(o2, o2.AccessToken, list[0].ID); code != "" {
 		t.Errorf("mint after restore = %s, want a link", code)
+	}
+}
+
+// A HEAD on a link is a probe, not a download; a second link minted before
+// the first was used is still held to the limit.
+func TestProbesAndRacingLinksDoNotBeatTheLimit(t *testing.T) {
+	f := newFixture(t)
+	p, _ := f.ebook("DG-7", []byte("once only"))
+	gctest.AdminRequest(t, f.app, http.MethodPut, fmt.Sprintf("/api/admin/x/digital/products/%d/rule", p.ID),
+		map[string]any{"download_limit": 1})
+	o := f.buy("prepaid", p.Variants[0].ID)
+	f.pay(o)
+	_, list := f.downloads(o, o.AccessToken)
+	first, _ := f.mint(o, o.AccessToken, list[0].ID)
+
+	req := httptest.NewRequest(http.MethodHead, first, nil)
+	rec := httptest.NewRecorder()
+	f.app.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Header().Get("ETag") == "" {
+		t.Errorf("HEAD = %d, ETag %q", rec.Code, rec.Header().Get("ETag"))
+	}
+	if _, after := f.downloads(o, o.AccessToken); after[0].Downloads != 0 {
+		t.Errorf("a HEAD counted %d downloads", after[0].Downloads)
+	}
+
+	second, _ := f.mint(o, o.AccessToken, list[0].ID)
+	if rec := f.fetch(second); rec.Code != http.StatusOK {
+		t.Fatalf("download = %d", rec.Code)
+	}
+	if rec := f.fetch(first); rec.Code != http.StatusGone {
+		t.Errorf("the replaced first link = %d, want 410", rec.Code)
+	}
+	if _, code := f.mint(o, o.AccessToken, list[0].ID); code != "download_limit_reached" {
+		t.Errorf("third mint = %s, want download_limit_reached", code)
 	}
 }
 
@@ -440,6 +491,7 @@ func TestActiveContentIsServedAsBytes(t *testing.T) {
 		"text/html; charset=utf-8": "application/octet-stream",
 		"image/svg+xml":            "application/octet-stream",
 		"application/javascript":   "application/octet-stream",
+		"text/xsl":                 "application/octet-stream",
 		"":                         "application/octet-stream",
 		"application/pdf":          "application/pdf",
 		"application/zip":          "application/zip",
@@ -452,6 +504,7 @@ func TestActiveContentIsServedAsBytes(t *testing.T) {
 		`..\..\etc\passwd`:  "passwd",
 		"a/b/guide.pdf":     "guide.pdf",
 		"bad\"name\r\n.pdf": "badname.pdf",
+		"report‮fdp.exe":    "reportfdp.exe",
 		"..":                "",
 	} {
 		if got := cleanFilename(in); got != want {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -26,7 +27,7 @@ func (m *Module) routes(app *gocommerce.App) {
 	app.HandleAdminFunc("GET /api/admin/x/digital/products/{id}/files", m.handleListFiles, gocommerce.RightCatalogRead)
 	app.HandleAdminFunc("POST /api/admin/x/digital/products/{id}/files", m.handleUpload, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("PUT /api/admin/x/digital/products/{id}/rule", m.handleSetRule, gocommerce.RightCatalogWrite)
-	app.HandleAdminFunc("GET /api/admin/x/digital/files/{id}/content", m.handleAdminContent, gocommerce.RightCatalogRead)
+	app.HandleAdminFunc("GET /api/admin/x/digital/files/{id}/content", m.handleAdminContent, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("PUT /api/admin/x/digital/files/{id}/content", m.handleReplace, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("DELETE /api/admin/x/digital/files/{id}", m.handleDeleteFile, gocommerce.RightCatalogWrite)
 	app.HandleAdminFunc("GET /api/admin/x/digital/orders/{id}/grants", m.handleListGrants, gocommerce.RightOrdersRead)
@@ -250,9 +251,24 @@ func (m *Module) handleMintLink(w http.ResponseWriter, r *http.Request) {
 	link := hex.EncodeToString(raw[:])
 	sum := sha256.Sum256([]byte(link))
 	expires := m.now().Add(m.cfg.LinkTTL)
-	if _, err := m.db.ExecContext(r.Context(), `
+	// The state is checked again in the write: two mints racing past the read
+	// above would otherwise each get an uncounted link, one past the limit.
+	res, err := m.db.ExecContext(r.Context(), `
 		UPDATE digital_grants SET link_hash = $2, link_expires_at = $3, link_counted = false
-		WHERE id = $1 AND order_id = $4 AND revoked_at IS NULL`, id, sum[:], expires, order.ID); err != nil {
+		WHERE id = $1 AND order_id = $4 AND revoked_at IS NULL
+		  AND (expires_at IS NULL OR expires_at > $5)
+		  AND (download_limit IS NULL OR downloads < download_limit)`, id, sum[:], expires, order.ID, m.now())
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		err := gocommerce.Conflictf("this download changed just now; open your order page again")
+		if list, rerr := m.downloads(r, order.ID, id); rerr == nil && len(list) == 1 {
+			if refused := refusal(list[0].Status); refused != nil {
+				err = refused.(*gocommerce.APIError)
+			}
+		}
 		gocommerce.RespondError(w, r, err)
 		return
 	}
@@ -276,6 +292,7 @@ func (m *Module) handleDownload(w http.ResponseWriter, r *http.Request) {
 		fileID, size int64
 		version      int
 		name, ctype  string
+		sum256       string
 	)
 	err := gocommerce.InTx(r.Context(), m.db, func(tx *sql.Tx) error {
 		var (
@@ -289,11 +306,11 @@ func (m *Module) handleDownload(w http.ResponseWriter, r *http.Request) {
 		)
 		err := tx.QueryRowContext(r.Context(), `
 			SELECT g.id, g.downloads, g.download_limit, g.expires_at, g.link_expires_at, g.link_counted,
-			       g.revoked_at IS NOT NULL, f.id, f.version, f.size_bytes, f.filename, f.content_type
+			       g.revoked_at IS NOT NULL, f.id, f.version, f.size_bytes, f.filename, f.content_type, f.sha256
 			FROM digital_grants g JOIN digital_files f ON f.id = g.file_id
 			WHERE g.link_hash = $1
 			FOR UPDATE OF g`, sum[:]).Scan(&grantID, &used, &limit, &expires, &linkExpires, &counted,
-			&revoked, &fileID, &version, &size, &name, &ctype)
+			&revoked, &fileID, &version, &size, &name, &ctype, &sum256)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errLinkDead
 		}
@@ -329,6 +346,10 @@ func (m *Module) handleDownload(w http.ResponseWriter, r *http.Request) {
 		if err := refusal(status(revoked, exp, lim, used, now)); err != nil {
 			return err
 		}
+		// A HEAD is a probe — a download manager, a link preview — not a download.
+		if r.Method == http.MethodHead {
+			return nil
+		}
 		_, err = tx.ExecContext(r.Context(),
 			`UPDATE digital_grants SET downloads = downloads + 1, link_counted = true WHERE id = $1`, grantID)
 		return err
@@ -337,10 +358,10 @@ func (m *Module) handleDownload(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	m.serveFile(w, r, fileID, version, size, name, ctype)
+	m.serveFile(w, r, fileID, version, size, name, ctype, sum256)
 }
 
-func (m *Module) serveFile(w http.ResponseWriter, r *http.Request, fileID int64, version int, size int64, name, ctype string) {
+func (m *Module) serveFile(w http.ResponseWriter, r *http.Request, fileID int64, version int, size int64, name, ctype, sum string) {
 	// The server's write timeout is a minute; a 100 MB file on a slow phone
 	// connection takes far longer than that.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(2 * time.Hour))
@@ -349,6 +370,9 @@ func (m *Module) serveFile(w http.ResponseWriter, r *http.Request, fileID int64,
 	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	// Names this version of the bytes, so a download resumed with If-Range
+	// after a Replace starts again instead of splicing two files.
+	h.Set("ETag", fmt.Sprintf(`"%s-%d"`, sum, version))
 	http.ServeContent(w, r, "", time.Time{}, &chunkReader{
 		ctx: r.Context(), db: m.db, fileID: fileID, version: version, size: size,
 	})
@@ -621,9 +645,10 @@ func (m *Module) handleAdminContent(w http.ResponseWriter, r *http.Request) {
 	var version int
 	var size int64
 	var name, ctype string
+	var sum string
 	err = m.db.QueryRowContext(r.Context(),
-		`SELECT version, size_bytes, filename, content_type FROM digital_files WHERE id = $1`, id).
-		Scan(&version, &size, &name, &ctype)
+		`SELECT version, size_bytes, filename, content_type, sha256 FROM digital_files WHERE id = $1`, id).
+		Scan(&version, &size, &name, &ctype, &sum)
 	if errors.Is(err, sql.ErrNoRows) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("file not found"))
 		return
@@ -632,7 +657,7 @@ func (m *Module) handleAdminContent(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	m.serveFile(w, r, id, version, size, name, ctype)
+	m.serveFile(w, r, id, version, size, name, ctype, sum)
 }
 
 func (m *Module) handleSetRule(w http.ResponseWriter, r *http.Request) {
@@ -717,8 +742,8 @@ func (m *Module) handleListGrants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Module) handleRevoke(w http.ResponseWriter, r *http.Request) {
-	m.setRevoked(w, r, `UPDATE digital_grants SET revoked_at = now(), revoked_reason = $2, link_hash = NULL
-		WHERE id = $1 AND revoked_at IS NULL`, reasonOperator)
+	m.setRevoked(w, r, `UPDATE digital_grants SET revoked_at = now(), revoked_reason = '`+reasonOperator+`', link_hash = NULL
+		WHERE id = $1 AND revoked_at IS NULL`)
 }
 
 // handleRestore opens a grant again with its count back at zero: the support
@@ -726,10 +751,13 @@ func (m *Module) handleRevoke(w http.ResponseWriter, r *http.Request) {
 func (m *Module) handleRestore(w http.ResponseWriter, r *http.Request) {
 	m.setRevoked(w, r, `UPDATE digital_grants SET revoked_at = NULL, revoked_reason = '', downloads = 0,
 		expires_at = CASE WHEN expires_at IS NOT NULL AND expires_at <= now() THEN now() + interval '7 days' ELSE expires_at END
-		WHERE id = $1`)
+		WHERE id = $1 AND EXISTS (SELECT 1 FROM orders o WHERE o.id = digital_grants.order_id AND o.payment_status = 'paid')`,
+		"only a paid order's downloads can be opened again; record the payment first")
 }
 
-func (m *Module) setRevoked(w http.ResponseWriter, r *http.Request, query string, args ...any) {
+// setRevoked runs query on one grant. A refusal, when given, is the answer to
+// the query changing nothing.
+func (m *Module) setRevoked(w http.ResponseWriter, r *http.Request, query string, refusal ...string) {
 	id, err := pathID(r, "id")
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -744,8 +772,13 @@ func (m *Module) setRevoked(w http.ResponseWriter, r *http.Request, query string
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	if _, err := m.db.ExecContext(r.Context(), query, append([]any{id}, args...)...); err != nil {
+	res, err := m.db.ExecContext(r.Context(), query, id)
+	if err != nil {
 		gocommerce.RespondError(w, r, err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 && len(refusal) > 0 {
+		gocommerce.RespondError(w, r, gocommerce.Conflictf("%s", refusal[0]))
 		return
 	}
 	list, err := m.downloads(r, orderID, id)

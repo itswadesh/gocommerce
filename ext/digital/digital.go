@@ -197,7 +197,7 @@ func (m *Module) onPaid(ctx context.Context, e gocommerce.Event) error {
 func (m *Module) deliver(ctx context.Context, orderID int64) error {
 	var paid, sample bool
 	err := m.db.QueryRowContext(ctx,
-		`SELECT payment_status = 'paid', sample FROM orders WHERE id = $1`, orderID).Scan(&paid, &sample)
+		`SELECT payment_status = 'paid' AND status <> 'cancelled', sample FROM orders WHERE id = $1`, orderID).Scan(&paid, &sample)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (!paid || sample)) {
 		return nil
 	}
@@ -278,8 +278,9 @@ func (m *Module) handOver(ctx context.Context, orderID int64) {
 	}
 }
 
-// announce emails the buyer once, after the grants exist. The flag is set only
-// once the message went, so a failed send is retried with the event.
+// announce emails the buyer once, after the grants exist. The grants are
+// claimed before the send, so two deliveries running together cannot both
+// mail, and given back if it fails, so the event's retry sends it.
 func (m *Module) announce(ctx context.Context, orderID int64) error {
 	var number, email, name, token string
 	if err := m.db.QueryRowContext(ctx,
@@ -288,19 +289,23 @@ func (m *Module) announce(ctx context.Context, orderID int64) error {
 		return err
 	}
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT f.filename FROM digital_grants g JOIN digital_files f ON f.id = g.file_id
-		WHERE g.order_id = $1 AND NOT g.announced AND g.revoked_at IS NULL ORDER BY g.id`, orderID)
+		UPDATE digital_grants g SET announced = true FROM digital_files f
+		WHERE f.id = g.file_id AND g.order_id = $1 AND NOT g.announced AND g.revoked_at IS NULL
+		RETURNING g.id, f.filename`, orderID)
 	if err != nil {
 		return err
 	}
 	var names []string
+	var claimed []int64
 	for rows.Next() {
+		var id int64
 		var n string
-		if err := rows.Scan(&n); err != nil {
+		if err := rows.Scan(&id, &n); err != nil {
 			rows.Close()
 			return err
 		}
 		names = append(names, "- "+n)
+		claimed = append(claimed, id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -323,11 +328,14 @@ func (m *Module) announce(ctx context.Context, orderID int64) error {
 			// The link carries the order's access token.
 			Secrets: []string{"downloads_url"},
 		}); err != nil {
+			if _, uerr := m.db.ExecContext(ctx,
+				`UPDATE digital_grants SET announced = false WHERE id = ANY ($1)`, int64s(claimed)); uerr != nil {
+				m.log.Error("digital: could not give back an unsent announcement", "order_id", orderID, "error", uerr)
+			}
 			return fmt.Errorf("digital: email the downloads for order %s: %w", number, err)
 		}
 	}
-	_, err = m.db.ExecContext(ctx, `UPDATE digital_grants SET announced = true WHERE order_id = $1`, orderID)
-	return err
+	return nil
 }
 
 func (m *Module) onClosed(reason string) gocommerce.EventHandler {
@@ -369,7 +377,7 @@ func (m *Module) reconcile(ctx context.Context) error {
 		SELECT DISTINCT o.id FROM orders o
 		JOIN order_lines l ON l.order_id = o.id
 		JOIN digital_files f ON f.product_id = l.product_id AND (f.variant_id IS NULL OR f.variant_id = l.variant_id)
-		WHERE o.payment_status = 'paid' AND NOT o.sample AND f.created_at <= o.created_at
+		WHERE o.payment_status = 'paid' AND o.status <> 'cancelled' AND NOT o.sample AND f.created_at <= o.created_at
 		  AND NOT EXISTS (SELECT 1 FROM digital_grants g WHERE g.order_id = o.id)
 		ORDER BY o.id LIMIT 500`)
 	if err != nil {

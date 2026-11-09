@@ -72,7 +72,7 @@
       "get": {
         "tags": ["admin:digital"],
         "summary": "Download a file as a buyer would get it",
-        "description": "Requires catalog.read.",
+        "description": "Requires catalog.write: it is the thing being sold.",
         "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
         "responses": {"200": {"description": "The file."}, "404": {"description": "No such file."}}
       },
