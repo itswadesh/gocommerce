@@ -153,7 +153,7 @@ func (f *Fulfillments) Create(ctx context.Context, orderID int64, providerCode s
 			payload.Extra["label_url"] = shipment.LabelURL
 		}
 		payload.Shipment = &ShipmentEvent{
-			FulfillmentID: fulfillmentID, Carrier: carrier,
+			FulfillmentID: fulfillmentID, Carrier: carrier, Provider: shipment.Provider,
 			RemainingUnits: remaining, Lines: shipmentEventLines(o, lines),
 		}
 		summary := "Shipped order " + o.Number + " — " + shipment.Provider + " " + shipment.Tracking
@@ -620,14 +620,15 @@ func (f *Fulfillments) Cancel(ctx context.Context, id int64, reason string) (*Or
 type parcelState struct {
 	id                       int64
 	status, carrier, tracked string
+	provider                 string
 	trackedAt                sql.NullTime
 }
 
 func lockParcel(ctx context.Context, tx *sql.Tx, id int64) (parcelState, error) {
 	p := parcelState{id: id}
 	if err := tx.QueryRowContext(ctx,
-		`SELECT status, carrier, tracking_status, tracking_updated_at FROM fulfillments WHERE id = $1 FOR UPDATE`, id).
-		Scan(&p.status, &p.carrier, &p.tracked, &p.trackedAt); err != nil {
+		`SELECT status, carrier, tracking_status, tracking_updated_at, provider FROM fulfillments WHERE id = $1 FOR UPDATE`, id).
+		Scan(&p.status, &p.carrier, &p.tracked, &p.trackedAt, &p.provider); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return p, NotFoundf("fulfillment not found")
 		}
@@ -664,7 +665,7 @@ func (f *Fulfillments) cancelLocked(ctx context.Context, tx *sql.Tx, o *Order, p
 	payload := f.app.orders.eventPayload(o)
 	payload.Reason = reason
 	payload.Shipment = &ShipmentEvent{
-		FulfillmentID: p.id, Carrier: p.carrier,
+		FulfillmentID: p.id, Carrier: p.carrier, Provider: p.provider,
 		RemainingUnits: remaining, Lines: held,
 	}
 	summary := "Cancelled a shipment of order " + o.Number
@@ -779,7 +780,7 @@ func (f *Fulfillments) Track(ctx context.Context, id int64, u TrackingUpdate) (*
 				}
 				o.Status = OrderDelivered
 				payload = f.app.orders.eventPayload(o)
-				payload.Shipment = &ShipmentEvent{FulfillmentID: id, Carrier: p.carrier, Lines: held,
+				payload.Shipment = &ShipmentEvent{FulfillmentID: id, Carrier: p.carrier, Provider: p.provider, Lines: held,
 					TrackingStatus: u.Status, Detail: u.Detail}
 				return transitionResult{
 					Event: EventOrderDelivered, Payload: payload,
@@ -787,7 +788,7 @@ func (f *Fulfillments) Track(ctx context.Context, id int64, u TrackingUpdate) (*
 				}, nil
 			}
 		}
-		payload.Shipment = &ShipmentEvent{FulfillmentID: id, Carrier: p.carrier, Lines: held,
+		payload.Shipment = &ShipmentEvent{FulfillmentID: id, Carrier: p.carrier, Provider: p.provider, Lines: held,
 			TrackingStatus: u.Status, Detail: u.Detail}
 		// No audit row: nobody did this, a carrier said it, and the event is
 		// the order's history of it.

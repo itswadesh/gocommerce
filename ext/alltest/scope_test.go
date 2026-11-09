@@ -17,6 +17,7 @@ import (
 	cms "github.com/itswadesh/gocommerce/ext/cms"
 	contact "github.com/itswadesh/gocommerce/ext/contact"
 	customizer "github.com/itswadesh/gocommerce/ext/customizer"
+	"github.com/itswadesh/gocommerce/ext/digital"
 	faq "github.com/itswadesh/gocommerce/ext/faq"
 	feeds "github.com/itswadesh/gocommerce/ext/feeds"
 	delhivery "github.com/itswadesh/gocommerce/ext/fulfill-delhivery"
@@ -150,6 +151,7 @@ func everyModule() []gocommerce.Module {
 		webhooks.New(webhooks.Config{}),
 		wishlist.New(wishlist.Config{}),
 		customizer.New(customizer.Config{}),
+		digital.New(digital.Config{}),
 	}
 }
 

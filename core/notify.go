@@ -265,6 +265,9 @@ func (a *App) subscribeNotifications() {
 }
 
 func (a *App) notifyOrder(ctx context.Context, event string, ev *OrderEvent) error {
+	if a.selfAnnounced(event, ev) {
+		return nil
+	}
 	data := OrderNotificationData(ev)
 	if link := a.orderTrackingURL(ctx, ev.OrderID, ev.Number); link != "" {
 		data["order_tracking_url"] = link
@@ -386,4 +389,14 @@ func OrderNotificationData(ev *OrderEvent) map[string]string {
 		}
 	}
 	return data
+}
+
+// selfAnnounced is whether this shipped or delivered parcel was handed over by
+// a provider that tells the shopper itself (SelfAnnouncing).
+func (a *App) selfAnnounced(event string, ev *OrderEvent) bool {
+	if (event != EventOrderShipped && event != EventOrderDelivered) || ev.Shipment == nil {
+		return false
+	}
+	p, ok := a.fulfillment.providers[ev.Shipment.Provider].(SelfAnnouncing)
+	return ok && p.AnnouncesItself()
 }

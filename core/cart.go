@@ -87,6 +87,9 @@ type CartLine struct {
 	Available    int   `json:"available"`
 	InStock      bool  `json:"in_stock"`
 	PriceChanged bool  `json:"price_changed"`
+	// RequiresShipping is whether the line is sent at all: a basket of lines
+	// that are not is asked for no street address and no delivery option (D254).
+	RequiresShipping bool `json:"requires_shipping"`
 
 	// AddOnID is the add-on this line was bought as (D133), and AddOnFor the
 	// product it is offered with; both zero on an ordinary line. The same
@@ -278,7 +281,7 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		       coalesce((SELECT sum(vs.on_hand - vs.reserved) FROM variant_stock vs WHERE vs.variant_id = v.id), 0), v.active,
 		       coalesce(l.add_on_id, 0),
 		       coalesce((SELECT a.product_id FROM product_add_ons a WHERE a.id = l.add_on_id), 0),
-		       v.compare_at_price_minor, coalesce(l.design_id, ''), coalesce(l.design_preview_url, '')
+		       v.compare_at_price_minor, coalesce(l.design_id, ''), coalesce(l.design_preview_url, ''), v.requires_shipping
 		FROM cart_line_items l
 		JOIN variants v ON v.id = l.variant_id
 		JOIN products p ON p.id = v.product_id
@@ -301,7 +304,7 @@ func (c *Carts) linesOf(ctx context.Context, cartID int64, currency string) (lin
 		if err := rows.Scan(&l.ID, &l.VariantID, &l.ProductID, &l.SKU, &l.Title,
 			&l.Quantity, &l.UnitPrice.AmountMinor, &currentPrice, &tracks,
 			&available, &active, &l.AddOnID, &l.AddOnFor, &compareAt,
-			&l.DesignID, &l.DesignPreviewURL); err != nil {
+			&l.DesignID, &l.DesignPreviewURL, &l.RequiresShipping); err != nil {
 			return nil, 0, 0, err
 		}
 		if compareAt.Valid {

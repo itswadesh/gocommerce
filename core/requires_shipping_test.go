@@ -2,6 +2,7 @@ package gocommerce
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -118,3 +119,73 @@ func TestRequiresShippingTravelsInTheCSV(t *testing.T) {
 }
 
 func strp(s string) *string { return &s }
+
+// A basket with nothing to send is asked only where the buyer is (D254): the
+// country, and the state tax is worked out from. One parcel in it and the full
+// address is required again. The cart says which lines are which, so a
+// storefront can skip the step before it is refused.
+func TestABasketWithNothingToSendNeedsNoStreetAddress(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	no := false
+	ebook, err := app.Products().CreateProduct(ctx, ProductInput{
+		Title:    "Field guide (PDF)",
+		Variants: []VariantInput{{SKU: "RS-PDF-3", PriceMinor: 1500, RequiresShipping: &no, TrackInventory: &no}},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	cart := newCart(t, app)
+	addToCart(t, app, cart.Token, ebook.Variants[0].ID, 1)
+	got, err := app.Cart().GetByToken(ctx, cart.Token)
+	if err != nil {
+		t.Fatalf("get cart: %v", err)
+	}
+	if got.Lines[0].RequiresShipping {
+		t.Error("the download's cart line says it is sent")
+	}
+
+	z := zone(t, app, "India", []string{"IN"}, nil)
+	rate(t, app, z.ID, "Standard", 500, 0, nil)
+	if rec := do(t, app, http.MethodGet, "/api/checkout/rates?cart="+cart.Token+"&country=IN"); !strings.Contains(rec.Body.String(), `"rates":[]`) {
+		t.Errorf("delivery options for a download = %s, want none", rec.Body)
+	}
+
+	billing := CheckoutInput{CartID: cart.Token, Email: "buyer@example.com", Name: "A Buyer",
+		Address: Address{Country: "IN", State: "MH"}}
+	res, err := app.orders.Checkout(ctx, CodeCOD, billing, "")
+	if err != nil {
+		t.Fatalf("a download with only a country and state was refused: %v", err)
+	}
+	if res.Order.Address.Country != "IN" || res.Order.Address.State != "MH" {
+		t.Errorf("order address = %+v, want the billing country and state kept", res.Order.Address)
+	}
+
+	noCountry := billing
+	noCountry.Address = Address{}
+	if _, err := app.orders.Checkout(ctx, CodeCOD, noCountry, ""); err == nil || !strings.Contains(err.Error(), "country") {
+		t.Errorf("no country = %v, want it asked for", err)
+	}
+
+	tee := simpleProduct(t, app, "RS-TEE-3", 1000, 5)
+	mixed := newCart(t, app)
+	addToCart(t, app, mixed.Token, ebook.Variants[0].ID, 1)
+	addToCart(t, app, mixed.Token, tee.Variants[0].ID, 1)
+	got, err = app.Cart().GetByToken(ctx, mixed.Token)
+	if err != nil {
+		t.Fatalf("get cart: %v", err)
+	}
+	sent := 0
+	for _, l := range got.Lines {
+		if l.RequiresShipping {
+			sent++
+		}
+	}
+	if sent != 1 {
+		t.Errorf("%d lines say they are sent, want the tee alone", sent)
+	}
+	billing.CartID = mixed.Token
+	if _, err := app.orders.Checkout(ctx, CodeCOD, billing, ""); err == nil || !strings.Contains(err.Error(), "line1") {
+		t.Errorf("a parcel with no street = %v, want the address asked for", err)
+	}
+}

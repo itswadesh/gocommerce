@@ -53,6 +53,17 @@ func (a *App) handleShippingRates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A basket with nothing to send has no delivery to choose (D254), and
+	// checkout would ignore whichever was picked.
+	physical := false
+	for _, l := range cart.Lines {
+		physical = physical || l.RequiresShipping
+	}
+	if !physical {
+		Respond(w, http.StatusOK, map[string]any{"rates": []ShippingQuote{}, "currency": a.Currency(r.Context())})
+		return
+	}
+
 	// Quoted as whoever the cart is proven to belong to, so a dealer's basket
 	// is offered the dealer's freight — and as nobody in particular when it is
 	// not, whatever address was typed onto it (D66, D76).

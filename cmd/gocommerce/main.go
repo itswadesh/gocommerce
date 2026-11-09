@@ -30,6 +30,7 @@ import (
 	"github.com/itswadesh/gocommerce/ext/cms"
 	"github.com/itswadesh/gocommerce/ext/contact"
 	"github.com/itswadesh/gocommerce/ext/customizer"
+	"github.com/itswadesh/gocommerce/ext/digital"
 	"github.com/itswadesh/gocommerce/ext/faq"
 	"github.com/itswadesh/gocommerce/ext/feeds"
 	delhivery "github.com/itswadesh/gocommerce/ext/fulfill-delhivery"
@@ -303,6 +304,7 @@ environment:
 		withGateways = fs.Bool("gateways", false, "install every payment gateway module idle — Stripe, Razorpay, PayPal, Cashfree, Paystack, Flutterwave, Adyen, Paddle, Lemon Squeezy, Creem, Helcim, Clover, Hyperswitch, RevenueCat — each switched on and given its keys under Settings › Payment methods")
 		withCarriers = fs.Bool("carriers", false, "install every carrier module idle — Shiprocket, Delhivery, NimbusPost, India Post, Shippo, ShipStation, Easyship, Shippit, USPS, Onfleet, Veeqo — each switched on and given its keys under Settings › Shipping providers")
 		withInvoices = fs.Bool("invoices", false, "install the invoices module: a numbered invoice per paid order (INVOICES_SELLER_NAME, INVOICES_SELLER_ADDRESS, INVOICES_TAX_ID)")
+		withDigital  = fs.Bool("digital", false, "install the digital products module: files a buyer downloads once the order is paid, kept private in the database")
 		withCMS      = fs.Bool("cms", false, "install the cms module: content pages at /x/cms/pages/{slug}, edited on the Pages screen")
 		withFAQ      = fs.Bool("faq", false, "install the faq module: the shop's questions and answers at /x/faq, edited on the FAQ screen")
 		withShow     = fs.Bool("showcases", false, "install the showcases module: videos of the store showing its products, from YouTube or Facebook, beside those products at /x/showcases")
@@ -668,6 +670,9 @@ environment:
 			modules = append(modules, invoices.New(invoices.Config{
 				SellerName: seller, SellerAddress: os.Getenv("INVOICES_SELLER_ADDRESS"), TaxID: os.Getenv("INVOICES_TAX_ID"),
 			}))
+		}
+		if *withDigital {
+			modules = append(modules, digital.New(digital.Config{}))
 		}
 		if *withCMS {
 			modules = append(modules, cms.New(cms.Config{}))
