@@ -42,7 +42,6 @@ services:
       - -telegram
       - -whatsapp
       - -invoices
-      - -digital
       - -cms
       - -faq
       - -translations
