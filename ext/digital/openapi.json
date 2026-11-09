@@ -1,0 +1,124 @@
+{
+  "paths": {
+    "/x/digital/products": {
+      "get": {
+        "tags": ["digital"],
+        "summary": "Which products have files to download",
+        "description": "For a product page that says \"Instant download\". Keyed by product id; a product with no files, or not active, is absent. Names and sizes are not given.",
+        "parameters": [{"name": "ids", "in": "query", "required": true, "schema": {"type": "string"}, "description": "Up to 100 product ids, separated by commas."}],
+        "responses": {"200": {"description": "{\"12\": {\"files\": 2, \"formats\": [\"PDF\", \"EPUB\"]}}"}}
+      }
+    },
+    "/x/digital/orders/{number}": {
+      "get": {
+        "tags": ["digital"],
+        "summary": "An order's downloads",
+        "description": "For whoever holds the order's access token. Empty until the order is paid. Each download has a status: ready, expired, used_up or revoked. A wrong token answers 404.",
+        "parameters": [
+          {"name": "number", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "token", "in": "query", "required": true, "schema": {"type": "string"}, "description": "The order's access token."}
+        ],
+        "responses": {"200": {"description": "{\"downloads\": [...]}"}, "404": {"description": "No such order for this token."}}
+      }
+    },
+    "/x/digital/orders/{number}/downloads/{id}": {
+      "post": {
+        "tags": ["digital"],
+        "summary": "A fresh link to one download",
+        "description": "Mints a link that lasts ten minutes and replaces any earlier one for this download. The first request on it counts one download; asking again on the same link does not count again. 410 with code download_revoked, download_expired or download_limit_reached when the file can no longer be had.",
+        "parameters": [
+          {"name": "number", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}},
+          {"name": "token", "in": "query", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {"201": {"description": "{\"url\": \"/x/digital/download/…\", \"expires_at\": \"…\"}"}, "404": {"description": "No such order for this token, or no such download on it."}, "410": {"description": "The download is closed."}}
+      }
+    },
+    "/x/digital/download/{link}": {
+      "get": {
+        "tags": ["digital"],
+        "summary": "The file a link names",
+        "description": "The bytes, as an attachment, with range support. 410 download_link_expired once the link has run out; the other 410 codes as above.",
+        "parameters": [{"name": "link", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "The file."}, "206": {"description": "Part of it."}, "410": {"description": "The link or the download is closed."}}
+      }
+    },
+    "/api/admin/x/digital/products/{id}/files": {
+      "get": {
+        "tags": ["admin:digital"],
+        "summary": "A product's files and its download rule",
+        "description": "Requires catalog.read.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "{\"files\": [...], \"rule\": {\"download_limit\": null, \"expiry_days\": null}}"}}
+      },
+      "post": {
+        "tags": ["admin:digital"],
+        "summary": "Upload a file buyers download",
+        "description": "Requires catalog.write. Multipart: file, and optionally variant_id for a file only that variant's buyers get. At most 100 MB. Kept in the database, never at a public address.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"201": {"description": "The file."}, "400": {"description": "No file, an empty one, or one too big."}, "404": {"description": "No such product or variant."}}
+      }
+    },
+    "/api/admin/x/digital/products/{id}/rule": {
+      "put": {
+        "tags": ["admin:digital"],
+        "summary": "Set a product's download limit and expiry",
+        "description": "Requires catalog.write. {\"download_limit\": 5, \"expiry_days\": 30}; null for no limit or never. Applies to orders paid from now on.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The rule."}}
+      }
+    },
+    "/api/admin/x/digital/files/{id}/content": {
+      "get": {
+        "tags": ["admin:digital"],
+        "summary": "Download a file as a buyer would get it",
+        "description": "Requires catalog.read.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The file."}, "404": {"description": "No such file."}}
+      },
+      "put": {
+        "tags": ["admin:digital"],
+        "summary": "Replace a file's content",
+        "description": "Requires catalog.write. Multipart, as upload. Keeps the file's id, so everyone who bought it gets the new version.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The file."}, "404": {"description": "No such file."}}
+      }
+    },
+    "/api/admin/x/digital/files/{id}": {
+      "delete": {
+        "tags": ["admin:digital"],
+        "summary": "Remove a file",
+        "description": "Requires catalog.write. Every buyer loses access to it.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"204": {"description": "Removed."}, "404": {"description": "No such file."}}
+      }
+    },
+    "/api/admin/x/digital/orders/{id}/grants": {
+      "get": {
+        "tags": ["admin:digital"],
+        "summary": "An order's downloads",
+        "description": "Requires orders.read. As the buyer sees them, with why a revoked one was closed.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The grants."}}
+      }
+    },
+    "/api/admin/x/digital/grants/{id}/revoke": {
+      "post": {
+        "tags": ["admin:digital"],
+        "summary": "Close one download",
+        "description": "Requires orders.write.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The download."}, "404": {"description": "No such grant."}}
+      }
+    },
+    "/api/admin/x/digital/grants/{id}/restore": {
+      "post": {
+        "tags": ["admin:digital"],
+        "summary": "Open one download again",
+        "description": "Requires orders.write. Clears a revoke, sets the count back to zero, and gives an expired one seven more days.",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "integer"}}],
+        "responses": {"200": {"description": "The download."}, "404": {"description": "No such grant."}}
+      }
+    }
+  }
+}
