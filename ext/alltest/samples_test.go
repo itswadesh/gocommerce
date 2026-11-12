@@ -3,7 +3,6 @@ package alltest
 import (
 	"context"
 	"net/http"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -36,7 +35,8 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 	}
 	// Their returns page stays theirs, so two sample pages, and the footer
 	// links only those: ten categories in the header and two pages below.
-	want := gocommerce.SampleCounts{"products": 24, "orders": 12, "reviews": 11, "pages": 2, "faq": 5, "menu_links": 12, "banners": 5}
+	// No banners (D257): the starting home page opens with its own picture.
+	want := gocommerce.SampleCounts{"products": 24, "orders": 12, "reviews": 11, "pages": 2, "faq": 5, "menu_links": 12, "banners": 0}
 	for kind, n := range want {
 		if added[kind] != n {
 			t.Errorf("added %d %s, want %d (all: %v)", added[kind], kind, n, added)
@@ -79,15 +79,18 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 		t.Fatalf("footer menu = %s, want the sample about page and not the merchant's returns page", rec.Body)
 	}
 	rec = gctest.Request(t, app, http.MethodGet, "/x/banners?page=home", nil)
-	if body := rec.Body.String(); !strings.Contains(body, `"/collections/festive-edit"`) || !strings.Contains(body, `"Shop by collection"`) ||
-		!strings.Contains(body, `"/sample-media/3/banner-1-phone.webp"`) {
-		t.Fatalf("home banners = %s, want the sample slides and the collection grid", body)
+	if body := rec.Body.String(); strings.Contains(body, "/sample-media/") {
+		t.Fatalf("home banners = %s, want none from the sample shop", body)
 	}
-	// Every picture a banner names is one the engine serves.
-	for _, picture := range regexp.MustCompile(`/sample-media/[^"]+`).FindAllString(rec.Body.String(), -1) {
-		if got := gctest.Request(t, app, http.MethodGet, picture, nil); got.Code != http.StatusOK {
-			t.Fatalf("banner picture %s = %d, want it served", picture, got.Code)
-		}
+	// The placeholders stay served for the stores whose older sample banners
+	// link to them.
+	if got := gctest.Request(t, app, http.MethodGet, "/sample-media/3/banner-1-phone.webp", nil); got.Code != http.StatusOK {
+		t.Fatalf("an older sample banner's picture = %d, want it still served", got.Code)
+	}
+	// The catalogue's first product is the newest, so "New in" opens on it.
+	products, _, err := app.Products().ListProducts(ctx, gocommerce.ProductQuery{Limit: 1})
+	if err != nil || len(products) != 1 || products[0].Slug != "printed-anarkali-kurta" {
+		t.Fatalf("newest product = %v (%v), want the catalogue's first, printed-anarkali-kurta", products, err)
 	}
 	if rec := gctest.Request(t, app, http.MethodGet, "/x/cms/pages/about", nil); rec.Code != http.StatusOK {
 		t.Fatalf("the about page = %d %s, want it published", rec.Code, rec.Body)
