@@ -235,3 +235,54 @@ func (m *Module) handleRemoveFile(w http.ResponseWriter, r *http.Request) {
 	}
 	gocommerce.Respond(w, http.StatusOK, map[string]bool{"removed": true})
 }
+
+// handleDeleteDocument removes a document that never reached the books: one
+// waiting for review, rejected or failed, such as a test or a wrong file. A posted
+// one stays, because a balance has to stay explainable; reversing its entry is how
+// it stops counting. So does one a wholesale quote was worked from, for that
+// quote's trail. The message row is kept, so a redelivery from Meta is still known
+// as seen and does not bring the document back.
+func (m *Module) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		gocommerce.RespondError(w, r, err)
+		return
+	}
+	ctx := r.Context()
+	err = gocommerce.InTx(ctx, m.db, func(tx *sql.Tx) error {
+		var status, filename, sender string
+		err := tx.QueryRowContext(ctx, `SELECT status, filename, sender FROM retailassistant_documents WHERE id = $1 FOR UPDATE`, id).
+			Scan(&status, &filename, &sender)
+		if errors.Is(err, sql.ErrNoRows) {
+			return gocommerce.NotFoundf("no document %d", id)
+		}
+		if err != nil {
+			return err
+		}
+		switch status {
+		case "needs_review", "rejected", "failed":
+		case "posted":
+			return gocommerce.Conflictf("this document is in the supplier's account; reverse its entry instead")
+		default:
+			return gocommerce.Conflictf("this document is still being fetched; try again in a minute")
+		}
+		var quoted bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS (SELECT 1 FROM retailassistant_wholesale_quotes WHERE document_id = $1)`, id).Scan(&quoted); err != nil {
+			return err
+		}
+		if quoted {
+			return gocommerce.Conflictf("a wholesale quote was worked from this document, so it stays on record; reject it instead")
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM retailassistant_documents WHERE id = $1`, id); err != nil {
+			return err
+		}
+		return m.audit(ctx, tx, "document.deleted", "document", id,
+			map[string]string{"filename": filename, "sender": sender, "status": status})
+	})
+	if err != nil {
+		respondTx(w, r, err, "delete a document")
+		return
+	}
+	gocommerce.Respond(w, http.StatusOK, map[string]bool{"deleted": true})
+}

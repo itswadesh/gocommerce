@@ -54,7 +54,10 @@
     let phone = $state("");
     let issued = $state(null);
     let confirmingRemove = $state(false);
+    let confirmingDelete = $state(0);
     let compared = $state(false);
+    // What never reached the books; the engine refuses the rest and says why.
+    const DELETABLE = ["needs_review", "rejected", "failed"];
 
     $effect(() => {
         if (readable && hasModule("retailassistant")) refresh();
@@ -197,6 +200,15 @@
         });
     }
 
+    async function deleteDocument(row) {
+        await run(async () => {
+            await retailAssistant.deleteDocument(row.id);
+            toast.success(t("Deleted. No supplier's account changed."));
+            confirmingDelete = 0;
+            await loadAll();
+        });
+    }
+
     async function retry(row) {
         await run(async () => {
             await retailAssistant.retry(row.id);
@@ -313,13 +325,32 @@
                                     <td class="min-width" data-name="Status"><span class="label {s.cls}">{t(s.label)}</span></td>
                                     <td class="min-width txt-hint" data-name="Received">{formatDate(row.created_at)}</td>
                                     <td class="min-width" data-name="Actions">
-                                        {#if row.status === "failed" && writable}
-                                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => retry(row)}><span class="txt">{t("Try again")}</span></button>
-                                        {:else if row.status !== "received" && row.status !== "parsing"}
-                                            <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => open(row)}>
-                                                <span class="txt">{row.status === "needs_review" && writable ? t("Review") : t("Open")}</span>
-                                            </button>
-                                        {/if}
+                                        <div class="retail-row-actions">
+                                            {#if confirmingDelete === row.id}
+                                                <button type="button" class="btn sm danger" class:loading={busy} disabled={busy} onclick={() => deleteDocument(row)} in:rise><span class="txt">{t("Yes, delete it")}</span></button>
+                                                <button type="button" class="btn sm transparent secondary" onclick={() => (confirmingDelete = 0)}><span class="txt">{t("Keep it")}</span></button>
+                                            {:else}
+                                                {#if row.status === "failed" && writable}
+                                                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => retry(row)}><span class="txt">{t("Try again")}</span></button>
+                                                {:else if row.status !== "received" && row.status !== "parsing"}
+                                                    <button type="button" class="btn sm transparent secondary" disabled={busy} onclick={() => open(row)}>
+                                                        <span class="txt">{row.status === "needs_review" && writable ? t("Review") : t("Open")}</span>
+                                                    </button>
+                                                {/if}
+                                                {#if writable && DELETABLE.includes(row.status)}
+                                                    <button
+                                                        type="button"
+                                                        class="btn sm circle transparent secondary"
+                                                        title={t("Delete")}
+                                                        aria-label={t("Delete {name}", { name: row.draft?.invoice_no || row.filename || t("Document {id}", { id: row.id }) })}
+                                                        disabled={busy}
+                                                        onclick={() => (confirmingDelete = row.id)}
+                                                    >
+                                                        <i class="ri-delete-bin-line" aria-hidden="true"></i>
+                                                    </button>
+                                                {/if}
+                                            {/if}
+                                        </div>
                                     </td>
                                 </tr>
                             {:else}
@@ -578,5 +609,12 @@
     }
     .retail-add input {
         min-width: min(16rem, 100%);
+    }
+    .retail-row-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        white-space: nowrap;
     }
 </style>
