@@ -15,6 +15,7 @@
     import { downloadBinary } from "$lib/download.js";
     import { toast } from "$lib/toast.svelte.js";
     import { rise, flipDuration } from "$lib/motion.js";
+    import Select from "$lib/components/Select.svelte";
 
     let {
         productId,
@@ -32,6 +33,10 @@
     let loaded = $state(false);
     let uploading = $state(0);
     let target = $state("");
+    const targets = $derived([
+        { value: "", label: "Every variant" },
+        ...variants.map((v) => ({ value: String(v.id), label: v.label || v.sku })),
+    ]);
     let confirming = $state(0);
     let busy = $state(0);
     let picker = $state(null);
@@ -267,12 +272,7 @@
         {#if variants.length > 1}
             <div class="field">
                 <label for="digital-target">For</label>
-                <select id="digital-target" bind:value={target} {disabled}>
-                    <option value="">Every variant</option>
-                    {#each variants as v (v.id)}
-                        <option value={String(v.id)}>{v.label || v.sku}</option>
-                    {/each}
-                </select>
+                <Select id="digital-target" bind:value={target} options={targets} {disabled} />
             </div>
         {/if}
         <button
@@ -335,8 +335,8 @@
         align-items: center;
         gap: 10px;
         padding: 8px 10px;
-        border: 1px solid var(--baseAlt2Color);
-        border-radius: var(--baseRadius);
+        border: 1px solid var(--surfaceAlt3Color);
+        border-radius: var(--borderRadius);
         transition: opacity 0.2s, transform 0.2s;
     }
     .digital-file.busy {
