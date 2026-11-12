@@ -820,6 +820,7 @@ func (a *App) buildServices() {
 	}
 
 	a.RegisterPayment(codProvider{plugins: a.plugins})
+	a.RegisterPayment(whatsappProvider{app: a})
 	a.RegisterFulfillment(manualFulfillment{})
 	a.RegisterNotifier(ChannelEmail, logNotifier{log: a.log})
 	a.RegisterNotifier(ChannelSMS, logNotifier{log: a.log})

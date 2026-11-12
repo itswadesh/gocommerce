@@ -612,6 +612,7 @@ func (a *App) mountCoreRoutes() {
 	a.mountReportRoutes()
 	a.mountTransferRoutes()
 	a.mountStoreProfileRoutes()
+	a.mountOrderLinkRoutes()
 	a.mountAPIKeyRoutes()
 	a.mountCustomReportRoutes()
 	a.mountPluginRoutes()
