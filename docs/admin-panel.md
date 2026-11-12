@@ -730,12 +730,16 @@ shop to look around, so every screen has something in it:
   no stock. They announce nothing, then or later, whatever is done to them: no
   confirmation email, SMS, webhook or invoice ever follows a sample order, and
   the customers' addresses are at example.com, where nobody receives mail.
-- With the banners module, **three slides** on the home page (Festive edit,
-  Women, Men) and a **Shop by collection** grid of the two collections, on
-  placeholder pictures that say the size to replace them with. They are served
-  at `/sample-media/3/`. A store that added the sample shop earlier keeps the
-  photographs its banners link to. The categories carry pictures of
-  their own (`metadata.image`), which the storefront's own category tiles show.
+- **No banners** (D257). The starting home page opens with a picture of its
+  own (D256), and the storefront would have put sample slides above it, so a
+  new store showed two banners, one on top of the other. A store that added the
+  sample shop earlier keeps its sample slides and the **Shop by collection**
+  grid, and their pictures (`/sample-media/2/` and `/sample-media/3/`), until
+  it erases the sample shop. The categories carry pictures of their own
+  (`metadata.image`), which the storefront's own category tiles show.
+- The products are made last to first, so the catalogue's first ones are the
+  newest and a newest-first list, such as the starting page's **New in**, opens
+  on its women's ethnic wear.
 - With the other modules installed, **a review on the first eleven products** by a customer whose
   sample order bought it (so it is marked verified), **About us, Shipping and
   delivery, and Returns pages**, **five questions and answers**, and **links**

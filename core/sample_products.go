@@ -123,10 +123,15 @@ func samplePhotoAlt(title, colour, shot string) string {
 // added. Each goes through CreateProduct, so each has its audit row and its
 // product.created event like any other. A slug the store already uses is
 // skipped, so a second run adds nothing.
+//
+// They are made last to first (D257), so the catalogue's first products are
+// the newest: a list sorted newest first, such as the starting home page's
+// "New in" (D256), opens on the ones the catalogue leads with rather than on
+// whatever was added to its end.
 func (c *Catalog) AddSampleProducts(ctx context.Context) (int, error) {
 	currency := c.app.Currency(ctx)
 	added := 0
-	for _, s := range sampleCatalogue.Products {
+	for _, s := range slices.Backward(sampleCatalogue.Products) {
 		metadata := Metadata{MetaHighlights: s.Highlights}
 		if s.Badge != "" {
 			metadata[MetaBadge] = s.Badge
@@ -230,10 +235,8 @@ var samplePhotos embed.FS
 // on a product of their own, which D96 made theirs.
 const SampleMediaPrefix = "/sample-media/2/"
 
-// SamplePlaceholderPrefix is where the sample shop's banners find their pictures
-// (D242): plain placeholders that say what size to replace them with. A store
-// that added the sample shop before them keeps the photographs it links to.
-const SamplePlaceholderPrefix = "/sample-media/3/"
+// Set 3 is D242's banner placeholders. The sample shop adds no banners since
+// D257, and the set stays for the stores whose sample banners link to it.
 
 // handleSamplePhoto serves one sample picture from the binary. Public, like a
 // store's own media, because a storefront shows it to anybody.
