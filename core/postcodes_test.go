@@ -38,9 +38,9 @@ func TestPostcodeDirectoryFillsCityAndState(t *testing.T) {
 	}
 	for _, c := range []struct{ pin, city, state, code string }{
 		{"110001", "New Delhi", "Delhi", "DL"},
+		// A PIN with a General Post Office takes the GPO's town (D259).
 		{"400001", "Mumbai", "Maharashtra", "MH"},
-		// Most of the post offices under one PIN agree on the district.
-		{"560001", "Bengaluru Urban", "Karnataka", "KA"},
+		{"560001", "Bangalore", "Karnataka", "KA"},
 		{"396210", "Daman", "Dadra and Nagar Haveli and Daman and Diu", "DH"},
 	} {
 		got, ok := directory.Lookup("IN", c.pin)
@@ -152,6 +152,12 @@ func TestTheBuiltInDirectoryCoversIndia(t *testing.T) {
 			t.Errorf("Lookup(%s) = %+v %v, want %s (%s)", c.pin, got, ok, c.state, c.code)
 		}
 	}
+	// The town, not the district (D259).
+	for pin, city := range map[string]string{"751001": "Bhubaneswar", "751009": "Bhubaneswar", "560034": "Bengaluru", "752055": "Khordha", "600040": "Chennai"} {
+		if got, _ := d.Lookup("IN", pin); got.City != city {
+			t.Errorf("Lookup(%s).City = %q, want %q", pin, got.City, city)
+		}
+	}
 	unknown := map[string]int{}
 	d.each(func(p Postcode) {
 		if p.StateCode == "" {
@@ -213,6 +219,46 @@ func TestDistrictNamesAreWrittenAsAnAddressPrintsThem(t *testing.T) {
 	} {
 		if got := titleWords(in); got != want {
 			t.Errorf("titleWords(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The town, not the district (D259): a PIN with a General Post Office takes
+// its town, so does a PIN in the GPO's district sharing its first four digits,
+// a town outside those keeps its district, and a few district names that no
+// address uses are put right.
+func TestAPINTakesItsTownFromItsGPO(t *testing.T) {
+	const fixture = `circlename,regionname,divisionname,officename,pincode,officetype,delivery,district,statename,latitude,longitude
+Odisha Circle,Bhubaneswar HQ,Bhubaneswar Division,Bhubaneswar G.P.O.,751001,HO,Delivery,KHORDHA,ODISHA,20.2700,85.8400
+Odisha Circle,Bhubaneswar HQ,Bhubaneswar Division,Saheed Nagar S.O,751007,PO,Delivery,KHORDHA,ODISHA,20.2900,85.8450
+Odisha Circle,Bhubaneswar HQ,Bhubaneswar Division,Ashok Nagar S.O (Khorda),751009,PO,Delivery,KHORDHA,ODISHA,20.1800,85.6200
+Odisha Circle,Bhubaneswar HQ,Bhubaneswar Division,Khurda H.O,752055,HO,Delivery,KHORDHA,ODISHA,20.1800,85.6200
+Odisha Circle,Bhubaneswar HQ,Cuttack Division,Cuttack Chandni Chowk S.O,753001,PO,Delivery,CUTTACK,ODISHA,20.2800,85.8500
+Karnataka Circle,Bangalore HQ,Bengaluru East Division,Bengaluru G.P.O.,560001,HO,Delivery,BENGALURU URBAN,KARNATAKA,12.9700,77.5900
+Karnataka Circle,Bangalore HQ,Bengaluru South Division,Electronic City S.O,560100,PO,Delivery,BENGALURU URBAN,KARNATAKA,12.8400,77.6800
+Delhi Circle,Delhi Region,New Delhi South Division,Hauz Khas S.O,110016,PO,Delivery,SOUTH,DELHI,NA,NA
+Delhi Circle,Delhi Region,New Delhi Central Division,Baroda House S.O,110001,PO,Delivery,NEW DELHI,DELHI,NA,NA
+`
+	path := filepath.Join(t.TempDir(), "pincodes.csv")
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := LoadPostcodes(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for pin, want := range map[string]string{
+		"751001": "Bhubaneswar", // its own GPO
+		"751007": "Bhubaneswar", // 7510xx in Khordha district, as the GPO
+		"751009": "Bhubaneswar", // its coordinates are Khurda's: they do not count
+		"752055": "Khordha",     // Khurda town: another prefix, its district
+		"753001": "Cuttack",     // another district
+		"560100": "Bengaluru",   // 5601xx, and "Bengaluru Urban" is no town
+		"110016": "Delhi",       // "South" is no town
+		"110001": "New Delhi",
+	} {
+		if got, ok := d.Lookup("IN", pin); !ok || got.City != want {
+			t.Errorf("Lookup(%s).City = %q (%v), want %q", pin, got.City, ok, want)
 		}
 	}
 }
