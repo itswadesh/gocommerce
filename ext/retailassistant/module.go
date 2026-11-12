@@ -489,6 +489,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	write("POST "+adminBase+"/documents/{id}/reject", m.handleReject)
 	write("POST "+adminBase+"/documents/{id}/retry", m.handleRetry)
 	write("POST "+adminBase+"/documents/{id}/remove-file", m.handleRemoveFile)
+	write("DELETE "+adminBase+"/documents/{id}", m.handleDeleteDocument)
 	write("POST "+adminBase+"/documents/{id}/read", m.handleRead)
 	read("GET "+adminBase+"/export/{kind}", m.handleExport)
 

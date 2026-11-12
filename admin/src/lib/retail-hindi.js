@@ -62,6 +62,10 @@ export const HINDI = {
     "Yes, delete the file": "हाँ, फ़ाइल हटाएँ",
     "Keep it": "रहने दें",
     "Delete file": "फ़ाइल हटाएँ",
+    Delete: "हटाएँ",
+    "Delete {name}": "{name} हटाएँ",
+    "Yes, delete it": "हाँ, हटा दें",
+    "Deleted. No supplier's account changed.": "हटा दिया गया। किसी सप्लायर का खाता नहीं बदला।",
     "Read by AI.": "AI ने पढ़ा है।",
     "Read by AI, {n}% sure.": "AI ने पढ़ा है, {n}% भरोसा।",
     "It can misread a figure and still look right, so compare each one with the file.":

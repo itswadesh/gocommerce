@@ -212,6 +212,40 @@ func TestAFileIsDeletedOnRequestOnlyAfterReview(t *testing.T) {
 	}
 }
 
+func TestOnlyADocumentOutsideTheBooksCanBeDeleted(t *testing.T) {
+	h := setup(t)
+	h.link("", senderA)
+	invoice, _ := h.post("DEL-2", 1180)
+	var posted int64
+	if err := h.app.DB().QueryRowContext(h.ctxOf(""),
+		`SELECT document_id FROM retailassistant_purchase_invoices WHERE id = $1`, invoice).Scan(&posted); err != nil {
+		t.Fatal(err)
+	}
+	h.admin(http.MethodDelete, path(fmt.Sprintf("/documents/%d", posted), ""), nil, nil, http.StatusConflict)
+
+	d := h.arrive("DEL-3")
+	h.admin(http.MethodDelete, path(fmt.Sprintf("/documents/%d", d.ID), ""), nil, nil, http.StatusOK)
+	h.admin(http.MethodGet, path(fmt.Sprintf("/documents/%d", d.ID), ""), nil, nil, http.StatusNotFound)
+	h.admin(http.MethodDelete, path(fmt.Sprintf("/documents/%d", d.ID), ""), nil, nil, http.StatusNotFound)
+
+	// Meta redelivers at least once; the kept message row stops it coming back.
+	h.deliver(h.file("msg-DEL-3", senderA, "media-DEL-3", "DEL-3.csv", csvInvoice("DEL-3", 1180)))
+	h.work("")
+	for _, left := range h.documents("") {
+		if left.ID == d.ID || left.Filename == "DEL-3.csv" {
+			t.Fatalf("the deleted document came back: %+v", left)
+		}
+	}
+	var audits int
+	if err := h.app.DB().QueryRowContext(h.ctxOf(""),
+		`SELECT count(*) FROM retailassistant_audit WHERE event = 'document.deleted' AND entity_id = $1`, d.ID).Scan(&audits); err != nil {
+		t.Fatal(err)
+	}
+	if audits != 1 {
+		t.Fatalf("%d audit rows", audits)
+	}
+}
+
 func TestExportsAgreeWithTheBooksAndCannotRunAsFormulas(t *testing.T) {
 	h := setup(t)
 	h.link("", senderA)

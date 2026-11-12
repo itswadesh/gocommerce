@@ -197,6 +197,14 @@ change. Empty keeps files for good. Check with your accountant how long you have
 keep bills before setting this. A reviewed document's own **Delete file** button
 does the same for one file, at any time.
 
+**Deleting a document.** A document that never reached the books goes altogether
+from the bin button on its row: one waiting for review, rejected or failed, such as
+a test or a file sent by mistake. A posted one cannot be deleted, since a supplier's
+balance has to stay explainable; reverse its entry under **Orders › Suppliers**
+instead. One a wholesale quote was worked from stays too. Each deletion is kept in
+the module's audit log, and WhatsApp resending the same message does not bring the
+document back.
+
 **Exports.** **Orders › Suppliers** downloads balances, bills, payments and credit
 notes as CSV for an accountant.
 
