@@ -333,7 +333,7 @@ func TestTheStarterBringsAQuietReadableLook(t *testing.T) {
 	for k, want := range map[string]any{"background": "#faf7f2", "text": "#1c1917", "accent": "#1c1917", "accent_text": "#faf7f2",
 		"muted": "#efe9df", "sale": "#177832", "radius": "small", "type_scale": "standard", "heading_weight": "semibold",
 		"eyebrow_case": "sentence", "density": "spacious", "product_image_ratio": "portrait",
-		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "full", "card_rating": true, "card_discount": true,
 		"card_wishlist": true, "card_add_to_cart": false, "card_second_image": true, "list_columns_mobile": "two",
 		"list_columns_desktop": "five", "list_subcategories": true, "list_quick_filters": true, "list_filters_desktop": "sidebar",
 		"list_mobile_bar": true, "pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,

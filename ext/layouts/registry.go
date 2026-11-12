@@ -712,7 +712,7 @@ var ThemeSettings = []SettingGroup{
 			Options: []Option{{"none", "None"}, {"product_badge", "Product badge"}, {"first_tag", "First tag"}, {"first_highlight", "First highlight"}}},
 		{Key: "card_vendor", Label: "Brand line", Kind: KindBool},
 		{Key: "card_title_lines", Label: "Title", Kind: KindSelect,
-			Options: []Option{{"one", "One line"}, {"two", "Two lines"}}},
+			Options: []Option{{"full", "Whole name"}, {"one", "One line"}, {"two", "Two lines"}}},
 		{Key: "card_rating", Label: "Star rating", Kind: KindBool, Help: "Only when the product has reviews."},
 		{Key: "card_discount", Label: "% off", Kind: KindBool, Help: "Only with a compare-at price."},
 		{Key: "card_wishlist", Label: "Wishlist button", Kind: KindBool},
