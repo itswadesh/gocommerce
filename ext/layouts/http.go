@@ -554,19 +554,19 @@ func int64Array(ids []int64) string {
 // Starter is the page a shop starts from before its first save. The
 // templates and the header and footer are the storefront's own built-in
 // pages, so publishing them unchanged changes nothing a shopper sees (D131).
-// The home page is the "Bold and bright" look (D140), under the header's own
-// announcement strip rather than a second one: a split hero on a colour
-// block, four tiles, the newest products, a picture beside words and the
-// benefits strip, with theme settings for the colours and the rounding, and
+// The home page is the "Ivory and ink" look (D256, replacing D140's "Bold and
+// bright"), under the header's own announcement strip rather than a second
+// one: a tall still life with the words on it, four captioned pictures, the
+// newest products beside a tall picture, a picture beside words and the
+// benefits band, with theme settings for the colours and the rounding, and
 // explicit values for the type, spacing, cards, lists and product page (D155).
 // Every word is true of any shop and every link goes to a page every
 // storefront has; the benefits are promises the shop must make its own.
-// Its pictures are the engine's own (starter/: Unsplash photographs for the
-// hero and the lookbook, Google Gemini pictures for the tiles; credits in
-// starter/README.md), served at a path on the engine, which every storefront
-// and the editor's preview already resolve against the engine as they do the
-// Files library's. Until a shop publishes its home page, this is what its
-// storefront shows (shown).
+// Its pictures are the engine's own (starter/, all made with Google Gemini,
+// none showing a person; credits in starter/README.md), served at a path on
+// the engine, which every storefront and the editor's preview already resolve
+// against the engine as they do the Files library's. Until a shop publishes
+// its home page, this is what its storefront shows (shown).
 func Starter(page string) Document {
 	switch page {
 	case "header":
@@ -592,18 +592,18 @@ func Starter(page string) Document {
 		}}
 	}
 	return Document{SchemaVersion: schemaVersion, Theme: Themes[0].ID, ThemeSettings: map[string]any{
-		// Yellow with near-black words (D158), 13:1 on the button. Yellow reads
-		// at 1.45:1 on white, so it is a fill only: a storefront must not draw
-		// it as text.
-		"accent": "#ffd232", "accent_text": "#111111", "muted": "#fef3c7",
+		// Ivory and ink (D256): a warm ivory page, near-black words and
+		// near-black buttons with ivory words (16.4:1 both ways), and a stone
+		// band behind strips and quiet blocks (14.5:1 under the words).
+		"background": "#faf7f2", "text": "#1c1917", "accent": "#1c1917", "accent_text": "#faf7f2", "muted": "#efe9df",
 		// No heading font: a web font repainted the hero's headline seconds
 		// after the page drew on a phone, which Lighthouse counts against it;
-		// the storefront's own font at a heavy weight carries the look.
-		"radius": "large",
-		// The Bewakoof-style green, #1a8f3a, reads at 4.2:1 on the
-		// storefront's white; this is the nearest of its hue at 4.5:1.
-		"sale":       "#198837",
-		"type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
+		// the storefront's own font carries the look.
+		"radius": "small",
+		// D155's green, #198837, reads at 4.3:1 on the ivory; this is a
+		// darker step of its hue, 5.2:1 on the ivory and 4.6:1 on the stone.
+		"sale":       "#177832",
+		"type_scale": "standard", "heading_weight": "semibold", "eyebrow_case": "sentence", "density": "spacious", "product_image_ratio": "portrait",
 		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
 		"card_discount": true, "card_wishlist": true, "card_add_to_cart": false, "card_second_image": true,
 		"list_columns_mobile": "two", "list_columns_desktop": "five", "list_subcategories": true,
@@ -611,25 +611,31 @@ func Starter(page string) Document {
 		"pdp_sticky_buy": true, "pdp_gallery": "carousel", "pdp_highlights_grid": true,
 		"pdp_delivery_check": true, "pdp_low_stock_at": 5,
 	}, Sections: []Section{
-		{ID: "hero", Type: "hero", Enabled: true, Settings: map[string]any{
-			"eyebrow": "New in", "heading": "Find your next favourite thing",
-			"body":        "Browse the range and pick what you love.",
-			"button_text": "Shop now", "button_link": "/products", "align": "left",
-			"image": starterPicturePrefix + "hero.webp", "mobile_image": starterPicturePrefix + "hero-phone.webp",
-			"image_alt": "A smiling woman in a turquoise kurta, her hand painted with henna, holding up a sheer dupatta"}},
+		// Tall rather than the whole screen: on a phone a screen-high frame
+		// would crop the still life's sides away.
+		{ID: "hero", Type: "spotlight", Enabled: true, Settings: map[string]any{
+			"heading": "Find your next favourite thing", "body": "Browse the range and pick what you love.",
+			"button_text": "Shop now", "button_link": "/products",
+			"secondary_button_text": "See collections", "secondary_button_link": "/collections",
+			"frame": "full", "position": "bottom-left", "height": "tall", "shade": "medium",
+			"image": starterPicturePrefix + "ivory-hero.webp", "mobile_image": starterPicturePrefix + "ivory-hero-phone.webp",
+			"image_alt": "A folded linen shirt, a tan leather bag, a clay vase of dried pampas and a brass tray with a bangle and a perfume bottle on a travertine table"}},
 		{ID: "tiles", Type: "multi-column", Enabled: true, Settings: map[string]any{
-			"heading": "Start shopping", "items": []any{
-				map[string]any{"image": starterPicturePrefix + "tile-shop-all.webp", "heading": "Shop all", "link_text": "See everything", "link": "/products"},
-				map[string]any{"image": starterPicturePrefix + "tile-collections.webp", "heading": "Collections", "link_text": "See collections", "link": "/collections"},
-				map[string]any{"image": starterPicturePrefix + "tile-categories.webp", "heading": "Categories", "link_text": "See categories", "link": "/categories"},
-				map[string]any{"image": starterPicturePrefix + "tile-track.webp", "heading": "Track an order", "link_text": "Find your order", "link": "/order-tracking"},
+			"style": "captioned", "heading": "Start shopping", "items": []any{
+				map[string]any{"image": starterPicturePrefix + "ivory-tile-shop-all.webp", "heading": "Shop all", "link_text": "See everything", "link": "/products"},
+				map[string]any{"image": starterPicturePrefix + "ivory-tile-collections.webp", "heading": "Collections", "link_text": "See collections", "link": "/collections"},
+				map[string]any{"image": starterPicturePrefix + "ivory-tile-categories.webp", "heading": "Categories", "link_text": "See categories", "link": "/categories"},
+				map[string]any{"image": starterPicturePrefix + "ivory-tile-track.webp", "heading": "Track an order", "link_text": "Find your order", "link": "/order-tracking"},
 			}}},
 		{ID: "featured", Type: "product-grid", Enabled: true, Settings: map[string]any{
-			"heading": "New in", "source": "newest", "limit": 8, "columns": 4, "view_all_link": "/products"}},
+			"style": "showcase", "heading": "New in", "subtitle": "The latest additions to the shop.",
+			"image":     starterPicturePrefix + "ivory-showcase.webp",
+			"image_alt": "A handwoven ivory throw with an olive border over a stone plinth, beside a brass vase and folded linen",
+			"source":    "newest", "limit": 6, "view_all_link": "/products"}},
 		{ID: "lookbook", Type: "image-with-text", Enabled: true, Settings: map[string]any{
 			"eyebrow": "Made for every day", "heading": "Good things, picked for you", "image_side": "right",
-			"image":       starterPicturePrefix + "lookbook.webp",
-			"image_alt":   "A smiling woman in an embroidered red kurta looking into a white handbag",
+			"image":       starterPicturePrefix + "ivory-lookbook.webp",
+			"image_alt":   "A sunlit shop corner: folded linen, ceramic bowls and a brass tray of jewellery on an oak table by an arched window",
 			"body":        "Have a look around the shop and find what suits you.",
 			"button_text": "Explore the shop", "button_link": "/products"}},
 		{ID: "assurances", Type: "benefits", Enabled: true, Settings: map[string]any{"items": []any{
