@@ -171,7 +171,12 @@
             <header class="page-header">
                 <nav class="breadcrumbs">
                     <a href="{base}/dash/cms">Pages</a>
-                    <div>{record?.title || "…"}</div>
+                    <!-- The page's number beside its title, where it is read: it used to have
+                         a footer bar of its own at the bottom of the form, holding nothing else. -->
+                    <div>
+                        {record?.title || "…"}
+                        {#if record}<span class="txt-hint">#{record.id}</span>{/if}
+                    </div>
                 </nav>
 
                 <div class="page-header-primary-btns">
@@ -371,10 +376,6 @@
                     {/if}
                 </div>
 
-                <footer class="page-footer">
-                    <span class="txt txt-hint">Page #{record.id}</span>
-                    <div class="flex-fill"></div>
-                </footer>
             {/if}
         </div>
     </div>
