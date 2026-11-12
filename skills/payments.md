@@ -52,7 +52,7 @@ one store answers 400 `store_required` and the gateway retries.
 
 | `kind` | Meaning | Checkout's response |
 |---|---|---|
-| `none` | Nothing further — cash on delivery | The order is **confirmed** immediately and its stock leaves the shelf; `payment_status` stays `pending` |
+| `none` | Nothing further — cash on delivery, or Order on WhatsApp, whose `client_data.whatsapp_url` opens the shop's chat with the order written (D255) | The order is **confirmed** immediately and its stock leaves the shelf; `payment_status` stays `pending` |
 | `client_action` | Finish in the page using `client_data` (Stripe's `client_secret`) | Order stays `pending` |
 | `redirect` | Send the shopper away, back to `PayOptions.ReturnURL` | Order stays `pending` |
 

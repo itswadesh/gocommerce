@@ -209,6 +209,8 @@ func TestSettingsNamesProvidersAndTheirModules(t *testing.T) {
 		// refundableProvider implements no Named, so its name is its code —
 		// and its module is the one that registered it, not core.
 		{Code: "refundable", Name: "refundable", Module: "refundable", Configured: true},
+		// Built in too, and off until an owner switches it on (D255).
+		{Code: CodeWhatsApp, Name: "Order on WhatsApp", Module: "core", Configured: false, Plugin: WhatsAppPluginKey},
 	}
 	if !slices.Equal(got.Data.PaymentMethods, wantPay) {
 		t.Errorf("payment_methods = %+v, want %+v", got.Data.PaymentMethods, wantPay)

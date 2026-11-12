@@ -4825,6 +4825,54 @@
         }
       }
     },
+    "/api/admin/order-link": {
+      "get": {
+        "tags": [
+          "admin:settings"
+        ],
+        "summary": "The store's quick-order link and a QR code of it",
+        "description": "Where a shopper picks items and orders in one page — the storefront's /order, at the store's primary verified domain, else its <slug>.<base domain> — with a QR code of that link drawn as SVG, for a shop to print on its counter or post in its WhatsApp status (D255). Both are empty while the store has no address shoppers can reach. Needs plugins.read, which the Payments screen it appears on already needs.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link and its QR code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "description": "The quick-order page, or empty.",
+                          "example": "https://rasoi.example.in/order"
+                        },
+                        "qr_svg": {
+                          "type": "string",
+                          "description": "An SVG of the link's QR code, error correction level M, with its quiet zone; empty with the link."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
     "/api/admin/orders": {
       "get": {
         "tags": [

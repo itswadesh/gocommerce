@@ -60,6 +60,16 @@ var builtinPlugins = []PluginDef{
 				Help: "Added to an order paid in cash on delivery, in the store's currency: 60 is ₹60. Empty charges nothing."},
 		},
 	},
+	// Order on WhatsApp's switch (D255). Off until an owner turns it on:
+	// settling payment in a chat is a decision about how the shop runs.
+	{
+		Key: WhatsAppPluginKey, Home: "/dash/settings/payments", Title: "Order on WhatsApp", Icon: "ri-whatsapp-line", Category: "payments",
+		Description: "Shoppers place the order, then send it to you on WhatsApp with everything written out, and you agree there how they pay. The order is in your panel straight away.",
+		Fields: []PluginField{
+			{Key: "phone", Label: "WhatsApp number", Kind: "text",
+				Help: "Where orders are sent, with the country code: +91 98765 43210. Empty uses the phone number in Store details."},
+		},
+	},
 	{
 		Key: "guest-checkout", Home: homeStoreSettings, Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",

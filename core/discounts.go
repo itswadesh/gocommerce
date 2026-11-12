@@ -155,8 +155,8 @@ type Discount struct {
 	// with one tap (D133). Off unless the shop says so: an unlisted code stays
 	// known only to whoever was given it.
 	Listed bool `json:"listed"`
-	// PrepaidOnly refuses the code on an order paid in cash on delivery: the
-	// discount is the reason to pay up front.
+	// PrepaidOnly refuses the code on an order paid in cash on delivery or
+	// settled on WhatsApp: the discount is the reason to pay up front.
 	PrepaidOnly bool `json:"prepaid_only"`
 	// AutoApply puts the code on an order whose shopper entered none, when
 	// it is the one that takes the most off their basket (D179). A code the
@@ -1398,7 +1398,7 @@ func (s *Discounts) eligible(ctx context.Context, q rowQuerier, d *Discount, req
 	}
 	// Measured against the whole basket even for a scoped rule: the minimum is
 	// the price of entry to a promotion, not the thing being discounted.
-	if d.PrepaidOnly && req.Method == CodeCOD {
+	if d.PrepaidOnly && (req.Method == CodeCOD || req.Method == CodeWhatsApp) {
 		return nil, 0, Validationf("that discount is for prepaid orders; pay online to use it")
 	}
 	if d.MinSubtotalMinor != nil && totalOf(req.Lines) < *d.MinSubtotalMinor {

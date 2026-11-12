@@ -1036,6 +1036,23 @@ on the screen to be switched back on. The switch is the built-in plugin
 any plugin change. With no gateway set up, switching it off leaves nothing a
 shopper can pay with: that is allowed, and the screen says so above the cards.
 
+## Order on WhatsApp, and the order link
+
+**Settings → Payment methods** also shows **Order on WhatsApp**, built in and
+off until it is activated (D255). Its one setting is the WhatsApp number orders
+go to; empty, it uses the phone in Store details. Switched on with no number in
+either place its card says **Needs settings** and no shopper is offered it, since
+there would be nobody to send to. While it is on, a card below the methods shows
+the store's order link (`<storefront>/order`) with a QR code the engine draws
+(`GET /api/admin/order-link`), a Copy link button that says Copied, and Download
+QR code, which saves a 1,024-pixel PNG for a WhatsApp status or the counter. A
+store with no address shoppers can reach shows no card.
+
+On an order, **Message on WhatsApp** sits under the customer's phone and opens a
+chat with them, the order number typed in. The phone is read as core reads the
+shop's (`admin/src/lib/whatsapp.js`): a bare ten-digit or 0-prefixed number on
+an Indian address gets +91.
+
 ## Authentication
 
 Two kinds of credential exist, because scripts and people want different
