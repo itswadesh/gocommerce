@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,8 +29,13 @@ import (
 // "off". `go run ./scripts/pincodes` rebuilds the built-in one.
 //
 // Every number a guess would be is left out. The directory names a district,
-// not a town, so the city is the district, which is what the post office
-// prints and what a courier sorts by; the shopper can still change it.
+// not a town, so the city was the district: "Khordha" for every PIN in
+// Bhubaneswar. The owner asked for the town (D259), so a PIN that has a
+// General Post Office takes the GPO's town ("Bhubaneswar G.P.O."), so does a
+// PIN in the GPO's district that shares its first four digits (a city's own
+// PINs: 7510xx is Bhubaneswar, 752xxx the villages around it), and a few
+// district names that are not what an address says are put right (townOf).
+// Everywhere else the city is still the district; the shopper can change it.
 
 // Postcode is what a postcode tells a checkout.
 type Postcode struct {
@@ -90,6 +96,9 @@ func readPostcodes(in io.Reader) (*Postcodes, error) {
 	}
 	pinCol, okPin := col["pincode"]
 	districtCol, okDistrict := col["district"]
+	if !okDistrict {
+		districtCol, okDistrict = col["city"]
+	}
 	stateCol, okState := col["statename"]
 	if !okState {
 		stateCol, okState = col["state"]
@@ -98,10 +107,17 @@ func readPostcodes(in io.Reader) (*Postcodes, error) {
 		return nil, errors.New("the header needs pincode, district and statename columns")
 	}
 	need := max(pinCol, districtCol, stateCol)
+	// The government's file names each post office and its type; the compact
+	// one carries the town already, and has neither.
+	officeCol, okOffice := col["officename"]
+	typeCol, okType := col["officetype"]
+	full := okOffice && okType
 
 	type place struct{ district, state string }
 	votes := map[string]map[place]int{}
 	order := map[string][]place{}
+	gpoTown := map[string]string{} // by PIN
+	gpoArea := map[string]string{} // by gpoKey
 	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
@@ -121,6 +137,16 @@ func readPostcodes(in io.Reader) (*Postcodes, error) {
 		pl := place{strings.TrimSpace(rec[districtCol]), strings.TrimSpace(rec[stateCol])}
 		if !validPIN(pin) || unstated(pl.district) || unstated(pl.state) {
 			continue
+		}
+		if full && len(rec) > max(officeCol, typeCol) {
+			if town, ok := gpoName(rec[officeCol], rec[typeCol]); ok {
+				if _, seen := gpoTown[pin]; !seen {
+					gpoTown[pin] = town
+				}
+				if _, seen := gpoArea[gpoKey(pl.district, pin)]; !seen {
+					gpoArea[gpoKey(pl.district, pin)] = town
+				}
+			}
 		}
 		if votes[pin] == nil {
 			votes[pin] = map[place]int{}
@@ -142,9 +168,61 @@ func readPostcodes(in io.Reader) (*Postcodes, error) {
 				best = pl
 			}
 		}
-		out.in[pin] = indianPostcode(pin, best.district, best.state)
+		city := best.district
+		if full {
+			city = townOf(pin, best.district, best.state, gpoTown, gpoArea)
+		}
+		out.in[pin] = indianPostcode(pin, city, best.state)
 	}
 	return out, nil
+}
+
+// gpoKey is a district and the first four digits of a PIN in it: the PINs a
+// city's General Post Office serves share them.
+func gpoKey(district, pin string) string {
+	return strings.ToUpper(strings.TrimSpace(district)) + "|" + pin[:4]
+}
+
+// gpoSuffix ends a General Post Office's name: "Bhubaneswar G.P.O.",
+// "Mumbai GPO", "KOLKATA GPO".
+var gpoSuffix = regexp.MustCompile(`(?i)\s*\bG\.?\s?P\.?\s?O\.?\s*$`)
+
+// gpoName is the town a head office names when it is a GPO.
+func gpoName(office, kind string) (string, bool) {
+	if strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(kind)), ".", "") != "HO" || !gpoSuffix.MatchString(office) {
+		return "", false
+	}
+	town := strings.TrimSpace(gpoSuffix.ReplaceAllString(office, ""))
+	return town, town != ""
+}
+
+// districtTowns are districts whose name is not what an address says.
+var districtTowns = map[string]string{
+	"BENGALURU URBAN": "Bengaluru",
+	"MUMBAI SUBURBAN": "Mumbai",
+	"KAMRUP METRO":    "Guwahati",
+	"AHMADABAD":       "Ahmedabad",
+}
+
+// townOf is the city a PIN's address carries (D259): its own GPO's town, the
+// town of the GPO whose PINs it shares (gpoKey), a better-known name for its
+// district, or the district.
+func townOf(pin, district, state string, gpoTown, gpoArea map[string]string) string {
+	if town, ok := gpoTown[pin]; ok {
+		return town
+	}
+	if town, ok := gpoArea[gpoKey(district, pin)]; ok {
+		return town
+	}
+	if town, ok := districtTowns[strings.ToUpper(district)]; ok {
+		return town
+	}
+	// Delhi's districts ("South", "North West") are not towns; the city is
+	// Delhi, or New Delhi where the district is.
+	if strings.EqualFold(strings.TrimSpace(state), "DELHI") && !strings.EqualFold(district, "NEW DELHI") {
+		return "Delhi"
+	}
+	return district
 }
 
 func indianPostcode(pin, district, state string) Postcode {
@@ -235,7 +313,7 @@ func (p *Postcodes) WriteCompact(w io.Writer) error {
 		return err
 	}
 	c := csv.NewWriter(z)
-	if err := c.Write([]string{"pincode", "district", "statename"}); err != nil {
+	if err := c.Write([]string{"pincode", "city", "statename"}); err != nil {
 		return err
 	}
 	p.each(func(e Postcode) {
