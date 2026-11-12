@@ -218,6 +218,13 @@ type PublicTheme struct {
 	Revision int            `json:"revision,omitempty"`
 	Preview  bool           `json:"preview,omitempty"`
 	Settings map[string]any `json:"settings"`
+	// Pages are the pages GET /x/layouts/{page} answers for this store:
+	// the published ones, and home, which shows its starter until then.
+	// A storefront asks for those alone; it used to ask for the product,
+	// collection, header and footer pages on every page it drew and log a
+	// 404 for each one the store had not arranged. Absent when the list
+	// could not be read, so a storefront falls back to asking.
+	Pages []string `json:"pages,omitempty"`
 }
 
 // handleTheme answers the theme settings alone, so a page other than the
@@ -254,6 +261,11 @@ func (m *Module) handleTheme(w http.ResponseWriter, r *http.Request) {
 	out.Settings = doc.ThemeSettings
 	if out.Settings == nil {
 		out.Settings = map[string]any{}
+	}
+	if pages, err := m.shownPages(ctx); err == nil {
+		out.Pages = pages
+	} else {
+		m.app.Log().Warn("layouts: the published pages", "error", err) // the storefront asks for each page instead
 	}
 	gocommerce.Respond(w, http.StatusOK, out)
 }
