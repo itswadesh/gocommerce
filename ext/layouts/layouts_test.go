@@ -302,9 +302,10 @@ func TestTheRegistryDescribesEverySection(t *testing.T) {
 // The starting home page brings its look: theme settings that survive the
 // registry's checks unchanged, and every pair the theme editor warns about
 // readable at 4.5:1. Those four pairs are every text-on-colour pair the
-// starter's sections draw (the hero, tiles, product grid, picture beside
-// words and the benefits band).
-func TestTheStarterBringsABoldReadableLook(t *testing.T) {
+// starter's sections draw (the buttons, the captions, the product cards,
+// the picture beside words and the benefits band); the words on pictures
+// are white over the storefront's own shade.
+func TestTheStarterBringsAQuietReadableLook(t *testing.T) {
 	start := Starter("home")
 	got, err := Validate("home", start)
 	if err != nil {
@@ -323,14 +324,15 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 		}
 		return own[key]
 	}
-	for _, pair := range [][2]string{{"text", "background"}, {"accent_text", "accent"}, {"text", "muted"}, {"sale", "background"}} {
+	// The sale colour on the stone too: a product grid can sit on a quiet band.
+	for _, pair := range [][2]string{{"text", "background"}, {"accent_text", "accent"}, {"text", "muted"}, {"sale", "background"}, {"sale", "muted"}} {
 		if r := contrast(colour(pair[0]), colour(pair[1])); r < 4.5 {
 			t.Errorf("%s on %s is %.2f:1, want at least 4.5", pair[0], pair[1], r)
 		}
 	}
-	// The yellow is not checked against the page: it is a fill, never text.
-	for k, want := range map[string]any{"accent": "#ffd232", "accent_text": "#111111", "muted": "#fef3c7",
-		"sale": "#198837", "radius": "large", "type_scale": "standard", "heading_weight": "extrabold", "density": "compact",
+	for k, want := range map[string]any{"background": "#faf7f2", "text": "#1c1917", "accent": "#1c1917", "accent_text": "#faf7f2",
+		"muted": "#efe9df", "sale": "#177832", "radius": "small", "type_scale": "standard", "heading_weight": "semibold",
+		"eyebrow_case": "sentence", "density": "spacious", "product_image_ratio": "portrait",
 		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true, "card_discount": true,
 		"card_wishlist": true, "card_add_to_cart": false, "card_second_image": true, "list_columns_mobile": "two",
 		"list_columns_desktop": "five", "list_subcategories": true, "list_quick_filters": true, "list_filters_desktop": "sidebar",
@@ -346,8 +348,9 @@ func TestTheStarterBringsABoldReadableLook(t *testing.T) {
 }
 
 // The starting home page opens with its pictures: the hero (and its phone
-// crop), the four tiles and the lookbook, each one the engine itself serves,
-// so they load on every store's storefront and in the editor's preview.
+// crop), the four tiles, the picture beside the newest products and the
+// lookbook, each one the engine itself serves, so they load on every store's
+// storefront and in the editor's preview.
 func TestTheStarterPicturesAreServedByTheEngine(t *testing.T) {
 	app := layoutsApp(t)
 	var pics []string
@@ -379,13 +382,13 @@ func TestTheStarterPicturesAreServedByTheEngine(t *testing.T) {
 	for _, s := range start.Sections {
 		walk(s.Settings, "")
 	}
-	if len(pics) != 7 {
-		t.Fatalf("starter pictures = %v, want the hero, its phone crop, four tiles and the lookbook", pics)
+	if len(pics) != 8 {
+		t.Fatalf("starter pictures = %v, want the hero, its phone crop, four tiles, the showcase and the lookbook", pics)
 	}
-	// The photographs say what they show; the tiles' pictures are decoration
-	// beside the tile's name.
+	// The large pictures say what they show; the tiles' pictures are
+	// decoration beside the tile's name.
 	for _, sec := range start.Sections {
-		if sec.ID == "hero" || sec.ID == "lookbook" {
+		if sec.ID == "hero" || sec.ID == "featured" || sec.ID == "lookbook" {
 			if alt, _ := sec.Settings["image_alt"].(string); len(alt) < 20 {
 				t.Errorf("%s image_alt = %q, want a description of the photograph", sec.ID, alt)
 			}

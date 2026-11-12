@@ -6,7 +6,7 @@
           "layouts"
         ],
         "summary": "A picture of the starting home page",
-        "description": "One of the pictures the starting home page names (D140): the hero, its phone crop and the lookbook (Unsplash photographs) and the four tiles (made with Google Gemini), credited in ext/layouts/starter/README.md, served from the engine's own binary, so every store's storefront and the editor's preview load them. No store need be named. Public, like a store's own media, and cached as immutable: a changed picture takes a new file name, and the old one stays.",
+        "description": "One of the pictures the starting home page names (D140, D256): the hero, its phone crop, the four tiles, the picture beside the newest products and the lookbook, all made with Google Gemini and credited in ext/layouts/starter/README.md, together with the pictures of earlier starting pages that saved pages may still name, served from the engine's own binary, so every store's storefront and the editor's preview load them. No store need be named. Public, like a store's own media, and cached as immutable: a changed picture takes a new file name, and the old one stays.",
         "parameters": [
           {
             "name": "file",

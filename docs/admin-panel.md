@@ -927,17 +927,18 @@ storefront shows; until then it shows the starting home page described below
 own until published). Its switch is on
 the Themes screen itself (D132); switched off, the screen says so and the
 storefront goes back to the built-in page. Before
-the first save the screen shows the starting home page (D140, "Bold and
-bright"): a split hero on a colour block, four tiles leading to the shop, its
-collections, its categories and order tracking, the newest products, a
-picture beside words and the benefits strip, with yellow buttons with
-near-black words (D158), a pale yellow for quiet bands and large rounding set
-as theme settings. Its pictures
-are built into the engine and served at `/x/layouts/starter/1/`: Unsplash
-photographs for the hero and the picture beside words, Google Gemini pictures
-for the tiles (credits and prompts in `ext/layouts/starter/README.md`). A shop
-replaces them from Files like any other picture, and the hero and the picture
-beside words take a description of what the picture shows. Its words are true of any shop; the benefits strip's promises (free
+the first save the screen shows the starting home page (D256, "Ivory and
+ink", which replaced D140's "Bold and bright"): a tall still life with the
+words on it, four captioned pictures leading to the shop, its collections,
+its categories and order tracking, the newest products beside a tall
+picture, a picture beside words and the benefits band, with a warm ivory
+page, near-black words and buttons, a stone colour for quiet bands, small
+rounding, more room between sections and upright product pictures set as
+theme settings. Its pictures are built into the engine and served at
+`/x/layouts/starter/1/`, all made with Google Gemini and none showing a
+person (prompts in `ext/layouts/starter/README.md`). A shop replaces them
+from Files like any other picture, and the large ones take a description of
+what the picture shows. Its words are true of any shop; the benefits strip's promises (free
 shipping, returns) are the shop's to edit to its own policies before
 publishing. A product grid can show a collection, products picked by hand,
 or the newest products, which is what the starting page's grid shows. Seeing the screen is `layouts.read`
