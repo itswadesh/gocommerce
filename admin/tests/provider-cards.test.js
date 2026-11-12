@@ -24,6 +24,14 @@ test("switched off, cash on delivery says Off", () => {
     assert.deepEqual(card.state, { label: "Off", cls: "" });
 });
 
+test("Order on WhatsApp switched on with no number needs settings, and is green once it has one", () => {
+    const wa = { code: "whatsapp", name: "Order on WhatsApp", module: "core", configured: false, plugin: "payments-whatsapp" };
+    const waPlugin = (enabled) => ({ key: "payments-whatsapp", module: "", enabled });
+    assert.deepEqual(providerCard(wa, [waPlugin(true)]).state, { label: "Needs settings", cls: "label-warning" });
+    assert.deepEqual(providerCard(wa, [waPlugin(false)]).state, { label: "Off", cls: "" });
+    assert.deepEqual(providerCard({ ...wa, configured: true }, [waPlugin(true)]).state, { label: "Active", cls: "label-success" });
+});
+
 test("a built-in with no plugin of its own has nothing to switch", () => {
     const manual = { code: "manual", name: "Manual", module: "core", configured: true };
     const card = providerCard(manual, [codPlugin(true)]);

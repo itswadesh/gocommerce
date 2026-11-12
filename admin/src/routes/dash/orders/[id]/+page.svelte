@@ -57,6 +57,7 @@
     import { copyText } from "$lib/clipboard.js";
     import { myStores } from "$lib/stores.svelte.js";
     import { orderTrackingURL } from "$lib/tracking.js";
+    import { whatsappLink } from "$lib/whatsapp.js";
     import OrderLineDesign from "$lib/components/OrderLineDesign.svelte";
 
     const orderId = $derived(route.params.id);
@@ -386,6 +387,11 @@
     // itself, as the one in the order emails does. Not fetched on load: every
     // look at an order would be an audit entry.
     const trackingURL = $derived(orderTrackingURL(myStores.current, order?.number));
+    // Replying to a customer about their order is usually a WhatsApp message in
+    // India, and an order placed on WhatsApp (D255) is a chat already running.
+    const whatsapp = $derived(
+        order?.phone ? whatsappLink(order.phone, order.address?.country, `About your order ${order.number}: `) : "",
+    );
     let trackingKey = $state("");
     let trackingCopied = $state(false);
     let trackingTimer;
@@ -2054,6 +2060,11 @@
                                 {#if order.phone}
                                     <a class="order-contact" href="tel:{order.phone}">
                                         {order.phone}
+                                    </a>
+                                {/if}
+                                {#if whatsapp}
+                                    <a class="order-contact" href={whatsapp} target="_blank" rel="noopener noreferrer">
+                                        <i class="ri-whatsapp-line" aria-hidden="true"></i> Message on WhatsApp
                                     </a>
                                 {/if}
                                 {#if order.address}

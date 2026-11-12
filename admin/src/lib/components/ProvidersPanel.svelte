@@ -21,6 +21,7 @@
     import { toast } from "$lib/toast.svelte.js";
     import NoAccess from "$lib/components/NoAccess.svelte";
     import PluginSettingsDrawer from "$lib/components/PluginSettingsDrawer.svelte";
+    import OrderLinkCard from "$lib/components/OrderLinkCard.svelte";
     import { titled } from "$lib/brand.svelte.js";
 
     /** @type {{ kind: "payments" | "shipping" }} */
@@ -30,7 +31,7 @@
         payments: {
             crumb: "Settings",
             title: "Payment methods",
-            blurb: "How shoppers pay. A gateway that is active and set up is offered at checkout; an idle one is listed here and nowhere else. Cash on delivery is built in.",
+            blurb: "How shoppers pay. A gateway that is active and set up is offered at checkout; an idle one is listed here and nowhere else. Cash on delivery and Order on WhatsApp are built in.",
             listKey: "payment_methods",
             category: "payments",
             builtIn: "Cash on delivery is built in: the order is confirmed and the money is collected at the door.",
@@ -254,6 +255,9 @@
                     <div class="txt-hint p-base">Loading…</div>
                 {/if}
             </div>
+            {#if kind === "payments" && plugins.some((p) => p.key === "payments-whatsapp" && p.enabled)}
+                <OrderLinkCard />
+            {/if}
             {#if idle.length}
                 <details class="card map-fold provider-more" bind:open={idleOpen}>
                     <summary>
