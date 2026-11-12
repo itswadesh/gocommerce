@@ -10,7 +10,9 @@
  * Green is for "on and working" alone. A built-in with a switch (cash on
  * delivery) is green when it is on, since it then takes orders as any active
  * gateway does; one without a switch (manual fulfilment) is simply there, so
- * it reads neutral, and one switched off says so.
+ * it reads neutral, and one switched off says so. Order on WhatsApp switched
+ * on with no number to send to is offered to nobody (D255), so it says what
+ * it is missing, as a gateway with no key does.
  *
  * @param {{ module: string, configured: boolean, plugin?: string }} provider from the settings
  * @param {Array<{ key: string, module: string, enabled: boolean }>} plugins from the plugin list
@@ -21,7 +23,9 @@ export function providerCard(provider, plugins) {
     else if (provider.module !== "core") plugin = plugins.find((x) => x.module === provider.module) ?? null;
 
     let state;
-    if (provider.module === "core" && plugin) state = plugin.enabled ? { label: "Active", cls: "label-success" } : { label: "Off", cls: "" };
+    if (provider.module === "core" && plugin && !plugin.enabled) state = { label: "Off", cls: "" };
+    else if (provider.module === "core" && plugin && !provider.configured) state = { label: "Needs settings", cls: "label-warning" };
+    else if (provider.module === "core" && plugin) state = { label: "Active", cls: "label-success" };
     else if (provider.module === "core") state = { label: "Built in", cls: "" };
     else if (provider.configured) state = { label: "Active", cls: "label-success" };
     else if (plugin?.enabled) state = { label: "Needs settings", cls: "label-warning" };

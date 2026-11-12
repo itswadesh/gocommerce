@@ -79,6 +79,7 @@ export const CARRIER_LOGOS = [
 /** Methods that are not a company: a glyph for what each one does. */
 export const METHOD_GLYPHS = {
     cod: "ri-hand-coin-line", // cash handed over at the door
+    whatsapp: "ri-whatsapp-line", // the order sent to the shop in a chat
     on_account: "ri-file-list-3-line", // billed to a business customer's account
     manual: "ri-box-3-line", // packed and handed to a carrier by the store
 };
