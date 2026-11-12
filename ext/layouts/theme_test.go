@@ -226,3 +226,22 @@ func TestTheNewsletterSectionNeedsTheNewsletter(t *testing.T) {
 	// The draft that holds it still saves: switching a plugin off loses nothing.
 	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/home", map[string]any{"version": 1, "document": doc}, http.StatusOK)
 }
+
+// The theme names the pages a storefront can ask for: home from the start,
+// for its starter, and another page once it is published, not while it is a
+// draft. A storefront asks for those alone instead of logging a 404 for each.
+func TestTheThemeNamesThePublishedPages(t *testing.T) {
+	app := layoutsApp(t)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); !reflect.DeepEqual(got.Pages, []string{"home"}) {
+		t.Fatalf("pages before anything is published = %v, want only home", got.Pages)
+	}
+	adminState(t, app, http.MethodPut, "/api/admin/x/layouts/footer", map[string]any{"version": 0, "document": sections(chromeSection("footer", "footer", map[string]any{"menu": "footer"}))}, http.StatusOK)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); !reflect.DeepEqual(got.Pages, []string{"home"}) {
+		t.Fatalf("pages with a footer draft = %v, want only home", got.Pages)
+	}
+	adminState(t, app, http.MethodPost, "/api/admin/x/layouts/footer/publish", map[string]any{"version": 1}, http.StatusOK)
+	if got, _ := publicTheme(t, app, "/x/layouts/theme", http.StatusOK); !reflect.DeepEqual(got.Pages, []string{"home", "footer"}) {
+		t.Fatalf("pages with the footer published = %v, want home and footer", got.Pages)
+	}
+	publicPage(t, app, "/x/layouts/footer", http.StatusOK)
+}

@@ -589,6 +589,29 @@ func (m *Module) published(ctx context.Context, page string) (*Revision, *Docume
 // owner, 2026-10-28: "show the bold starter to unpublished stores"). The
 // other pages' starters are the storefront's built-in ones (D131), so they
 // stay unanswered and the storefront draws its own.
+// shownPages is every page shown answers for: the published ones, and home.
+func (m *Module) shownPages(ctx context.Context) ([]string, error) {
+	rows, err := m.db.QueryContext(ctx, `SELECT page FROM layout_pages WHERE published_revision IS NOT NULL ORDER BY page`)
+	if err != nil {
+		return nil, gocommerce.Internalf(err, "list the published pages")
+	}
+	defer rows.Close()
+	pages := []string{"home"}
+	for rows.Next() {
+		var page string
+		if err := rows.Scan(&page); err != nil {
+			return nil, gocommerce.Internalf(err, "list the published pages")
+		}
+		if page != "home" {
+			pages = append(pages, page)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, gocommerce.Internalf(err, "list the published pages")
+	}
+	return pages, nil
+}
+
 func (m *Module) shown(ctx context.Context, page string) (*Revision, *Document, error) {
 	rev, doc, err := m.published(ctx, page)
 	if page == "home" && errors.Is(err, gocommerce.ErrNotFound) {

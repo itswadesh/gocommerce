@@ -1213,6 +1213,13 @@
           },
           "settings": {
             "$ref": "#/components/schemas/LayoutThemeSettings"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The pages `GET /x/layouts/{page}` answers: the published ones, and `home`, which shows its starter until then. A storefront asks for these alone. Absent when the list could not be read."
           }
         }
       },
