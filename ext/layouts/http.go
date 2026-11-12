@@ -604,7 +604,7 @@ func Starter(page string) Document {
 		// darker step of its hue, 5.2:1 on the ivory and 4.6:1 on the stone.
 		"sale":       "#177832",
 		"type_scale": "standard", "heading_weight": "semibold", "eyebrow_case": "sentence", "density": "spacious", "product_image_ratio": "portrait",
-		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "one", "card_rating": true,
+		"card_badge": "product_badge", "card_vendor": true, "card_title_lines": "full", "card_rating": true,
 		"card_discount": true, "card_wishlist": true, "card_add_to_cart": false, "card_second_image": true,
 		"list_columns_mobile": "two", "list_columns_desktop": "five", "list_subcategories": true,
 		"list_quick_filters": true, "list_filters_desktop": "sidebar", "list_mobile_bar": true,
