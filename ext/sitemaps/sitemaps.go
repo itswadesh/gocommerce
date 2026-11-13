@@ -1,12 +1,13 @@
-// Package sitemaps publishes the storefront's sitemap: every active product,
-// every active collection, and every published page when the cms module is
-// installed, each with the time it last changed.
+// Package sitemaps publishes the storefront's sitemap: the home page, the
+// all-products page, every category with a live product in it or under it,
+// every active product, every active collection, and every published page
+// when the cms module is installed, each with the time it last changed.
 //
 // The engine does not know where its storefront lives, so the address is a
 // setting; the paths are settings too, because storefronts differ on
 // whether a product lives at /products/{slug} or /p/{slug}. A storefront
 // serves /sitemap.xml by proxying or redirecting to /x/sitemaps/sitemap.xml,
-// which is the index; search engines follow it to the three files.
+// which is the index; search engines follow it to the files.
 //
 // Generated on request from the live catalogue, and cacheable for an hour.
 // The one limit worth knowing: a sitemap file holds 50,000 URLs, and a
@@ -34,10 +35,12 @@ const (
 type Config struct {
 	// StorefrontURL is where the pages live: https://shop.example.
 	StorefrontURL string
-	// ProductPath, CollectionPath and PagePath are the storefront's paths
-	// with {slug} in them. Defaults: /products/{slug}, /collections/{slug},
-	// /pages/{slug}.
-	ProductPath, CollectionPath, PagePath string
+	// ProductPath, CollectionPath, CategoryPath and PagePath are the
+	// storefront's paths with {slug} in them. Defaults: /products/{slug},
+	// /collections/{slug}, /{slug} and /pages/{slug}.
+	ProductPath, CollectionPath, CategoryPath, PagePath string
+	// ListingPath is the page listing every product. Default: /products.
+	ListingPath string
 }
 
 // Module is the four routes.
@@ -61,7 +64,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: pluginKey, Title: "Sitemap", Icon: "ri-compass-3-line", Category: "marketing",
 		Home:        "/dash/sitemap",
-		Description: "A sitemap of every active product and collection — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
+		Description: "A sitemap of the home page, the product listing, every category, product and collection with something live in it — and every published page when the CMS is installed — at /x/sitemaps/sitemap.xml, for search engines. Point the storefront's /sitemap.xml at it.",
 		// On for every store: a sitemap only lists what is already public, and a
 		// store should not have to know it needs one before search engines find it
 		// (D232).
@@ -74,10 +77,15 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Public: true},
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}"},
 			{Key: "collection_path", Label: "Collection page path", Kind: "text", Default: "/collections/{slug}"},
+			// The bundled storefront lists a category at its bare slug, /women,
+			// and redirects /categories/women there.
+			{Key: "category_path", Label: "Category page path", Kind: "text", Default: "/{slug}"},
+			{Key: "listing_path", Label: "All-products page path", Kind: "text", Default: "/products"},
 			{Key: "page_path", Label: "Content page path", Kind: "text", Default: "/pages/{slug}"},
 		},
 	})
 	app.HandleFunc("GET /x/sitemaps/sitemap.xml", m.handleIndex)
+	app.HandleFunc("GET /x/sitemaps/listings.xml", m.handleListings)
 	app.HandleFunc("GET /x/sitemaps/products.xml", m.handleProducts)
 	app.HandleFunc("GET /x/sitemaps/collections.xml", m.handleCollections)
 	app.HandleFunc("GET /x/sitemaps/pages.xml", m.handlePages)
@@ -88,8 +96,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 }
 
 type settings struct {
-	enabled                                  bool
-	storefront, products, collections, pages string
+	enabled                                                       bool
+	storefront, products, collections, categories, listing, pages string
 }
 
 func (m *Module) settings(ctx context.Context) (settings, error) {
@@ -117,6 +125,8 @@ func (m *Module) settings(ctx context.Context) (settings, error) {
 		storefront:  strings.TrimRight(str("storefront_url", m.cfg.StorefrontURL, m.app.StorefrontURL(ctx)), "/"),
 		products:    str("product_path", m.cfg.ProductPath, "/products/{slug}"),
 		collections: str("collection_path", m.cfg.CollectionPath, "/collections/{slug}"),
+		categories:  str("category_path", m.cfg.CategoryPath, "/{slug}"),
+		listing:     str("listing_path", m.cfg.ListingPath, "/products"),
 		pages:       str("page_path", m.cfg.PagePath, "/pages/{slug}"),
 	}, nil
 }
@@ -204,11 +214,52 @@ func (m *Module) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := requestBase(r) + "/x/sitemaps/"
-	index := sitemapIndex{NS: ns, Sitemaps: []entry{{Loc: base + "products.xml"}, {Loc: base + "collections.xml"}}}
+	index := sitemapIndex{NS: ns, Sitemaps: []entry{{Loc: base + "listings.xml"}, {Loc: base + "products.xml"}, {Loc: base + "collections.xml"}}}
 	if m.hasCMS() {
 		index.Sitemaps = append(index.Sitemaps, entry{Loc: base + "pages.xml"})
 	}
 	write(w, index)
+}
+
+// handleListings is the pages a shopper browses from: the home page, the
+// all-products page and each category with a live product in it or in one
+// under it, since its page lists those too and an empty one is a dead end.
+func (m *Module) handleListings(w http.ResponseWriter, r *http.Request) {
+	s, ok := m.ready(w, r)
+	if !ok {
+		return
+	}
+	set := urlset{NS: ns, URLs: []entry{
+		{Loc: s.storefront + "/", ChangeFreq: "daily"},
+		{Loc: s.storefront + s.listing, ChangeFreq: "daily"},
+	}}
+	rows, err := m.app.DB().QueryContext(r.Context(), `
+		WITH RECURSIVE filled(id) AS (
+		    SELECT DISTINCT category_id FROM products WHERE status = 'active' AND category_id IS NOT NULL
+		    UNION
+		    SELECT c.parent_id FROM categories c JOIN filled f ON f.id = c.id WHERE c.parent_id IS NOT NULL)
+		SELECT c.slug, c.updated_at FROM categories c JOIN filled f ON f.id = c.id ORDER BY c.slug`)
+	if err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read categories"))
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var slug string
+		var at time.Time
+		if err := rows.Scan(&slug, &at); err != nil {
+			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "scan category"))
+			return
+		}
+		set.URLs = append(set.URLs, entry{
+			Loc: s.storefront + strings.ReplaceAll(s.categories, "{slug}", slug), LastMod: lastmod(at), ChangeFreq: "weekly",
+		})
+	}
+	if err := rows.Err(); err != nil {
+		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read categories"))
+		return
+	}
+	write(w, set)
 }
 
 func (m *Module) handleProducts(w http.ResponseWriter, r *http.Request) {

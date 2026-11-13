@@ -67,6 +67,59 @@ func TestTheSitemapListsWhatIsLive(t *testing.T) {
 	}
 }
 
+// The pages a shopper browses from are in the sitemap too: the home page, the
+// all-products page, and each category with a live product in it or under it.
+// An empty one, or one holding only drafts, is a dead end and is left out.
+func TestTheSitemapListsTheHomePageAndEveryCategoryWithSomethingInIt(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	category := func(title string, parent *int64) *gocommerce.Category {
+		c, err := app.Categories().Create(ctx, gocommerce.CategoryInput{Title: title, ParentID: parent})
+		if err != nil {
+			t.Fatalf("category %s: %v", title, err)
+		}
+		return c
+	}
+	women := category("Women", nil)
+	dresses := category("Dresses", &women.ID)
+	empty := category("Shoes", &women.ID)
+	drafts := category("Bags", nil)
+	price := int64(500)
+	for _, p := range []gocommerce.ProductInput{
+		{Title: "Maxi", SKU: "SM-MAXI", PriceMinor: &price, Status: "active", CategoryID: &dresses.ID},
+		{Title: "Tote", SKU: "SM-TOTE", PriceMinor: &price, Status: "draft", CategoryID: &drafts.ID},
+	} {
+		if _, err := app.Products().CreateProduct(ctx, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
+		"storefront_url": "https://shop.example/",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	if index := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/sitemap.xml", nil); !strings.Contains(index.Body.String(), "/x/sitemaps/listings.xml</loc>") {
+		t.Errorf("the index leaves out listings.xml:\n%s", index.Body)
+	}
+	rec := gctest.Request(t, app, http.MethodGet, "/x/sitemaps/listings.xml", nil)
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listings = %d %s", rec.Code, body)
+	}
+	for _, want := range []string{"https://shop.example/", "https://shop.example/products", "https://shop.example/" + women.Slug, "https://shop.example/" + dresses.Slug} {
+		if !strings.Contains(body, "<loc>"+want+"</loc>") {
+			t.Errorf("listings leave out %s:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{empty.Slug, drafts.Slug} {
+		if strings.Contains(body, "/"+unwanted+"</loc>") {
+			t.Errorf("listings carry %s, which has nothing live in it:\n%s", unwanted, body)
+		}
+	}
+}
+
 func TestSitemapRoutesAreDocumented(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	gctest.AssertSpecCoversModuleRoutes(t, app, "sitemaps")
@@ -90,6 +143,7 @@ func TestEverySitemapPointsAtAStylesheetThatIsServed(t *testing.T) {
 
 	for _, path := range []string{
 		"/x/sitemaps/sitemap.xml",
+		"/x/sitemaps/listings.xml",
 		"/x/sitemaps/products.xml",
 		"/x/sitemaps/collections.xml",
 	} {
