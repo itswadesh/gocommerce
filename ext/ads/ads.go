@@ -231,7 +231,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/approve", noSellers(m.handleApprove), RightApprove)
 	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/dismiss", noSellers(m.handleDismiss), RightApprove)
 	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/undo", noSellers(m.handleUndo), RightApprove)
+	app.HandleAdminFunc("POST /api/admin/x/ads/autopilot/pause", noSellers(m.handlePauseAutopilot), RightApprove)
 	m.registerConnectors(app)
+	m.registerAutopilot(app)
 	app.OnStart(m.start)
 	return nil
 }
