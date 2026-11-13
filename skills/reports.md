@@ -256,6 +256,8 @@ PUT    /api/admin/x/ads/settings
 GET    /api/admin/x/ads/breakdown?from=…&to=…&tz=…&touch=…
 GET    /api/admin/x/ads/pacing?tz=Asia/Kolkata
 PUT    /api/admin/x/ads/budgets        {"source": "google", "amount_minor": 3000000}   zero removes it
+GET    /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the engine's findings, no AI
+POST   /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the same, reviewed by AI
 ```
 
 - **Where an order came from is `metadata.attribution`**, `{"first": touch,
@@ -298,6 +300,12 @@ PUT    /api/admin/x/ads/budgets        {"source": "google", "amount_minor": 3000
   gone, `projected` the month at the rate so far; `over` when the projection
   passes the budget, `under` below three quarters of the expected share. It
   reads only spend already entered, so an import a day behind reads under.
+- **The advisor** (D266) lists findings, each with `figure` and `action`:
+  `no_orders`, `loss` (gross profit under spend), `quiet_hours` (three or more
+  hours in a row with no orders, once there are 30), `losing_region` and
+  `attribution`. `POST` has the `ads.advise` task word and order them under the
+  summary's number check; any refusal returns the rules with `source: "rules"`
+  and a `note`. Nothing is stored or applied.
 
 ## What these numbers do not measure
 

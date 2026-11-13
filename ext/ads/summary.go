@@ -130,31 +130,35 @@ func canonical(s string) string {
 	return s
 }
 
-// withAllowed puts on ctx the numbers a summary of in may use: every number
-// in its figures, the dates of its window, and counts up to its row count.
+type allowed struct {
+	numbers map[string]bool
+	rows    int
+}
+
+// withAllowed puts on ctx the numbers a summary of in may use.
 func withAllowed(ctx context.Context, in summaryInput) context.Context {
-	allowed := map[string]bool{}
+	return allowFrom(ctx, in, len(in.Figures))
+}
+
+// allowFrom puts on ctx the numbers a model's answer about in may use: every
+// number in it, which takes in the window's dates, and counts up to rows.
+func allowFrom(ctx context.Context, in any, rows int) context.Context {
+	nums := map[string]bool{}
 	raw, _ := json.Marshal(in)
 	for _, n := range numberRE.FindAllString(string(raw), -1) {
-		allowed[canonical(n)] = true
+		nums[canonical(n)] = true
 	}
-	for i := 0; i <= len(in.Figures); i++ {
-		allowed[strconv.Itoa(i)] = true
+	for i := 0; i <= rows; i++ {
+		nums[strconv.Itoa(i)] = true
 	}
-	return context.WithValue(ctx, allowedKey{}, struct {
-		numbers map[string]bool
-		rows    int
-	}{allowed, len(in.Figures)})
+	return context.WithValue(ctx, allowedKey{}, allowed{nums, rows})
 }
 
 // checkSummary refuses an answer that states a number the figures do not
 // hold, which sends it up the ladder and, from the top, refuses the run. The
 // figures are the report's; a summary is only ever a reading of them.
 func checkSummary(ctx context.Context, raw json.RawMessage) (int, error) {
-	a, ok := ctx.Value(allowedKey{}).(struct {
-		numbers map[string]bool
-		rows    int
-	})
+	a, ok := ctx.Value(allowedKey{}).(allowed)
 	if !ok {
 		return 0, errors.New("no figures to check the summary against")
 	}
@@ -180,6 +184,16 @@ func checkSummary(ctx context.Context, raw json.RawMessage) (int, error) {
 			return 0, fmt.Errorf("a point is %d characters, and must be 1 to 400", n)
 		}
 		texts = append(texts, p.Text)
+	}
+	return checkNumbers(ctx, texts)
+}
+
+// checkNumbers refuses a text with a number, share or multiple that is not
+// among those allowFrom put on ctx.
+func checkNumbers(ctx context.Context, texts []string) (int, error) {
+	a, ok := ctx.Value(allowedKey{}).(allowed)
+	if !ok {
+		return 0, errors.New("no figures to check the answer against")
 	}
 	for _, t := range texts {
 		for _, m := range madeRE.FindAllStringSubmatch(t, -1) {

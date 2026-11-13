@@ -389,10 +389,216 @@
           }
         }
       }
+    },
+    "/api/admin/x/ads/advice": {
+      "get": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "Where the ads waste money, by the engine's own rules",
+        "description": "Findings from the report's own figures for the window: campaigns that spent and brought no orders, campaigns whose gross profit is less than their spend, runs of three or more hours with no orders (once the window has 30 orders), states whose orders lose money, and orders with no attribution or under (no campaign). Each has the figure it rests on and a suggested action. Nothing is changed. Free: no AI is used.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "touch",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "last",
+                "first"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The advice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdsAdvice"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "Have AI review the ads' findings",
+        "description": "The same findings, rewritten by the ads.advise AI gateway task from them and the report's rows, most money first. Every number in the answer must be one in the input. When AI is not set up, out of credit, or answers with anything else, the engine's own findings come back with source rules and a note saying why. Draws AI credit when the model runs.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "touch",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "last",
+                "first"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The advice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdsAdvice"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdsAdvice": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "touch": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "rules",
+              "ai"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "integer"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "no_orders",
+                    "loss",
+                    "quiet_hours",
+                    "losing_region",
+                    "attribution"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "figure": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
       "AdsSlice": {
         "type": "object",
         "properties": {

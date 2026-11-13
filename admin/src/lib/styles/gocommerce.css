@@ -13581,6 +13581,12 @@ html .tw\:rounded-2xl {
 .ads-budget-form {
     margin-top: 12px;
 }
+.ads-action {
+    font-weight: 500;
+}
+.ads-action > i {
+    color: var(--surfaceTxtHintColor);
+}
 @media (prefers-reduced-motion: reduce) {
     .ads-row-btn,
     .ads-chevron,
