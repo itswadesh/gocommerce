@@ -302,12 +302,12 @@
           "catalog"
         ],
         "summary": "List active products",
-        "description": "Only active products are visible. A draft or archived product is reported as not found rather than forbidden, because its existence is not a shopper's business. With `facets=1` the response's `meta.facets` counts what the listing could be narrowed by, over every matching product rather than the page: tags, vendors, product types, categories, category attribute values and the price range. Each group is counted with its own selection left out and every other filter kept, so ticking one vendor still offers the others.",
+        "description": "Only active products are visible. A draft or archived product is reported as not found rather than forbidden, because its existence is not a shopper's business. With `facets=1` the response's `meta.facets` counts what the listing could be narrowed by, over every matching product rather than the page: tags, vendors, product types, categories, category attribute values, variant option values and the price range. Each group is counted with its own selection left out and every other filter kept, so ticking one vendor still offers the others.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
-            "description": "Free-text match on title and description.",
+            "description": "Free-text match on title, description and option values, so `blue` finds a product offered in Royal blue.",
             "schema": {
               "type": "string"
             }
@@ -338,6 +338,21 @@
             },
             "description": "Filter by a category attribute's recorded value, as `handle:value` — for example `attr=bag-case-material:Canvas`. Repeat the parameter to add more. Several values of the SAME handle widen the result (canvas OR leather, because a shopper who ticks both wants either); different handles narrow it (canvas AND black, because they describe one item). Only the first colon separates, so `color:Black:ish` is the value \"Black:ish\". Matching is exact, not a substring. An entry with no colon, no handle or no value is ignored rather than refused, so a truncated URL narrows to everything or to nothing instead of taking the listing away. The values are the ones stored under `metadata.category` by the category's own field list.",
             "example": "bag-case-material:Canvas"
+          },
+          {
+            "name": "option",
+            "in": "query",
+            "required": false,
+            "explode": true,
+            "style": "form",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Filter by a variant option's value, as `name:value` with the option's name as the product spells it — for example `option=Size:M`. Repeat the parameter to add more: values of the same name widen the result, different names narrow it, as `attr` does. A product matches when it offers the value, in stock or not. Matching is exact, and an entry with no colon, name or value is ignored. The names and values are the ones `meta.facets.options` lists.",
+            "example": "Size:M"
           },
           {
             "name": "channel",
@@ -19801,6 +19816,24 @@
               "attributes": {
                 "type": "object",
                 "description": "Category attribute handle to its values, the ones `attr=handle:value` filters on.",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              },
+              "options": {
+                "type": "object",
+                "description": "Variant option name to its values in the order the products list them, the ones `option=name:value` filters on.",
                 "additionalProperties": {
                   "type": "array",
                   "items": {

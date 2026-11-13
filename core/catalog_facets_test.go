@@ -138,3 +138,74 @@ func TestStorefrontListingFacets(t *testing.T) {
 		t.Errorf("an empty listing has facets %+v", none)
 	}
 }
+
+// A shopper finds a product by the colour it comes in, and narrows a listing
+// by size and colour, though neither is in a title. The facets list each
+// option's values in the products' own order, so sizes read S to XL.
+func TestShoppersSearchAndFilterByOptionValues(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	for _, p := range []struct {
+		title          string
+		colours, sizes []string
+		status         string
+	}{
+		{"Kurta", []string{"Royal blue", "Black"}, []string{"S", "M", "L"}, "active"},
+		{"Shirt", []string{"White"}, []string{"S", "M", "L", "XL"}, "active"},
+		{"Draft", []string{"Blue"}, []string{"XL"}, "draft"},
+	} {
+		in := ProductInput{Title: p.title, Status: p.status,
+			Options: []OptionInput{{Name: "Colour", Values: p.colours}, {Name: "Size", Values: p.sizes}}}
+		for _, c := range p.colours {
+			for _, size := range p.sizes {
+				in.Variants = append(in.Variants, VariantInput{Options: []string{c, size}, PriceMinor: 1000})
+			}
+		}
+		if _, err := app.Products().CreateProduct(ctx, in); err != nil {
+			t.Fatalf("create %s: %v", p.title, err)
+		}
+	}
+	type body struct {
+		Data []struct {
+			Title string `json:"title"`
+		} `json:"data"`
+		Meta struct {
+			Facets *ProductFacets `json:"facets"`
+		} `json:"meta"`
+	}
+	get := func(query string) (body, []string) {
+		t.Helper()
+		rec := do(t, app, http.MethodGet, "/api/products?"+query)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET ?%s = %d: %s", query, rec.Code, rec.Body.String())
+		}
+		var b body
+		if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
+			t.Fatal(err)
+		}
+		var titles []string
+		for _, d := range b.Data {
+			titles = append(titles, d.Title)
+		}
+		return b, titles
+	}
+	for query, want := range map[string][]string{
+		"q=blue":                                             {"Kurta"},
+		"option=Size:XL":                                     {"Shirt"},
+		"option=Size:XL&option=Colour:Black":                 nil,
+		"option=Size:S&option=Colour:Black":                  {"Kurta"},
+		"option=Colour:Black&option=Colour:White&sort=title": {"Kurta", "Shirt"},
+	} {
+		if _, got := get(query); !reflect.DeepEqual(got, want) {
+			t.Errorf("?%s = %v, want %v", query, got, want)
+		}
+	}
+
+	b, _ := get("facets=1&option=Size:XL")
+	if got, want := b.Meta.Facets.Options["Size"], []FacetValue{{"S", 2}, {"M", 2}, {"L", 2}, {"XL", 1}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("size facet with XL ticked = %v, want %v: a facet ignores its own selection", got, want)
+	}
+	if got, want := b.Meta.Facets.Options["Colour"], []FacetValue{{"White", 1}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("colour facet with XL ticked = %v, want %v", got, want)
+	}
+}

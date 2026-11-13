@@ -122,10 +122,13 @@ because it is parsed before the first CSV header is written.
 
 The public listing has its own reader, `publicProductQuery`, for a storefront's
 filter rail (D130): repeatable `tag`, `vendor` and `product_type` (several
-values widen), `attr=handle:value`, `category` as a slug, `price_min` and
-`price_max` in minor units, and `sort` over title, price and the two dates.
-`facets=1` adds `meta.facets`, counted by `Catalog.ProductFacets` over the
-whole result set, each group without its own selection:
+values widen), `attr=handle:value`, `option=name:value` for a variant
+option such as `Size:M`, `category` as a slug, `price_min` and `price_max` in
+minor units, and `sort` over title, price and the two dates. `q` matches the
+title, the description and option values, so `blue` finds a product offered in
+Royal blue. `facets=1` adds `meta.facets`, counted by `Catalog.ProductFacets`
+over the whole result set, each group without its own selection; its
+`options` lists each option name's values in the products' own order:
 
 ```http
 GET /api/products?category=bags&vendor=Acme&price_min=1500&facets=1
