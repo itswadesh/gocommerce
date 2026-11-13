@@ -70,7 +70,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "storefront_url", Label: "Storefront URL", Kind: "url", Public: true, Help: "Where product pages live, without a path."},
 			{Key: "product_path", Label: "Product page path", Kind: "text", Default: "/products/{slug}", Help: "{slug} is replaced by the product's slug."},
 			{Key: "brand", Label: "Brand when a product has no vendor", Kind: "text"},
-			{Key: "google_product_category", Label: "Default Google product category", Kind: "text", Help: "Used when a product has no category of its own."},
+			{Key: "google_product_category", Label: "Google product category", Kind: "text", Help: "A category from Google's own product taxonomy, such as Apparel & Accessories > Clothing, sent for every product. The store's own categories go in the product type."},
 		},
 	})
 	app.HandleFunc("GET /x/feeds/google.xml", m.handleGoogle)
@@ -134,7 +134,11 @@ type item struct {
 	Listed                                                         bool
 	ID, Title, Description, Link, Image, Brand, GroupID, GTIN, MPN string
 	Price, SalePrice, Availability, Condition, Category, Weight    string
-	Quantity                                                       int
+	// ProductType is the store's own category path ("Men > Kurtas"). Google's
+	// google_product_category takes only its own taxonomy, so the store's
+	// names went there and were not understood.
+	ProductType string
+	Quantity    int
 }
 
 // items walks the active catalogue, or with every set the whole of it.
@@ -167,8 +171,9 @@ func (m *Module) items(ctx context.Context, s settings, mediaBase string, every 
 			link := s.storefront + strings.ReplaceAll(s.productPath, "{slug}", p.Slug)
 			brand := firstNonEmpty(p.Vendor, s.brand)
 			category := s.category
+			productType := ""
 			if p.Category != nil {
-				category = strings.ReplaceAll(p.Category.FullName, " / ", " > ")
+				productType = strings.ReplaceAll(p.Category.FullName, " / ", " > ")
 			}
 			description := plainText(p.Description)
 			if len(description) > 5000 {
@@ -182,7 +187,7 @@ func (m *Module) items(ctx context.Context, s settings, mediaBase string, every 
 				it := item{
 					ProductID: p.ID, Page: link, Listed: listed,
 					ID: v.SKU, MPN: v.SKU, GTIN: v.Barcode, GroupID: "product-" + strconv.FormatInt(p.ID, 10),
-					Title: p.Title, Description: description, Link: link, Brand: brand, Category: category,
+					Title: p.Title, Description: description, Link: link, Brand: brand, Category: category, ProductType: productType,
 					Condition: "new", Availability: "out of stock", Image: absolute(mediaBase, p.ImageURL),
 				}
 				if v.Label != "" && v.Label != "Default" {
@@ -365,6 +370,7 @@ type googleItem struct {
 	MPN          string `xml:"g:mpn,omitempty"`
 	ItemGroupID  string `xml:"g:item_group_id"`
 	Category     string `xml:"g:google_product_category,omitempty"`
+	ProductType  string `xml:"g:product_type,omitempty"`
 	Weight       string `xml:"g:shipping_weight,omitempty"`
 }
 
@@ -391,7 +397,7 @@ func (m *Module) handleGoogle(w http.ResponseWriter, r *http.Request) {
 			ID: it.ID, Title: it.Title, Description: it.Description, Link: it.Link, ImageLink: it.Image,
 			Availability: it.Availability, Price: it.Price, SalePrice: it.SalePrice, Brand: it.Brand,
 			Condition: it.Condition, GTIN: it.GTIN, MPN: it.MPN, ItemGroupID: it.GroupID,
-			Category: it.Category, Weight: it.Weight,
+			Category: it.Category, ProductType: it.ProductType, Weight: it.Weight,
 		})
 	}
 	w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
@@ -406,7 +412,7 @@ func (m *Module) handleGoogle(w http.ResponseWriter, r *http.Request) {
 
 var metaHeader = []string{
 	"id", "title", "description", "availability", "condition", "price", "sale_price", "link", "image_link",
-	"brand", "item_group_id", "gtin", "mpn", "google_product_category", "quantity_to_sell_on_facebook",
+	"brand", "item_group_id", "gtin", "mpn", "google_product_category", "quantity_to_sell_on_facebook", "product_type",
 }
 
 func (m *Module) handleMeta(w http.ResponseWriter, r *http.Request) {
@@ -426,7 +432,7 @@ func (m *Module) handleMeta(w http.ResponseWriter, r *http.Request) {
 	for _, it := range items {
 		_ = cw.Write([]string{
 			it.ID, it.Title, it.Description, it.Availability, it.Condition, it.Price, it.SalePrice, it.Link, it.Image,
-			it.Brand, it.GroupID, it.GTIN, it.MPN, it.Category, strconv.Itoa(it.Quantity),
+			it.Brand, it.GroupID, it.GTIN, it.MPN, it.Category, strconv.Itoa(it.Quantity), it.ProductType,
 		})
 	}
 	cw.Flush()

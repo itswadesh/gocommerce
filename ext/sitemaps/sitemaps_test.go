@@ -108,7 +108,16 @@ func TestTheSitemapListsTheHomePageAndEveryCategoryWithSomethingInIt(t *testing.
 	if rec.Code != http.StatusOK {
 		t.Fatalf("listings = %d %s", rec.Code, body)
 	}
-	for _, want := range []string{"https://shop.example/", "https://shop.example/products", "https://shop.example/" + women.Slug, "https://shop.example/" + dresses.Slug} {
+	// The storefront's own pages: contact always, the category index because a
+	// category has a live product; no collections and no FAQ module here, so
+	// neither of their pages, which would be empty.
+	for _, unwanted := range []string{"https://shop.example/collections", "https://shop.example/faqs"} {
+		if strings.Contains(body, "<loc>"+unwanted+"</loc>") {
+			t.Errorf("listings carry %s, which has nothing on it:\n%s", unwanted, body)
+		}
+	}
+	for _, want := range []string{"https://shop.example/", "https://shop.example/products", "https://shop.example/" + women.Slug, "https://shop.example/" + dresses.Slug,
+		"https://shop.example/categories", "https://shop.example/contact-us"} {
 		if !strings.Contains(body, "<loc>"+want+"</loc>") {
 			t.Errorf("listings leave out %s:\n%s", want, body)
 		}

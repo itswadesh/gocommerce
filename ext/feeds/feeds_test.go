@@ -13,6 +13,44 @@ import (
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
+// The store's own category path goes in product_type, and only the category
+// the merchant chose from Google's taxonomy goes in google_product_category.
+// The store's names used to go there, which Google does not understand.
+func TestAFeedSendsGooglesCategoryAndTheStoresOwnApart(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	men, err := app.Categories().Create(ctx, gocommerce.CategoryInput{Title: "Men"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kurtas, err := app.Categories().Create(ctx, gocommerce.CategoryInput{Title: "Kurtas", ParentID: &men.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	price := int64(229900)
+	if _, err := app.Products().CreateProduct(ctx, gocommerce.ProductInput{Title: "Kurta", SKU: "KURTA-1", PriceMinor: &price, Status: "active", CategoryID: &kurtas.ID}); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on, Settings: map[string]any{
+		"storefront_url": "https://shop.example", "google_product_category": "Apparel & Accessories > Clothing"}}); err != nil {
+		t.Fatal(err)
+	}
+	body := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil).Body.String()
+	for _, want := range []string{
+		"<g:google_product_category>Apparel &amp; Accessories &gt; Clothing</g:google_product_category>",
+		"<g:product_type>Men &gt; Kurtas</g:product_type>",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("google feed lacks %s: %.800s", want, body)
+		}
+	}
+	meta := gctest.Request(t, app, http.MethodGet, "/x/feeds/meta.csv", nil).Body.String()
+	if !strings.Contains(meta, "Apparel & Accessories > Clothing") || !strings.Contains(meta, "Men > Kurtas") {
+		t.Errorf("meta feed lacks the two categories: %.600s", meta)
+	}
+}
+
 // The feed's channel is named after the shop. It used to take the order-number
 // prefix, so the demo store's feed was titled "GC-".
 func TestAFeedIsTitledWithTheStoresName(t *testing.T) {
