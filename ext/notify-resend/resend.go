@@ -27,6 +27,7 @@ package resend
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -142,10 +143,13 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Docs:        "https://resend.com/docs/api-reference/emails/send-email",
 		Fields: []gocommerce.PluginField{
 			{Key: "api_key", Label: "API key", Kind: "secret", Required: !inCode, Help: "A Resend API key." + help},
+			// No Default: a setting's default outranks Config, so DefaultFrom
+			// here sent every store's mail from Resend's test address even
+			// where the install names a verified one.
 			{
-				Key: "from", Label: "From address", Kind: "text", Default: DefaultFrom,
-				Help: "A sender on a domain Resend has verified. Left as " + DefaultFrom +
-					" it still sends, which is what lets a new store work before its DNS does.",
+				Key: "from", Label: "From address", Kind: "text",
+				Help: "A sender on a domain Resend has verified. Left empty, mail goes from " +
+					cmp.Or(strings.TrimSpace(m.cfg.From), DefaultFrom) + ", which is what lets a new store work before its DNS does.",
 			},
 			{Key: "from_name", Label: "From name", Kind: "text", Help: "The name beside the address in the inbox."},
 			{Key: "reply_to", Label: "Reply-to address", Kind: "text", Help: "Where a shopper's reply lands; empty means the from address."},
@@ -181,6 +185,11 @@ func (m *Module) sender(ctx context.Context) (sender, bool) {
 		from:     pick("from", m.cfg.From),
 		fromName: pick("from_name", m.cfg.FromName),
 		replyTo:  pick("reply_to", m.cfg.ReplyTo),
+	}
+	// The panel used to save DefaultFrom into every store whose form was
+	// saved; that is no choice to outrank the install's verified sender.
+	if s.from == DefaultFrom {
+		s.from = strings.TrimSpace(m.cfg.From)
 	}
 	if s.from == "" {
 		s.from, s.defaulted = DefaultFrom, true

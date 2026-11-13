@@ -131,6 +131,41 @@ func TestAVerifiedSenderReplacesTheDefault(t *testing.T) {
 	}
 }
 
+// An install that names its own sender sends every store's mail from it. The
+// from field used to default to Resend's test address, and the setting's
+// default outranked the install's, so order confirmations went from
+// onboarding@resend.dev, which Resend delivers only to its own account owner.
+// The panel also saved that default into each store whose form was saved, and
+// a saved test address does not outrank the install's either.
+func TestTheInstallsSenderOutranksResendsTestAddress(t *testing.T) {
+	for name, saved := range map[string]string{"unset": "", "saved test address": DefaultFrom} {
+		t.Run(name, func(t *testing.T) {
+			s := &stub{}
+			server := gctest.StubHTTP(t, s.handler)
+			app := gctest.NewWithConfig(t, gocommerce.Config{AllowPrivateURLs: true},
+				New(Config{APIKey: "re_test", From: "hi@example.com", BaseURL: server.URL}))
+			if saved != "" {
+				if _, err := app.Plugins().Update(context.Background(), PluginKey, gocommerce.PluginPatch{
+					Settings: map[string]any{"from": saved},
+				}); err != nil {
+					t.Fatalf("configure: %v", err)
+				}
+			}
+
+			gctest.PlaceOrder(t, app, gocommerce.CodeCOD)
+			gctest.DrainOutbox(t, app)
+
+			messages := s.all()
+			if len(messages) != 1 {
+				t.Fatalf("messages = %d, want the order confirmation", len(messages))
+			}
+			if messages[0].From != "hi@example.com" {
+				t.Errorf("from = %q, want the install's sender", messages[0].From)
+			}
+		})
+	}
+}
+
 // With no key the module cannot send, and says so rather than going quiet.
 // The engine's own log notifier still records the message, which is what
 // keeps "nothing is configured" from looking exactly like "everything was
