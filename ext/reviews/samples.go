@@ -9,11 +9,11 @@ import (
 	gocommerce "github.com/itswadesh/gocommerce/core"
 )
 
-// The sample shop's reviews (D96): one on each sample product, written by a
-// sample customer whose sample order bought it, so each is marked verified by
-// the same test a real review passes. They are samples: the merchant erases
-// them with the rest before opening, since a review nobody wrote is not one
-// to show a real shopper.
+// The sample shop's reviews (D96): one on each sample product, signed by a
+// sample customer whose sample order bought it. Nobody wrote them, so they
+// are never shown to a shopper (D261): each waits on the Reviews screen as
+// pending, to show the merchant what moderating looks like, is never marked
+// verified, and cannot be approved. The merchant erases them with the rest.
 
 // migrationSample marks the reviews the sample shop added, by a column no
 // request sets, so erasing them never takes a real shopper's.
@@ -36,8 +36,8 @@ var sampleReviews = map[string]struct {
 	"mens-kurta-pyjama-set":    {4, "Comfortable set", "Easy to wear, and the colour is just as shown. The pyjama waist is comfortable all day."},
 }
 
-// SampleRights implements gocommerce.SampleSeeder: the samples are published
-// reviews, which is moderating.
+// SampleRights implements gocommerce.SampleSeeder: the samples land in the
+// moderation queue, which is moderating.
 func (m *Module) SampleRights() []gocommerce.Right {
 	return []gocommerce.Right{rightReviewsModerate}
 }
@@ -64,11 +64,6 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		if author == nil {
 			continue
 		}
-		email := strings.ToLower(author.Email)
-		verified, err := m.bought(ctx, email, p.ID)
-		if err != nil {
-			return gocommerce.SampleCounts{"reviews": added}, gocommerce.Internalf(err, "add the sample reviews")
-		}
 		// Written a day or so after the order that bought it, and never in the
 		// future: an order placed in the last day is reviewed an hour ago.
 		at := bought.Add(time.Duration(20+i%4*6) * time.Hour)
@@ -77,9 +72,9 @@ func (m *Module) AddSamples(ctx context.Context, shop *gocommerce.SampleShop) (g
 		}
 		res, err := m.db.ExecContext(ctx, `
 			INSERT INTO reviews (product_id, name, email, rating, title, body, status, verified, created_at, updated_at, sample)
-			SELECT $1, $2, $3, $4, $5, $6, 'approved', $7, $8, $8, true
+			SELECT $1, $2, $3, $4, $5, $6, 'pending', false, $7, $7, true
 			WHERE NOT EXISTS (SELECT 1 FROM reviews WHERE product_id = $1 AND sample)`,
-			p.ID, shortName(author.Name), email, r.rating, r.title, r.body, verified, at)
+			p.ID, shortName(author.Name), strings.ToLower(author.Email), r.rating, r.title, r.body, at)
 		if err != nil {
 			return gocommerce.SampleCounts{"reviews": added}, gocommerce.Internalf(err, "add the sample reviews")
 		}
