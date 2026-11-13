@@ -20,6 +20,8 @@ name: Updates
 # on the owner's subscription, and each draft waits for a person to approve.
 #   CONTENT_OS_SITE_KEY      the project's site key (Content OS, the project's
 #                            settings); set it and the direct posts stop
+#   SHOPNX_CONTENT_OS_SITE_KEY  the ShopNx project's site key: the same push is
+#                            filed there too, linking to shopnx.in/updates
 # Variable: CONTENT_OS_URL, Content OS's address, such as https://cos.example.com
 on:
   push:
@@ -42,6 +44,7 @@ jobs:
       # Secrets cannot be read in a step's `if`; this can.
       HAS_LANDING: ${{ secrets.LANDING_PAGE_TOKEN != '' }}
       HAS_CONTENT_OS: ${{ secrets.CONTENT_OS_SITE_KEY != '' && vars.CONTENT_OS_URL != '' }}
+      HAS_SHOPNX: ${{ secrets.SHOPNX_CONTENT_OS_SITE_KEY != '' && vars.CONTENT_OS_URL != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -103,6 +106,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           CONTENT_OS_URL: ${{ vars.CONTENT_OS_URL }}
           CONTENT_OS_SITE_KEY: ${{ secrets.CONTENT_OS_SITE_KEY }}
+        run: node .github/scripts/publish-update.mjs queue
+
+      # ShopNx (shopnx.in) is this product under another brand, with its own
+      # project in Content OS. It runs even when the step above failed, such as
+      # while that project is paused, so one brand never keeps the other quiet.
+      - name: queue the drafts for ShopNx in Content OS
+        if: ${{ !cancelled() && env.HAS_SHOPNX == 'true' }}
+        env:
+          AFTER: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_OS_URL: ${{ vars.CONTENT_OS_URL }}
+          CONTENT_OS_SITE_KEY: ${{ secrets.SHOPNX_CONTENT_OS_SITE_KEY }}
+          UPDATES_PAGE_URL: https://shopnx.in/updates
         run: node .github/scripts/publish-update.mjs queue
 
       - name: announce
