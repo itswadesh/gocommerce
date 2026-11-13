@@ -253,6 +253,9 @@ GET    /api/admin/x/ads/summary        the latest AI summary, or null
 POST   /api/admin/x/ads/summary        {"from": …, "to": …, "tz": …, "touch": …}
 GET    /api/admin/x/ads/settings       {"weekly_summary": false}
 PUT    /api/admin/x/ads/settings
+GET    /api/admin/x/ads/breakdown?from=…&to=…&tz=…&touch=…
+GET    /api/admin/x/ads/pacing?tz=Asia/Kolkata
+PUT    /api/admin/x/ads/budgets        {"source": "google", "amount_minor": 3000000}   zero removes it
 ```
 
 - **Where an order came from is `metadata.attribution`**, `{"first": touch,
@@ -286,6 +289,15 @@ PUT    /api/admin/x/ads/settings
   the figures; any other sends it to the strong model, and from there refuses
   the run. It draws AI credit (D151). The weekly one is off until the shop
   turns it on, and is claimed before the model is called.
+- **The breakdown** (D265) is the same orders cut by weekday (1 is Monday) and
+  hour in `tz`, both listed in full with the empty slots, by the shipping
+  address's `state`, and by campaign name across sources, with spend matched by
+  campaign name alone.
+- **Pacing** (D265) is this month's spend per source, in `tz`, against a
+  monthly budget per source: `expected` is the budget's share for the days
+  gone, `projected` the month at the rate so far; `over` when the projection
+  passes the budget, `under` below three quarters of the expected share. It
+  reads only spend already entered, so an import a day behind reads under.
 
 ## What these numbers do not measure
 

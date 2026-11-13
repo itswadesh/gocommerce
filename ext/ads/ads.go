@@ -98,6 +98,18 @@ CREATE TABLE ads_settings (
 );`,
 	},
 		gocommerce.ScopeMigration("0002_store_scope", "ads_spend", "ads_summaries", "ads_settings"),
+		{ID: "0003_budgets", SQL: `
+-- A source's monthly ad budget, typed in, which this month's spend is paced
+-- against (D265). One per source: a platform bills in one currency.
+CREATE TABLE ads_budgets (
+    store_id     text NOT NULL,
+    source       text NOT NULL CHECK (source <> '' AND source = lower(source)),
+    currency     text NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
+    amount_minor bigint NOT NULL CHECK (amount_minor > 0),
+    updated_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (store_id, source)
+);`},
+		gocommerce.ScopeMigration("0004_budgets_scope", "ads_budgets"),
 	}
 }
 
@@ -118,7 +130,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 	})
 	app.RegisterRight(gocommerce.RightSpec{
 		Right: RightWrite, Label: "Enter ad spend",
-		Scope:   "Entering and importing ad spend, asking for an AI summary (which draws AI credit) and the weekly summary",
+		Scope:   "Entering and importing ad spend and monthly budgets, asking for an AI summary (which draws AI credit) and the weekly summary",
 		Default: []string{gocommerce.RoleManager},
 	})
 	app.HandleAdminFunc("GET /api/admin/x/ads/report", noSellers(m.handleReport), RightRead)
@@ -129,6 +141,9 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("DELETE /api/admin/x/ads/spend/{id}", noSellers(m.handleDeleteSpend), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/summary", noSellers(m.handleLatest), RightRead)
 	app.HandleAdminFunc("POST /api/admin/x/ads/summary", noSellers(m.handleSummarise), RightWrite)
+	app.HandleAdminFunc("GET /api/admin/x/ads/breakdown", noSellers(m.handleBreakdown), RightRead)
+	app.HandleAdminFunc("GET /api/admin/x/ads/pacing", noSellers(m.handlePacing), RightRead)
+	app.HandleAdminFunc("PUT /api/admin/x/ads/budgets", noSellers(m.handlePutBudget), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/settings", noSellers(m.handleGetSettings), RightRead)
 	app.HandleAdminFunc("PUT /api/admin/x/ads/settings", noSellers(m.handlePutSettings), RightWrite)
 	app.OnStart(m.start)
