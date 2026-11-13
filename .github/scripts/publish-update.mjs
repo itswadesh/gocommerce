@@ -253,11 +253,23 @@ export async function pullRequestOf(sha, get = fetch) {
   return prs.find((p) => p.merged_at) || null
 }
 
+// noteSlug is the last part of a release note's address, as Content OS makes
+// it (noteSlug in its api/internal/httpapi/updates.go): the title in at most
+// 60 plain characters, the other brand's name made ShopNx's, then the pull
+// request number or the commit.
+export function noteSlug(title, ref) {
+  const s = title.toLowerCase().replaceAll('kitcommerce', 'shopnx').replace(/[^a-z0-9]+/g, '-').slice(0, 60)
+  return `${s.replace(/^-+|-+$/g, '')}-${ref.replace(/^.*[#@]/, '').toLowerCase()}`
+}
+
 async function queue() {
   const rows = existsSync(PUSHED) ? JSON.parse(readFileSync(PUSHED, 'utf8')) : []
   if (!rows.length) return console.log('Nothing in this push to queue.')
   const sha = env.AFTER || rows[rows.length - 1].sha
   const update = updateFor(rows, await pullRequestOf(sha), sha, PAGE)
+  // A brand whose site has release notes (ShopNx) links each update's posts to
+  // the note Content OS writes for it.
+  if (env.RELEASE_NOTES_URL) update.link = `${env.RELEASE_NOTES_URL.replace(/\/$/, '')}/${noteSlug(update.title, update.ref)}`
   await send('Content OS', `${env.CONTENT_OS_URL.replace(/\/$/, '')}/api/site/updates`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CONTENT_OS_SITE_KEY}` },

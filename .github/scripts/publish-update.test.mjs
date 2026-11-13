@@ -1,7 +1,7 @@
 // node --test .github/scripts/publish-update.test.mjs
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { pullRequestOf, updateFor } from './publish-update.mjs'
+import { noteSlug, pullRequestOf, updateFor } from './publish-update.mjs'
 
 const rows = [
   { sha: 'a1', type: 'feature', title: 'Switch stores from the account menu' },
@@ -42,6 +42,15 @@ test('a lookup GitHub cannot answer fails, rather than changing the ref', async 
   await assert.rejects(pullRequestOf('abc', down), /502/)
   const offline = async () => { throw new Error('fetch failed') }
   await assert.rejects(pullRequestOf('abc', offline), /fetch failed/)
+})
+
+// The same addresses Content OS gives the notes (its TestNoteSlug), or the
+// posts would link to a page that does not exist.
+test('a release note is linked at the address Content OS gives it', () => {
+  assert.equal(noteSlug("Show KitCommerce's new look", 'gocommerce#351'), 'show-shopnx-s-new-look-351')
+  assert.equal(noteSlug('Put the home page, the product listing and categories in the sitemap', 'gocommerce#377'),
+    'put-the-home-page-the-product-listing-and-categories-in-the-377')
+  assert.equal(noteSlug('GoCommerce update: 2 fixes', 'gocommerce@AB12cd3'), 'gocommerce-update-2-fixes-ab12cd3')
 })
 
 test('a direct push has no pull request; a merged one is found', async () => {
