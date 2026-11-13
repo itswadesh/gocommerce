@@ -80,6 +80,32 @@
         }
       }
     },
+    "/x/sitemaps/listings.xml": {
+      "get": {
+        "tags": [
+          "sitemaps"
+        ],
+        "summary": "The home page, the all-products page and every category with something live in it",
+        "responses": {
+          "200": {
+            "description": "The urlset.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/x/sitemaps/pages.xml": {
       "get": {
         "tags": [
