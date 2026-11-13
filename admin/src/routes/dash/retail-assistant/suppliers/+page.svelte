@@ -28,6 +28,7 @@
     const currency = $derived(settings.currency);
 
     let enabled = $state(true);
+    let newProducts = $state(false);
     let suppliers = $state([]);
     let loading = $state(true);
     let busy = $state(false);
@@ -56,7 +57,9 @@
     async function load() {
         loading = true;
         try {
-            enabled = (await retailAssistant.status()).enabled;
+            const status = await retailAssistant.status();
+            enabled = status.enabled;
+            newProducts = !!status.new_products;
             if (enabled) suppliers = await retailAssistant.suppliers();
         } catch (err) {
             toast.error(err);
@@ -175,9 +178,17 @@
             bill,
             location: receiving?.location ?? "",
             locations: receiving?.locations ?? [],
-            lines: lines.map((l) => ({ ...l, variant: l.variant_id ? { id: l.variant_id, sku: l.sku } : null, qty: wholeQuantity(l.quantity) })),
+            lines: lines.map((l) => ({
+                ...l,
+                variant: l.variant_id ? { id: l.variant_id, sku: l.variant_sku || l.sku } : null,
+                // With the setting on, a line nothing matches becomes a product unless the person picks one.
+                newProduct: canMake(l) && !l.variant_id,
+                qty: wholeQuantity(l.quantity),
+            })),
         };
     }
+
+    const canMake = (line) => newProducts && !!line.description?.trim();
 
     function startReceive(bill) {
         return run(async () => {
@@ -195,7 +206,7 @@
 
     async function receive(e) {
         e.preventDefault();
-        const chosen = receiving.lines.filter((l) => !l.receipt && l.variant && l.qty);
+        const chosen = receiving.lines.filter((l) => !l.receipt && (l.variant || l.newProduct) && l.qty);
         if (!chosen.length) {
             toast.error(new Error(t("Choose a product and a quantity for at least one line")));
             return;
@@ -204,9 +215,15 @@
         await run(async () => {
             try {
                 const out = await retailAssistant.receive(bill.id, {
-                    lines: chosen.map((l) => ({ line_id: l.id, variant_id: l.variant.id, location_id: Number(receiving.location) || 0, quantity: Number(l.qty) })),
+                    lines: chosen.map((l) => ({
+                        line_id: l.id,
+                        ...(l.variant ? { variant_id: l.variant.id } : { new_product: true }),
+                        location_id: Number(receiving.location) || 0,
+                        quantity: Number(l.qty),
+                    })),
                 });
                 toast.success(out.received === 1 ? t("1 line booked into stock") : t("{n} lines booked into stock", { n: out.received }));
+                if (out.created) toast.success(out.created === 1 ? t("1 new product saved as a draft under Products") : t("{n} new products saved as drafts under Products", { n: out.created }));
             } finally {
                 // Lines go one at a time, so a refusal part way leaves earlier ones
                 // booked in; the list has to show that either way.
@@ -333,8 +350,17 @@
                                     <span class="txt-sm">{line.variant.product?.title ?? "SKU"} <span class="txt-code">{line.variant.sku}</span></span>
                                     <button type="button" class="btn sm transparent secondary" onclick={() => (line.variant = null)}><span class="txt">{t("Change")}</span></button>
                                 </div>
+                            {:else if line.newProduct}
+                                <div class="tw:mt-1 tw:flex tw:flex-wrap tw:items-center tw:gap-2" in:rise>
+                                    <span class="label">{t("New product")}</span>
+                                    <span class="txt-hint txt-sm">{t("Saved as a draft, named from this line")}</span>
+                                    <button type="button" class="btn sm transparent secondary" onclick={() => (line.newProduct = false)}><span class="txt">{t("Pick an existing product")}</span></button>
+                                </div>
                             {:else}
                                 <VariantSearch id={`ra-variant-${line.id}`} disabled={busy} onpick={(row) => (line.variant = row)} />
+                                {#if canMake(line)}
+                                    <button type="button" class="btn sm transparent secondary m-t-sm" onclick={() => (line.newProduct = true)}><span class="txt">{t("Make a new product")}</span></button>
+                                {/if}
                             {/if}
                             <div class="field m-t-sm">
                                 <label for={`ra-qty-${line.id}`}>{t("Quantity that arrived")}</label>

@@ -314,9 +314,20 @@ worked back from what was recorded.
 
 A bill does not put goods on the shelf. Under **Orders › Suppliers**, open a
 supplier and press **Book in goods** on a bill. Each line asks which product it is
-and how many arrived; a line whose SKU is exactly a variant's comes matched, and a
-whole quantity on the bill comes filled in. Lines left without a product stay open
-for later. Behind it, `POST /api/admin/x/retailassistant/invoices/{id}/receive`
+and how many arrived. A line whose SKU is exactly a variant's comes matched, and
+so does one whose description is the same as a line from this supplier booked in
+before. A whole quantity on the bill comes filled in. Lines left without a product
+stay open for later.
+
+**New products from a bill.** With **Make new products from bill lines** on in the
+retail assistant's settings (off by default), a line that matches nothing becomes
+a new product when it is booked in, unless you pick an existing one. The product
+is named from the line and takes its barcode, HSN, the rate as its cost, the
+supplier as its vendor, and the MRP as its price, or the rate when the bill has
+no MRP. It starts as a draft, so neither the storefront nor the counter sells it
+until someone checks the price and publishes it. Its SKU is the line's own, or
+`BILL-` and the line's number, which is also how a retry finds it rather than
+making a second. Behind it, `POST /api/admin/x/retailassistant/invoices/{id}/receive`
 moves stock through the stock service once per line, and needs
 `retailassistant.write` and `inventory.write`.
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -780,9 +782,12 @@ type PurchaseLine struct {
 	// Receipt stays pending when the server died between recording it and moving
 	// stock, which a person has to check rather than repeat.
 	Receipt *LineReceipt `json:"receipt"`
-	// VariantID is the variant whose SKU is exactly the one on the line. It is a
-	// suggestion: the person receiving the goods still confirms it.
-	VariantID *int64 `json:"variant_id"`
+	// VariantID is the variant whose SKU is exactly the one on the line or, failing
+	// that, the one this supplier's line of the same description was last booked
+	// in as. It is a suggestion: the person receiving the goods still confirms it.
+	VariantID  *int64 `json:"variant_id"`
+	VariantSKU string `json:"variant_sku,omitempty"`
+	prev       sql.NullInt64
 }
 
 // LineReceipt is what was booked in for a line.
@@ -809,10 +814,20 @@ func (m *Module) handleInvoiceLines(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.NotFoundf("no invoice %d", id))
 		return
 	}
+	// prev is what the same supplier's line of the same description was booked in
+	// as last time, so an item made into a product once is matched after that.
 	rows, err := m.db.QueryContext(ctx, `
-		SELECT l.id, l.description, l.sku, l.barcode, l.quantity, l.unit, x.variant_id, x.location_id, x.quantity, x.status
+		SELECT l.id, l.description, l.sku, l.barcode, l.quantity, l.unit, x.variant_id, x.location_id, x.quantity, x.status, prev.variant_id
 		FROM retailassistant_purchase_lines l
+		JOIN retailassistant_purchase_invoices i ON i.id = l.invoice_id
 		LEFT JOIN retailassistant_stock_receipts x ON x.line_id = l.id
+		LEFT JOIN LATERAL (
+			SELECT px.variant_id FROM retailassistant_stock_receipts px
+			JOIN retailassistant_purchase_lines pl ON pl.id = px.line_id
+			JOIN retailassistant_purchase_invoices pi ON pi.id = pl.invoice_id
+			WHERE pi.supplier_id = i.supplier_id AND pl.id <> l.id AND px.status = 'posted'
+			  AND btrim(l.description) <> '' AND lower(btrim(pl.description)) = lower(btrim(l.description))
+			ORDER BY px.id DESC LIMIT 1) prev ON true
 		WHERE l.invoice_id = $1 ORDER BY l.id`, id)
 	if err != nil {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list invoice lines"))
@@ -825,7 +840,7 @@ func (m *Module) handleInvoiceLines(w http.ResponseWriter, r *http.Request) {
 		var variant, location sql.NullInt64
 		var quantity sql.NullInt32
 		var status sql.NullString
-		if err := rows.Scan(&l.ID, &l.Description, &l.SKU, &l.Barcode, &l.Quantity, &l.Unit, &variant, &location, &quantity, &status); err != nil {
+		if err := rows.Scan(&l.ID, &l.Description, &l.SKU, &l.Barcode, &l.Quantity, &l.Unit, &variant, &location, &quantity, &status, &l.prev); err != nil {
 			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "list invoice lines"))
 			return
 		}
@@ -839,10 +854,20 @@ func (m *Module) handleInvoiceLines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range out {
-		if l := &out[i]; l.Receipt == nil && l.SKU != nil && *l.SKU != "" {
-			if v, err := m.app.Products().GetVariantBySKU(ctx, *l.SKU); err == nil {
-				l.VariantID = &v.ID
-			}
+		l := &out[i]
+		if l.Receipt != nil {
+			continue
+		}
+		var v *gocommerce.Variant
+		if l.SKU != nil && *l.SKU != "" {
+			v, _ = m.app.Products().GetVariantBySKU(ctx, *l.SKU)
+		}
+		// A product deleted since is no suggestion.
+		if v == nil && l.prev.Valid {
+			v, _ = m.app.Products().GetVariant(ctx, l.prev.Int64)
+		}
+		if v != nil {
+			l.VariantID, l.VariantSKU = &v.ID, v.SKU
 		}
 	}
 	gocommerce.Respond(w, http.StatusOK, out)
@@ -862,12 +887,7 @@ func (m *Module) handleReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Lines []struct {
-			LineID     int64 `json:"line_id"`
-			VariantID  int64 `json:"variant_id"`
-			LocationID int64 `json:"location_id"`
-			Quantity   int   `json:"quantity"`
-		} `json:"lines"`
+		Lines []receiveLine `json:"lines"`
 	}
 	if err := gocommerce.DecodeJSON(w, r, &in); err != nil {
 		gocommerce.RespondError(w, r, err)
@@ -878,6 +898,10 @@ func (m *Module) handleReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if slices.ContainsFunc(in.Lines, func(l receiveLine) bool { return l.NewProduct }) && !m.newProductsOn(ctx) {
+		gocommerce.RespondError(w, r, gocommerce.Conflictf("making products from bill lines is off in the retail assistant's settings"))
+		return
+	}
 	var invoiceNo string
 	var reversed bool
 	err = m.db.QueryRowContext(ctx, `SELECT invoice_no, reversed_at IS NOT NULL FROM retailassistant_purchase_invoices WHERE id = $1`, id).Scan(&invoiceNo, &reversed)
@@ -893,11 +917,21 @@ func (m *Module) handleReceive(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Conflictf("this invoice was reversed"))
 		return
 	}
-	received := 0
+	received, created := 0, 0
 	for _, l := range in.Lines {
-		if l.Quantity <= 0 || l.VariantID <= 0 {
-			gocommerce.RespondError(w, r, gocommerce.Validationf("each line needs a variant and a quantity above zero"))
+		if l.Quantity <= 0 || (l.VariantID > 0) == l.NewProduct {
+			gocommerce.RespondError(w, r, gocommerce.Validationf("each line needs a quantity above zero, and either a variant or new_product"))
 			return
+		}
+		if l.NewProduct {
+			made := false
+			if l.VariantID, made, err = m.productFromLine(ctx, id, l.LineID); err != nil {
+				gocommerce.RespondError(w, r, err)
+				return
+			}
+			if made {
+				created++
+			}
 		}
 		var receiptID int64
 		err := m.db.QueryRowContext(ctx, `
@@ -924,7 +958,7 @@ func (m *Module) handleReceive(w http.ResponseWriter, r *http.Request) {
 			if _, err := tx.ExecContext(ctx, `UPDATE retailassistant_stock_receipts SET status = 'posted' WHERE id = $1`, receiptID); err != nil {
 				return err
 			}
-			return m.audit(ctx, tx, "goods.received", "line", l.LineID, map[string]any{"variant_id": l.VariantID, "quantity": l.Quantity})
+			return m.audit(ctx, tx, "goods.received", "line", l.LineID, map[string]any{"variant_id": l.VariantID, "quantity": l.Quantity, "new_product": l.NewProduct})
 		})
 		if err != nil {
 			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "record a goods receipt"))
@@ -932,5 +966,77 @@ func (m *Module) handleReceive(w http.ResponseWriter, r *http.Request) {
 		}
 		received++
 	}
-	gocommerce.Respond(w, http.StatusOK, map[string]int{"received": received})
+	gocommerce.Respond(w, http.StatusOK, map[string]int{"received": received, "created": created})
+}
+
+type receiveLine struct {
+	LineID     int64 `json:"line_id"`
+	VariantID  int64 `json:"variant_id"`
+	LocationID int64 `json:"location_id"`
+	Quantity   int   `json:"quantity"`
+	// NewProduct makes a product from the line instead of naming a variant.
+	NewProduct bool `json:"new_product"`
+}
+
+func (m *Module) newProductsOn(ctx context.Context) bool {
+	var s struct {
+		On bool `plugin:"new_products"`
+	}
+	return m.app.Plugins().Fill(ctx, pluginKey, &s) == nil && s.On
+}
+
+// productFromLine makes a product from a bill line that matches nothing, so
+// goods the shop never stocked before can be booked in. It is a draft: the bill
+// says what the shop paid and at most the MRP, and nobody has chosen a selling
+// price yet. The SKU is the line's own or one named after the line, which is how
+// a retry finds the product it made instead of making a second.
+func (m *Module) productFromLine(ctx context.Context, invoiceID, lineID int64) (int64, bool, error) {
+	var desc, vendor string
+	var sku, barcode, hsn sql.NullString
+	var cost, mrp sql.NullInt64
+	var received bool
+	err := m.db.QueryRowContext(ctx, `
+		SELECT l.description, l.sku, l.barcode, l.hsn, l.unit_price_minor, l.mrp_minor, s.name,
+		       EXISTS (SELECT 1 FROM retailassistant_stock_receipts x WHERE x.line_id = l.id)
+		FROM retailassistant_purchase_lines l
+		JOIN retailassistant_purchase_invoices i ON i.id = l.invoice_id
+		JOIN retailassistant_suppliers s ON s.id = i.supplier_id
+		WHERE l.id = $1 AND l.invoice_id = $2`, lineID, invoiceID).Scan(&desc, &sku, &barcode, &hsn, &cost, &mrp, &vendor, &received)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && received) {
+		return 0, false, gocommerce.Conflictf("line %d is not on this invoice, or was already received", lineID)
+	}
+	if err != nil {
+		return 0, false, gocommerce.Internalf(err, "read a bill line")
+	}
+	title := strings.TrimSpace(desc)
+	if title == "" {
+		return 0, false, gocommerce.Validationf("line %d has no description to name a product by", lineID)
+	}
+	code := strings.TrimSpace(sku.String)
+	if code == "" {
+		code = fmt.Sprintf("BILL-%d", lineID)
+	}
+	if v, err := m.app.Products().GetVariantBySKU(ctx, code); err == nil {
+		return v.ID, false, nil
+	} else if !isNotFound(err) {
+		return 0, false, err
+	}
+	v := gocommerce.VariantInput{SKU: code, Barcode: strings.TrimSpace(barcode.String), HSCode: strings.TrimSpace(hsn.String), PriceMinor: cost.Int64}
+	if cost.Valid {
+		v.CostMinor = &cost.Int64
+	}
+	if mrp.Int64 > 0 {
+		v.PriceMinor = mrp.Int64
+	}
+	p, err := m.app.Products().CreateProduct(ctx, gocommerce.ProductInput{
+		Title: title, Vendor: vendor, Status: gocommerce.ProductDraft, Variants: []gocommerce.VariantInput{v},
+	})
+	var apiErr *gocommerce.APIError
+	if errors.As(err, &apiErr) && strings.Contains(apiErr.Message, "slug") {
+		return 0, false, gocommerce.Conflictf("a product named like %q already exists; pick it instead of making another", title)
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return p.DefaultVariant().ID, true, nil
 }

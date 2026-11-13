@@ -803,6 +803,59 @@ func TestABillMovesNoStockAndAReceiptMovesItOnce(t *testing.T) {
 	}
 }
 
+// A line that matches nothing becomes a draft product only when the store asked
+// for that, once however often it is retried, and the next bill's line of the
+// same name comes matched to it.
+func TestALineThatMatchesNothingBecomesADraftProduct(t *testing.T) {
+	h := setup(t)
+	h.link("", senderA)
+	lineOf := func(invoice int64) int64 {
+		var id int64
+		if err := h.app.DB().QueryRowContext(h.ctxOf(""), `SELECT id FROM retailassistant_purchase_lines WHERE invoice_id = $1`, invoice).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	invoice, _ := h.post("NEW-1", 1180)
+	line := lineOf(invoice)
+	receive := path(fmt.Sprintf("/invoices/%d/receive", invoice), "")
+	body := map[string]any{"lines": []map[string]any{{"line_id": line, "new_product": true, "quantity": 10}}}
+
+	h.admin(http.MethodPost, receive, body, nil, http.StatusConflict)
+	h.setSetting("new_products", true)
+	var out struct{ Received, Created int }
+	h.admin(http.MethodPost, receive, body, &out, http.StatusOK)
+	if out.Received != 1 || out.Created != 1 {
+		t.Fatalf("receive = %+v", out)
+	}
+	h.admin(http.MethodPost, receive, body, nil, http.StatusConflict)
+
+	v, err := h.app.Products().GetVariantBySKU(h.ctxOf(""), fmt.Sprintf("BILL-%d", line))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.app.Products().GetProduct(h.ctxOf(""), v.ProductID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Title != "Lip colour shade 01" || p.Status != gocommerce.ProductDraft || p.Vendor != "ABC Cosmetics" || v.StockOnHand != 10 {
+		t.Fatalf("made %q %s by %q with %d on hand", p.Title, p.Status, p.Vendor, v.StockOnHand)
+	}
+	if v.Cost == nil || v.Cost.AmountMinor != 10000 || v.Price.AmountMinor != 10000 {
+		t.Fatalf("cost %+v, price %+v; want the bill's rate for both", v.Cost, v.Price)
+	}
+	if n := h.count("", "products"); n != 1 {
+		t.Fatalf("%d products, want 1", n)
+	}
+
+	next, _ := h.post("NEW-2", 1180)
+	var lines []PurchaseLine
+	h.admin(http.MethodGet, path(fmt.Sprintf("/invoices/%d/lines", next), ""), nil, &lines, http.StatusOK)
+	if len(lines) != 1 || lines[0].VariantID == nil || *lines[0].VariantID != v.ID || lines[0].VariantSKU != v.SKU {
+		t.Fatalf("next bill's line = %+v, want it matched to %d", lines, v.ID)
+	}
+}
+
 // Spec test 9: Store B cannot reach Store A's records by id, by naming the store
 // it is not on, or through the row policy directly.
 func TestStoresCannotReachEachOther(t *testing.T) {
