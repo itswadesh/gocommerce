@@ -82,6 +82,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 			{Key: "category_path", Label: "Category page path", Kind: "text", Default: "/{slug}"},
 			{Key: "listing_path", Label: "All-products page path", Kind: "text", Default: "/products"},
 			{Key: "page_path", Label: "Content page path", Kind: "text", Default: "/pages/{slug}"},
+			// The storefront's own pages that are not a record: each is listed
+			// only when it has something on it.
+			{Key: "contact_path", Label: "Contact page path", Kind: "text", Default: "/contact-us"},
+			{Key: "faq_path", Label: "FAQ page path", Kind: "text", Default: "/faqs"},
+			{Key: "collections_index_path", Label: "All-collections page path", Kind: "text", Default: "/collections"},
+			{Key: "categories_index_path", Label: "All-categories page path", Kind: "text", Default: "/categories"},
 		},
 	})
 	app.HandleFunc("GET /x/sitemaps/sitemap.xml", m.handleIndex)
@@ -98,6 +104,7 @@ func (m *Module) Register(app *gocommerce.App) error {
 type settings struct {
 	enabled                                                       bool
 	storefront, products, collections, categories, listing, pages string
+	contact, faq, collectionsIndex, categoriesIndex               string
 }
 
 func (m *Module) settings(ctx context.Context) (settings, error) {
@@ -128,12 +135,22 @@ func (m *Module) settings(ctx context.Context) (settings, error) {
 		categories:  str("category_path", m.cfg.CategoryPath, "/{slug}"),
 		listing:     str("listing_path", m.cfg.ListingPath, "/products"),
 		pages:       str("page_path", m.cfg.PagePath, "/pages/{slug}"),
+		contact:     str("contact_path", "/contact-us"),
+		faq:         str("faq_path", "/faqs"),
+		// Named like the others so a storefront without them can point
+		// elsewhere; nothing is listed for a page with nothing on it.
+		collectionsIndex: str("collections_index_path", "/collections"),
+		categoriesIndex:  str("categories_index_path", "/categories"),
 	}, nil
 }
 
-func (m *Module) hasCMS() bool {
+func (m *Module) hasCMS() bool { return m.hasModule("cms") }
+
+// hasModule is whether the install runs the named module, so a table it owns
+// can be read.
+func (m *Module) hasModule(want string) bool {
 	for _, name := range m.app.Modules() {
-		if name == "cms" {
+		if name == want {
 			return true
 		}
 	}
@@ -244,6 +261,7 @@ func (m *Module) handleListings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
+	categories := 0
 	for rows.Next() {
 		var slug string
 		var at time.Time
@@ -251,6 +269,7 @@ func (m *Module) handleListings(w http.ResponseWriter, r *http.Request) {
 			gocommerce.RespondError(w, r, gocommerce.Internalf(err, "scan category"))
 			return
 		}
+		categories++
 		set.URLs = append(set.URLs, entry{
 			Loc: s.storefront + strings.ReplaceAll(s.categories, "{slug}", slug), LastMod: lastmod(at), ChangeFreq: "weekly",
 		})
@@ -259,6 +278,23 @@ func (m *Module) handleListings(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, gocommerce.Internalf(err, "read categories"))
 		return
 	}
+	// The storefront's own pages, each only when it has something on it: an
+	// empty FAQ or collections page in a sitemap is a thin page Google is
+	// told to index.
+	if categories > 0 {
+		set.URLs = append(set.URLs, entry{Loc: s.storefront + s.categoriesIndex, ChangeFreq: "weekly"})
+	}
+	if collections, _, err := m.app.Collections().ListActive(r.Context(), 1, 0); err == nil && len(collections) > 0 {
+		set.URLs = append(set.URLs, entry{Loc: s.storefront + s.collectionsIndex, ChangeFreq: "weekly"})
+	}
+	if m.hasModule("faq") {
+		var any bool
+		if err := m.app.DB().QueryRowContext(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM faq_entries WHERE published)`).Scan(&any); err == nil && any {
+			set.URLs = append(set.URLs, entry{Loc: s.storefront + s.faq, ChangeFreq: "monthly"})
+		}
+	}
+	set.URLs = append(set.URLs, entry{Loc: s.storefront + s.contact, ChangeFreq: "monthly"})
 	write(w, set)
 }
 
