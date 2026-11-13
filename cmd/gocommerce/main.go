@@ -212,7 +212,8 @@ environment:
                     counts in the panel, once a code has proved the number
   GOCOMMERCE_PLATFORM_EMAIL_FROM
                     the sender of the email that person sends a store's owner
-                    to verify an address; ANTHROPIC_API_KEY writes its first version
+                    to verify an address; ANTHROPIC_API_KEY writes its first version.
+                    Also the stores' Resend sender when RESEND_FROM is empty
   GOCOMMERCE_ALLOW_PRIVATE_URLS
                     same as -allow-private-urls, read the same way. Only for an
                     install where every store operator is trusted with the
@@ -593,10 +594,13 @@ environment:
 		// installed idle and wait for the Setup Email / Setup SMS screens.
 		// Resend first, because it is the one that works with one setting: a key
 		// and nothing else sends, from Resend's own onboarding address, until the
-		// store has a domain of its own to verify.
+		// store has a domain of its own to verify. The platform's sender is the
+		// last fallback: it is verified already, and the onboarding address
+		// delivers only to the Resend account's owner, so a shopper's order
+		// email from it is refused.
 		if *withResend {
 			modules = append(modules, resend.New(resend.Config{
-				APIKey: os.Getenv("RESEND_API_KEY"), From: firstEnv("RESEND_FROM", "DEFAULT_EMAIL_FROM_ADDRESS"),
+				APIKey: os.Getenv("RESEND_API_KEY"), From: firstEnv("RESEND_FROM", "DEFAULT_EMAIL_FROM_ADDRESS", "GOCOMMERCE_PLATFORM_EMAIL_FROM"),
 				FromName: os.Getenv("RESEND_FROM_NAME"),
 			}))
 		}
