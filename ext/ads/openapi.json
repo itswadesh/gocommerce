@@ -539,10 +539,165 @@
           }
         }
       }
+    },
+    "/api/admin/x/ads/connectors": {
+      "get": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "The Google Ads and Meta spend connectors and their last run",
+        "description": "One entry per platform: whether its plugin (google-ads-spend, meta-ads-spend) is switched on, the settings still missing, and the latest run. A connector with its plugin off or a setting missing does nothing. Neither has been run against a real ad account.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connectors.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdsConnector"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ads/connectors/{platform}/sync": {
+      "post": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "Read a platform's spend now",
+        "description": "Reads the last 7 days of spend per campaign and day from the platform's API and writes them as ads_spend rows with origin google or meta, under the plugin's utm_source and utm_medium, replacing the same days. The daily job does the same once a good run is 20 hours old. The run is kept and shown, failed or not.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "google",
+                "meta"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The run.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdsSyncRun"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdsSyncRun": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "campaigns": {
+            "type": "integer"
+          }
+        }
+      },
+      "AdsConnector": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "google",
+              "meta"
+            ]
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AdsSyncRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "AdsAdvice": {
         "type": "object",
         "properties": {

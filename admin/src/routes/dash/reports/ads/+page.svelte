@@ -229,6 +229,34 @@
         }
     }
 
+    // ------------------------------------------------------------ connectors
+
+    let connectors = $state([]);
+    let syncing = $state("");
+
+    function loadConnectors() {
+        ads.connectors().then((c) => (connectors = c ?? [])).catch(() => {});
+    }
+    $effect(() => {
+        if (readable && hasModule("ads")) loadConnectors();
+    });
+
+    async function syncNow(c) {
+        syncing = c.platform;
+        try {
+            const run = await ads.sync(c.platform);
+            if (run.ok) toast.success(run.message);
+            else toast.error(run.message);
+            loadConnectors();
+            loadPacing();
+            await load();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            syncing = "";
+        }
+    }
+
     // --------------------------------------------------------------- summary
 
     let summary = $state(null);
@@ -757,6 +785,47 @@
                             <span>Make a summary of each week, every Monday</span>
                         </label>
                     {/if}
+                </section>
+
+                <section class="recovery-report-card" aria-labelledby="ads-connect-title">
+                    <h2 class="recovery-report-title" id="ads-connect-title">Spend from Google Ads and Meta</h2>
+                    <p class="txt-hint txt-sm recovery-card-desc">
+                        Once connected, each day's spend per campaign is read from the platform every day, as an import would
+                        bring it in. Read-only: nothing is changed in your ad accounts. These connections have not yet been tried
+                        against a real ad account, so compare the first days with the platform's own figures.
+                    </p>
+                    <ul class="ads-pace">
+                        {#each connectors as c (c.platform)}
+                            <li class="ads-pace-row">
+                                <div class="ads-pace-head">
+                                    <strong>{c.title}</strong>
+                                    {#if !c.enabled || c.missing.length}
+                                        <span class="ads-kind is-watch">Not connected</span>
+                                    {:else if c.last && !c.last.ok}
+                                        <span class="ads-kind is-wasting">Last read failed</span>
+                                    {:else}
+                                        <span class="ads-kind is-working">Connected</span>
+                                    {/if}
+                                    <span class="flex-fill"></span>
+                                    {#if writable && c.enabled && !c.missing.length}
+                                        <button type="button" class="btn sm secondary ads-press" class:btn-loading={syncing === c.platform} disabled={!!syncing} onclick={() => syncNow(c)}>Read spend now</button>
+                                    {/if}
+                                    <a class="btn sm transparent secondary ads-press" href="{base}/dash/plugins?open={c.plugin}">Settings</a>
+                                </div>
+                                <p class="txt-hint txt-sm">
+                                    {#if !c.enabled}
+                                        Switch on its plugin and fill in its settings to read spend automatically. Until then it does nothing.
+                                    {:else if c.missing.length}
+                                        Still needed: {c.missing.join(", ")}. Until then it does nothing.
+                                    {:else if c.last}
+                                        {formatDate(c.last.at)}: {c.last.message}
+                                    {:else}
+                                        Not read yet: the first read runs within the hour.
+                                    {/if}
+                                </p>
+                            </li>
+                        {/each}
+                    </ul>
                 </section>
 
                 <section class="recovery-report-card" aria-labelledby="ads-spend-title">
