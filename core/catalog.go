@@ -381,6 +381,11 @@ type ProductQuery struct {
 	// one attribute widen the result and several attributes narrow it — see
 	// AttributeFilter.
 	Attributes []AttributeFilter
+	// Options narrows by a variant option's value — Size M, Colour Black — with
+	// Key the option's name as the product spells it. Values widen and names
+	// narrow, as Attributes do; a product matches when it offers the value,
+	// whether or not that variant is in stock.
+	Options []AttributeFilter
 	// ChannelID narrows to one storefront: products published to it, plus every
 	// product published to no channel at all. Zero does not narrow, which is
 	// what a store with no channels wants and what every admin listing wants.
@@ -1423,8 +1428,12 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 	}
 	if s := strings.TrimSpace(q.Search); s != "" {
 		args = append(args, "%"+strings.ToLower(s)+"%")
+		// Option values too: a shopper typing "blue" means the kurta that comes
+		// in royal blue, though neither its title nor its description says so.
 		where = append(where, fmt.Sprintf(
-			"(lower(p.title) LIKE $%d OR lower(p.description) LIKE $%d)", len(args), len(args)))
+			`(lower(p.title) LIKE $%[1]d OR lower(p.description) LIKE $%[1]d OR EXISTS (
+			    SELECT 1 FROM product_options po JOIN product_option_values pov ON pov.option_id = po.id
+			    WHERE po.product_id = p.id AND lower(pov.value) LIKE $%[1]d))`, len(args)))
 	}
 	if v := trimmed(q.Vendors); len(v) > 0 {
 		args = append(args, v)
@@ -1482,6 +1491,16 @@ func productFilters(q ProductQuery, args []any) (join string, where []string, ou
 		if len(ors) > 0 {
 			where = append(where, "("+strings.Join(ors, " OR ")+")")
 		}
+	}
+	for _, f := range q.Options {
+		name := strings.TrimSpace(f.Key)
+		if name == "" || len(f.Values) == 0 {
+			continue
+		}
+		args = append(args, name, f.Values)
+		where = append(where, fmt.Sprintf(`EXISTS (
+		    SELECT 1 FROM product_options po JOIN product_option_values pov ON pov.option_id = po.id
+		    WHERE po.product_id = p.id AND po.name = $%d AND pov.value = ANY($%d::text[]))`, len(args)-1, len(args)))
 	}
 	return join, where, args
 }

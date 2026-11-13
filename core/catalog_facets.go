@@ -24,6 +24,10 @@ type ProductFacets struct {
 	ProductTypes []FacetValue            `json:"product_types"`
 	Categories   []CategoryFacet         `json:"categories"`
 	Attributes   map[string][]FacetValue `json:"attributes"`
+	// Options is each variant option's name, as the products spell it, to its
+	// values in the order the products list them: what option=name:value
+	// filters on.
+	Options map[string][]FacetValue `json:"options"`
 }
 
 // FacetValue is one value a group can take and how many products have it.
@@ -53,7 +57,7 @@ const facetLimit = 100
 // ProductFacets counts the facets of the listing q describes. Paging and
 // sorting in q are ignored.
 func (c *Catalog) ProductFacets(ctx context.Context, q ProductQuery) (*ProductFacets, error) {
-	out := &ProductFacets{Attributes: map[string][]FacetValue{}}
+	out := &ProductFacets{Attributes: map[string][]FacetValue{}, Options: map[string][]FacetValue{}}
 	var err error
 
 	without := q
@@ -82,6 +86,18 @@ func (c *Catalog) ProductFacets(ctx context.Context, q ProductQuery) (*ProductFa
 		without.Attributes = append(append([]AttributeFilter{}, q.Attributes[:i]...), q.Attributes[i+1:]...)
 		delete(out.Attributes, f.Key)
 		if err := c.attributeFacets(ctx, without, f.Key, out.Attributes); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := c.optionFacets(ctx, q, "", out.Options); err != nil {
+		return nil, err
+	}
+	for i, f := range q.Options {
+		without = q
+		without.Options = append(append([]AttributeFilter{}, q.Options[:i]...), q.Options[i+1:]...)
+		delete(out.Options, f.Key)
+		if err := c.optionFacets(ctx, without, f.Key, out.Options); err != nil {
 			return nil, err
 		}
 	}
@@ -161,6 +177,44 @@ func (c *Catalog) attributeFacets(ctx context.Context, q ProductQuery, only stri
 		}
 		if strings.TrimSpace(v.Value) != "" && len(into[key]) < facetLimit {
 			into[key] = append(into[key], v)
+		}
+	}
+	return rows.Err()
+}
+
+// optionFacets adds counts per option name to into, as attributeFacets does
+// for attributes. Sizes read XS to XXL rather than by count, so values keep
+// the order the products give them.
+func (c *Catalog) optionFacets(ctx context.Context, q ProductQuery, only string, into map[string][]FacetValue) error {
+	join, where, args := productFilters(q, nil)
+	selected := map[string]bool{}
+	for _, f := range q.Options {
+		selected[f.Key] = true
+	}
+	if only != "" {
+		args = append(args, only)
+		where = append(where, fmt.Sprintf("po.name = $%d", len(args)))
+	}
+	rows, err := c.app.db.QueryContext(ctx, `SELECT po.name, pov.value, count(*) FROM products p`+join+`
+		JOIN product_options po ON po.product_id = p.id
+		JOIN product_option_values pov ON pov.option_id = po.id
+		WHERE `+strings.Join(where, " AND ")+`
+		GROUP BY 1, 2 ORDER BY 1, min(pov.position), 2`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var v FacetValue
+		if err := rows.Scan(&name, &v.Value, &v.Count); err != nil {
+			return err
+		}
+		if only == "" && selected[name] {
+			continue
+		}
+		if strings.TrimSpace(v.Value) != "" && len(into[name]) < facetLimit {
+			into[name] = append(into[name], v)
 		}
 	}
 	return rows.Err()

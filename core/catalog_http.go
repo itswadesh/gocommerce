@@ -147,6 +147,7 @@ func publicProductQuery(r *http.Request) (ProductQuery, error) {
 		Vendors:       q["vendor"],
 		ProductTypes:  q["product_type"],
 		Attributes:    attributeFilters(q["attr"]),
+		Options:       attributeFilters(q["option"]),
 		PriceMinMinor: lo,
 		PriceMaxMinor: hi,
 		Sort:          sortBy,
