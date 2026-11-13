@@ -187,7 +187,10 @@ func (m *Module) items(ctx context.Context, s settings, mediaBase string, every 
 				}
 				if v.Label != "" && v.Label != "Default" {
 					it.Title += " - " + v.Label
-					it.Link += "?variant=" + v.SKU
+					// The address the storefront opens on that variant: it reads
+					// ?variant_id, and every "?variant=<SKU>" link landed on the
+					// first variant instead of the one the item names.
+					it.Link += "?variant_id=" + strconv.FormatInt(v.ID, 10)
 				}
 				if v.Image != nil {
 					it.Image = absolute(mediaBase, v.Image.URL)
