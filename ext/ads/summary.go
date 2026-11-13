@@ -571,6 +571,9 @@ func (m *Module) start(ctx context.Context) error {
 				if err := m.syncAll(ctx, time.Now()); err != nil {
 					m.app.Log().Error("ads: the spend sync failed", "error", err)
 				}
+				if err := m.proposeDaily(ctx, time.Now()); err != nil {
+					m.app.Log().Error("ads: proposing changes failed", "error", err)
+				}
 				return m.weekly(ctx, time.Now())
 			})
 			if err != nil && ctx.Err() == nil {

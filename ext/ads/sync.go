@@ -99,13 +99,13 @@ func (m *Module) registerConnectors(app *gocommerce.App) {
 	const untested = " Written to the platform's documented API and never yet run against a real account: check the first days it brings in against the platform's own figures."
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: GooglePluginKey, Title: "Google Ads spend", Icon: "ri-google-line", Category: "marketing",
-		Description: "Reads each day's cost per campaign from the Google Ads API into the ads report, once a day. Read-only: it changes nothing in the account." + untested,
+		Description: "Reads each day's cost per campaign from the Google Ads API into the ads report, once a day, and proposes changes from it. It changes nothing in the account until somebody approves a change on the ads changes screen." + untested,
 		Docs:        "https://developers.google.com/google-ads/api/docs/get-started/introduction",
 		Fields: []gocommerce.PluginField{
 			{Key: "developer_token", Label: "Developer token", Kind: "secret", Required: true, Help: "Google Ads › Tools › API Center, in a manager account. Basic access is needed to read a live account."},
 			{Key: "client_id", Label: "OAuth client ID", Kind: "text", Required: true, Help: "Google Cloud console › APIs & Services › Credentials, a Desktop or Web OAuth client, with the Google Ads API enabled."},
 			{Key: "client_secret", Label: "OAuth client secret", Kind: "secret", Required: true},
-			{Key: "refresh_token", Label: "Refresh token", Kind: "secret", Required: true, Help: "From signing in once with the scope https://www.googleapis.com/auth/adwords, for example with the OAuth Playground using your own client."},
+			{Key: "refresh_token", Label: "Refresh token", Kind: "secret", Required: true, Help: "From signing in once with the scope https://www.googleapis.com/auth/adwords, for example with the OAuth Playground using your own client. To make approved changes, sign in as a user who can edit the account."},
 			{Key: "customer_id", Label: "Customer ID", Kind: "text", Required: true, Help: "The ad account's ID, shown top right in Google Ads, such as 123-456-7890."},
 			{Key: "login_customer_id", Label: "Manager account ID", Kind: "text", Help: "Only when you sign in through a manager account: its ID."},
 			{Key: "utm_source", Label: "utm_source", Kind: "text", Default: "google", Help: "What these ads put in utm_source, so their spend meets their orders."},
@@ -115,12 +115,12 @@ func (m *Module) registerConnectors(app *gocommerce.App) {
 	})
 	app.RegisterPlugin(gocommerce.PluginDef{
 		Key: MetaPluginKey, Title: "Meta ads spend", Icon: "ri-meta-line", Category: "marketing",
-		Description: "Reads each day's spend per campaign from the Meta Marketing API into the ads report, once a day. Read-only: it changes nothing in the account." + untested,
+		Description: "Reads each day's spend per campaign from the Meta Marketing API into the ads report, once a day, and proposes changes from it. It changes nothing in the account until somebody approves a change on the ads changes screen." + untested,
 		Docs:        "https://developers.facebook.com/docs/marketing-api/insights",
 		Fields: []gocommerce.PluginField{
 			{Key: "app_id", Label: "App ID", Kind: "text", Help: "developers.facebook.com › My Apps, a Business app with the Marketing API added."},
 			{Key: "app_secret", Label: "App secret", Kind: "secret", Help: "The app's Settings › Basic. When given, each call is signed with it (appsecret_proof)."},
-			{Key: "access_token", Label: "Access token", Kind: "secret", Required: true, Help: "A system user's token from Business Settings › Users › System users, with ads_read on the ad account."},
+			{Key: "access_token", Label: "Access token", Kind: "secret", Required: true, Help: "A system user's token from Business Settings › Users › System users, with ads_read on the ad account, and ads_management too for approved changes to be made."},
 			{Key: "ad_account_id", Label: "Ad account ID", Kind: "text", Required: true, Help: "Business Settings › Accounts › Ad accounts; the number, with or without act_."},
 			{Key: "utm_source", Label: "utm_source", Kind: "text", Default: "facebook", Help: "What these ads put in utm_source, so their spend meets their orders."},
 			{Key: "utm_medium", Label: "utm_medium", Kind: "text", Default: "paid"},
@@ -158,22 +158,45 @@ type connector struct {
 	read func(ctx context.Context) (on bool, missing []string, source, medium string, fetch func(ctx context.Context, from, to string) ([]dayRow, error))
 }
 
+// googleSettings is the plugin's state: whether it is on, and its settings
+// with their defaults.
+func (m *Module) googleSettings(ctx context.Context) (bool, googleConfig) {
+	c := googleConfig{Source: "google", Medium: "cpc", APIVersion: "v22"}
+	on, _ := m.app.Plugins().Enabled(ctx, GooglePluginKey)
+	if on {
+		_ = m.app.Plugins().Fill(ctx, GooglePluginKey, &c)
+	}
+	return on, c
+}
+
+func (m *Module) metaSettings(ctx context.Context) (bool, metaConfig) {
+	c := metaConfig{Source: "facebook", Medium: "paid", APIVersion: "v23.0"}
+	on, _ := m.app.Plugins().Enabled(ctx, MetaPluginKey)
+	if on {
+		_ = m.app.Plugins().Fill(ctx, MetaPluginKey, &c)
+	}
+	return on, c
+}
+
+// googleConfig is the settings when the plugin is on and filled in.
+func (m *Module) googleConfig(ctx context.Context) (googleConfig, bool) {
+	on, c := m.googleSettings(ctx)
+	return c, on && len(c.missing()) == 0
+}
+
+func (m *Module) metaConfig(ctx context.Context) (metaConfig, bool) {
+	on, c := m.metaSettings(ctx)
+	return c, on && len(c.missing()) == 0
+}
+
 func (m *Module) connectors() []connector {
 	return []connector{
 		{"google", GooglePluginKey, "Google Ads", func(ctx context.Context) (bool, []string, string, string, func(context.Context, string, string) ([]dayRow, error)) {
-			c := googleConfig{Source: "google", Medium: "cpc", APIVersion: "v22"}
-			on, _ := m.app.Plugins().Enabled(ctx, GooglePluginKey)
-			if on {
-				_ = m.app.Plugins().Fill(ctx, GooglePluginKey, &c)
-			}
+			on, c := m.googleSettings(ctx)
 			return on, c.missing(), c.Source, c.Medium, func(ctx context.Context, from, to string) ([]dayRow, error) { return m.googleSpend(ctx, c, from, to) }
 		}},
 		{"meta", MetaPluginKey, "Meta", func(ctx context.Context) (bool, []string, string, string, func(context.Context, string, string) ([]dayRow, error)) {
-			c := metaConfig{Source: "facebook", Medium: "paid", APIVersion: "v23.0"}
-			on, _ := m.app.Plugins().Enabled(ctx, MetaPluginKey)
-			if on {
-				_ = m.app.Plugins().Fill(ctx, MetaPluginKey, &c)
-			}
+			on, c := m.metaSettings(ctx)
 			return on, c.missing(), c.Source, c.Medium, func(ctx context.Context, from, to string) ([]dayRow, error) { return m.metaSpend(ctx, c, from, to) }
 		}},
 	}
@@ -189,14 +212,24 @@ func (m *Module) client() *http.Client {
 // getJSON sends req and decodes a 2xx answer into out; anything else is an
 // error carrying the platform's own message, which the panel shows.
 func (m *Module) getJSON(req *http.Request, out any) error {
-	res, err := m.client().Do(req)
+	body, err := m.call(req)
 	if err != nil {
 		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
+// call sends req and returns a 2xx answer's body; anything else is an error
+// carrying the platform's own message.
+func (m *Module) call(req *http.Request) ([]byte, error) {
+	res, err := m.client().Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if res.StatusCode/100 != 2 {
 		var e struct {
@@ -216,9 +249,9 @@ func (m *Module) getJSON(req *http.Request, out any) error {
 		if len(msg) > 300 {
 			msg = msg[:300]
 		}
-		return fmt.Errorf("%s answered %d: %s", req.URL.Host, res.StatusCode, msg)
+		return body, fmt.Errorf("%s answered %d: %s", req.URL.Host, res.StatusCode, msg)
 	}
-	return json.Unmarshal(body, out)
+	return body, nil
 }
 
 // micros turns Google's cost in millionths of a unit into minor units, half up.
@@ -230,74 +263,120 @@ func micros(v int64, exp int) int64 {
 	return (v + div/2) / div
 }
 
-func (m *Module) googleSpend(ctx context.Context, c googleConfig, from, to string) ([]dayRow, error) {
-	// An access token from the refresh token, per run: it lasts an hour.
+// googleToken trades the refresh token for an access token, per run: it
+// lasts an hour.
+func (m *Module) googleToken(ctx context.Context, c googleConfig) (string, error) {
 	form := url.Values{"client_id": {c.ClientID}, "client_secret": {c.ClientSecret},
 		"refresh_token": {c.RefreshToken}, "grant_type": {"refresh_token"}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	var tok struct {
 		AccessToken string `json:"access_token"`
 	}
 	if err := m.getJSON(req, &tok); err != nil {
-		return nil, fmt.Errorf("sign in to Google: %w", err)
+		return "", fmt.Errorf("sign in to Google: %w", err)
 	}
+	return tok.AccessToken, nil
+}
 
-	query := fmt.Sprintf("SELECT segments.date, campaign.name, customer.currency_code, metrics.cost_micros FROM campaign "+
-		"WHERE segments.date BETWEEN '%s' AND '%s' AND metrics.cost_micros > 0", from, to)
-	endpoint := fmt.Sprintf("https://googleads.googleapis.com/%s/customers/%s/googleAds:search", c.APIVersion, digits(c.CustomerID))
-	var rows []dayRow
+// googleRequest is a POST to the account's endpoint ("googleAds:search",
+// "googleAds:mutate") with the headers every Google Ads call carries.
+func googleRequest(ctx context.Context, c googleConfig, token, method string, body []byte) (*http.Request, error) {
+	endpoint := fmt.Sprintf("https://googleads.googleapis.com/%s/customers/%s/%s", c.APIVersion, digits(c.CustomerID), method)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("developer-token", c.DeveloperToken)
+	if id := digits(c.LoginCustomerID); id != "" {
+		req.Header.Set("login-customer-id", id)
+	}
+	return req, nil
+}
+
+// googleSearch runs a GAQL query and hands each result row to each, page by page.
+func (m *Module) googleSearch(ctx context.Context, c googleConfig, token, query string, each func(json.RawMessage) error) error {
 	page := ""
 	for range 100 {
 		body, _ := json.Marshal(map[string]string{"query": query, "pageToken": page})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
+		req, err := googleRequest(ctx, c, token, "googleAds:search", body)
 		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
-		req.Header.Set("developer-token", c.DeveloperToken)
-		if id := digits(c.LoginCustomerID); id != "" {
-			req.Header.Set("login-customer-id", id)
+			return err
 		}
 		var out struct {
-			Results []struct {
-				Segments struct {
-					Date string `json:"date"`
-				} `json:"segments"`
-				Campaign struct {
-					Name string `json:"name"`
-				} `json:"campaign"`
-				Customer struct {
-					CurrencyCode string `json:"currencyCode"`
-				} `json:"customer"`
-				Metrics struct {
-					// int64 fields are strings in the API's JSON.
-					CostMicros string `json:"costMicros"`
-				} `json:"metrics"`
-			} `json:"results"`
-			NextPageToken string `json:"nextPageToken"`
+			Results       []json.RawMessage `json:"results"`
+			NextPageToken string            `json:"nextPageToken"`
 		}
 		if err := m.getJSON(req, &out); err != nil {
-			return nil, fmt.Errorf("read Google Ads: %w", err)
+			return fmt.Errorf("read Google Ads: %w", err)
 		}
 		for _, r := range out.Results {
-			v, err := strconv.ParseInt(r.Metrics.CostMicros, 10, 64)
-			cur := strings.ToUpper(r.Customer.CurrencyCode)
-			if err != nil || !currencyRE.MatchString(cur) || clip(r.Campaign.Name) == "" {
-				return nil, fmt.Errorf("read Google Ads: a row it sent does not read: %+v", r)
+			if err := each(r); err != nil {
+				return err
 			}
-			rows = append(rows, dayRow{Day: r.Segments.Date, Campaign: clip(r.Campaign.Name), Currency: cur,
-				Amount: micros(v, gocommerce.CurrencyExponent(cur))})
 		}
 		if page = out.NextPageToken; page == "" {
-			return merge(rows), nil
+			return nil
 		}
 	}
-	return nil, errors.New("read Google Ads: more than 100 pages")
+	return errors.New("read Google Ads: more than 100 pages")
+}
+
+func (m *Module) googleSpend(ctx context.Context, c googleConfig, from, to string) ([]dayRow, error) {
+	tok, err := m.googleToken(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	query := fmt.Sprintf("SELECT segments.date, campaign.name, customer.currency_code, metrics.cost_micros FROM campaign "+
+		"WHERE segments.date BETWEEN '%s' AND '%s' AND metrics.cost_micros > 0", from, to)
+	var rows []dayRow
+	err = m.googleSearch(ctx, c, tok, query, func(raw json.RawMessage) error {
+		var r struct {
+			Segments struct {
+				Date string `json:"date"`
+			} `json:"segments"`
+			Campaign struct {
+				Name string `json:"name"`
+			} `json:"campaign"`
+			Customer struct {
+				CurrencyCode string `json:"currencyCode"`
+			} `json:"customer"`
+			Metrics struct {
+				// int64 fields are strings in the API's JSON.
+				CostMicros string `json:"costMicros"`
+			} `json:"metrics"`
+		}
+		_ = json.Unmarshal(raw, &r)
+		v, err := strconv.ParseInt(r.Metrics.CostMicros, 10, 64)
+		cur := strings.ToUpper(r.Customer.CurrencyCode)
+		if err != nil || !currencyRE.MatchString(cur) || clip(r.Campaign.Name) == "" {
+			return fmt.Errorf("read Google Ads: a row it sent does not read: %s", raw)
+		}
+		rows = append(rows, dayRow{Day: r.Segments.Date, Campaign: clip(r.Campaign.Name), Currency: cur,
+			Amount: micros(v, gocommerce.CurrencyExponent(cur))})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return merge(rows), nil
+}
+
+// metaAuth is the token, and its proof when the app secret is given, that
+// every Graph call carries.
+func metaAuth(c metaConfig, q url.Values) url.Values {
+	q.Set("access_token", c.AccessToken)
+	if c.AppSecret != "" {
+		mac := hmac.New(sha256.New, []byte(c.AppSecret))
+		mac.Write([]byte(c.AccessToken))
+		q.Set("appsecret_proof", hex.EncodeToString(mac.Sum(nil)))
+	}
+	return q
 }
 
 func (m *Module) metaSpend(ctx context.Context, c metaConfig, from, to string) ([]dayRow, error) {
@@ -307,14 +386,8 @@ func (m *Module) metaSpend(ctx context.Context, c metaConfig, from, to string) (
 		"time_increment": {"1"},
 		"time_range":     {fmt.Sprintf(`{"since":"%s","until":"%s"}`, from, to)},
 		"limit":          {"500"},
-		"access_token":   {c.AccessToken},
 	}
-	if c.AppSecret != "" {
-		mac := hmac.New(sha256.New, []byte(c.AppSecret))
-		mac.Write([]byte(c.AccessToken))
-		q.Set("appsecret_proof", hex.EncodeToString(mac.Sum(nil)))
-	}
-	next := fmt.Sprintf("https://graph.facebook.com/%s/act_%s/insights?%s", c.APIVersion, digits(c.AdAccountID), q.Encode())
+	next := fmt.Sprintf("https://graph.facebook.com/%s/act_%s/insights?%s", c.APIVersion, digits(c.AdAccountID), metaAuth(c, q).Encode())
 	var rows []dayRow
 	for range 100 {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, next, nil)

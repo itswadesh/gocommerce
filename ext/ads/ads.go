@@ -126,6 +126,57 @@ CREATE TABLE ads_sync (
     PRIMARY KEY (store_id, platform)
 );`},
 		gocommerce.ScopeMigration("0006_sync_scope", "ads_sync"),
+		{ID: "0007_changes", SQL: `
+-- A change to an ad account, proposed from the report and made only once
+-- somebody approves it (D268). A budget is minor units in the account's
+-- currency; items are the keywords, placements or hours a change adds.
+CREATE TABLE ads_changes (
+    id           bigserial PRIMARY KEY,
+    store_id     text NOT NULL,
+    platform     text NOT NULL CHECK (platform IN ('google', 'meta')),
+    action       text NOT NULL CHECK (action IN ('pause', 'budget', 'negative_keywords', 'exclude_placements', 'ad_schedule')),
+    target_kind  text NOT NULL CHECK (target_kind IN ('campaign', 'ad_set')),
+    target_id    text NOT NULL CHECK (target_id <> ''),
+    target_name  text NOT NULL,
+    campaign_id  text NOT NULL,
+    summary      text NOT NULL,
+    before_state text NOT NULL DEFAULT '',
+    after_state  text NOT NULL DEFAULT '',
+    currency     text CHECK (currency ~ '^[A-Z]{3}$'),
+    before_minor bigint CHECK (before_minor >= 0),
+    after_minor  bigint CHECK (after_minor >= 0),
+    percent      int NOT NULL DEFAULT 0,
+    items        jsonb NOT NULL DEFAULT '[]',
+    figure       text NOT NULL,
+    reason       text NOT NULL,
+    detail       jsonb NOT NULL DEFAULT '{}',
+    status       text NOT NULL CHECK (status IN ('proposed', 'approved', 'applied', 'failed', 'dismissed', 'undone')),
+    decided_by   text NOT NULL DEFAULT '',
+    decided_at   timestamptz,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    CHECK ((currency IS NULL) = (before_minor IS NULL) AND (currency IS NULL) = (after_minor IS NULL))
+);
+CREATE INDEX ads_changes_recent ON ads_changes (store_id, created_at DESC);
+
+-- Every attempt to make or undo a change: what was asked, what the platform
+-- answered, and who.
+CREATE TABLE ads_change_log (
+    id        bigserial PRIMARY KEY,
+    store_id  text NOT NULL,
+    change_id bigint NOT NULL REFERENCES ads_changes (id) ON DELETE CASCADE,
+    kind      text NOT NULL CHECK (kind IN ('apply', 'undo')),
+    ok        boolean NOT NULL,
+    actor     text NOT NULL,
+    request   text NOT NULL DEFAULT '',
+    response  text NOT NULL DEFAULT '',
+    error     text NOT NULL DEFAULT '',
+    at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ads_change_log_change ON ads_change_log (change_id);
+
+-- When the daily job last proposed changes.
+ALTER TABLE ads_settings ADD COLUMN proposed_at timestamptz;`},
+		gocommerce.ScopeMigration("0008_changes_scope", "ads_changes", "ads_change_log"),
 	}
 }
 
@@ -153,6 +204,10 @@ func (m *Module) Register(app *gocommerce.App) error {
 		Scope:   "Entering and importing ad spend and monthly budgets, asking for an AI summary (which draws AI credit) and the weekly summary",
 		Default: []string{gocommerce.RoleManager},
 	})
+	app.RegisterRight(gocommerce.RightSpec{
+		Right: RightApprove, Label: "Approve changes to the ad accounts",
+		Scope: "Approving, dismissing and undoing proposed changes to Google Ads and Meta campaigns, budgets and keywords, which spend the shop's money",
+	})
 	app.HandleAdminFunc("GET /api/admin/x/ads/report", noSellers(m.handleReport), RightRead)
 	app.HandleAdminFunc("GET /api/admin/x/ads/orders", noSellers(m.handleOrders), RightRead)
 	app.HandleAdminFunc("GET /api/admin/x/ads/spend", noSellers(m.handleListSpend), RightRead)
@@ -170,6 +225,12 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("POST /api/admin/x/ads/connectors/{platform}/sync", noSellers(m.handleSync), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/settings", noSellers(m.handleGetSettings), RightRead)
 	app.HandleAdminFunc("PUT /api/admin/x/ads/settings", noSellers(m.handlePutSettings), RightWrite)
+	app.HandleAdminFunc("GET /api/admin/x/ads/changes", noSellers(m.handleChanges), RightRead)
+	app.HandleAdminFunc("POST /api/admin/x/ads/changes/propose", noSellers(m.handlePropose), RightWrite)
+	app.HandleAdminFunc("POST /api/admin/x/ads/changes/approve", noSellers(m.handleApproveAll), RightApprove)
+	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/approve", noSellers(m.handleApprove), RightApprove)
+	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/dismiss", noSellers(m.handleDismiss), RightApprove)
+	app.HandleAdminFunc("POST /api/admin/x/ads/changes/{id}/undo", noSellers(m.handleUndo), RightApprove)
 	m.registerConnectors(app)
 	app.OnStart(m.start)
 	return nil
