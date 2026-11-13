@@ -21,7 +21,8 @@ name: Updates
 #   CONTENT_OS_SITE_KEY      the project's site key (Content OS, the project's
 #                            settings); set it and the direct posts stop
 #   SHOPNX_CONTENT_OS_SITE_KEY  the ShopNx project's site key: the same push is
-#                            filed there too, linking to shopnx.in/updates
+#                            filed there too, each linking to its release
+#                            note at shopnx.in/release-notes/<title>-<number>
 # Variable: CONTENT_OS_URL, Content OS's address, such as https://cos.example.com
 on:
   push:
@@ -118,7 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           CONTENT_OS_URL: ${{ vars.CONTENT_OS_URL }}
           CONTENT_OS_SITE_KEY: ${{ secrets.SHOPNX_CONTENT_OS_SITE_KEY }}
-          UPDATES_PAGE_URL: https://shopnx.in/updates
+          RELEASE_NOTES_URL: https://shopnx.in/release-notes
         run: node .github/scripts/publish-update.mjs queue
 
       - name: announce
