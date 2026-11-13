@@ -264,6 +264,7 @@ GET    /api/admin/x/ads/changes        proposed changes, each with its apply/und
 POST   /api/admin/x/ads/changes/propose   read the connected platforms and propose now
 POST   /api/admin/x/ads/changes/approve   approve every waiting change   (ads.approve)
 POST   /api/admin/x/ads/changes/{id}/approve | dismiss | undo           (ads.approve)
+POST   /api/admin/x/ads/autopilot/pause   switch the autopilot off       (ads.approve)
 ```
 
 - **Where an order came from is `metadata.attribution`**, `{"first": touch,
@@ -334,6 +335,15 @@ POST   /api/admin/x/ads/changes/{id}/approve | dismiss | undo           (ads.app
   request (no tokens) and the answer in `ads_change_log`; undo restores the
   budget, unpauses, or removes the criteria it created. `ads.approve` is the
   owner's until a role is given it. Stub-tested only.
+- **The autopilot** (D269) is the plugin `ads-autopilot`, off by default and
+  refused on without `notify_email`. After the daily proposals it makes, oldest
+  first, each waiting change inside its limits, as `decided_by: "autopilot"`:
+  an allowed action (by default lowering a budget, negative keywords and
+  placement exclusions; pausing, raising and schedules are off), a budget move
+  no larger than `max_budget_change_pct` (20), no other change to the campaign
+  in `cooling_hours` (72), and for a raise, its raises in the last 24 hours
+  within `daily_increase_cap` (whole units, 0 = never) and the month inside the
+  source's budget. The rest wait. What it made is emailed as `ads.autopilot`.
 
 ## What these numbers do not measure
 

@@ -603,10 +603,12 @@ type ChangesView struct {
 	// none, nothing is proposed or applied.
 	Connected []string  `json:"connected"`
 	Changes   []*Change `json:"changes"`
+	// Autopilot is its switch and limits (D269).
+	Autopilot *Autopilot `json:"autopilot"`
 }
 
 func (m *Module) changesView(ctx context.Context) (*ChangesView, error) {
-	v := &ChangesView{Connected: []string{}}
+	v := &ChangesView{Connected: []string{}, Autopilot: m.autopilotSettings(ctx)}
 	if _, ok := m.googleConfig(ctx); ok {
 		v.Connected = append(v.Connected, "google")
 	}
@@ -739,6 +741,8 @@ func (m *Module) proposeDaily(ctx context.Context, now time.Time) error {
 	}
 	if _, err := m.propose(ctx, now); err != nil {
 		m.app.Log().Info("ads: changes were not proposed", "error", err)
+		return nil
 	}
-	return nil
+	_, err = m.autopilot(ctx, now)
+	return err
 }
