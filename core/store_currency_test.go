@@ -134,6 +134,70 @@ func TestSampleOrdersFollowTheCurrency(t *testing.T) {
 	}
 }
 
+// A store opened in dollars and moved to rupees gets the sample shop's rupee
+// prices, not its dollar face values relabelled (D262), and so does adding it
+// again. A price the merchant changed is theirs and stays.
+func TestTheSampleShopIsPricedAgainInANewCurrency(t *testing.T) {
+	app := newTestApp(t)
+	ctx := context.Background()
+	if app.Currency(ctx) != "USD" {
+		t.Fatalf("this test opens the store in dollars, not %q", app.Currency(ctx))
+	}
+	if _, err := app.AddSampleShop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := kurta.Variants[1].ID
+	if _, err := app.db.ExecContext(ctx, `UPDATE variants SET price_minor = 777 WHERE id = $1`, theirs); err != nil {
+		t.Fatal(err)
+	}
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Currency = "INR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("move to rupees: %v", err)
+	}
+
+	priced := func(when string) {
+		t.Helper()
+		kurta, err := app.Products().GetProductBySlug(ctx, "printed-anarkali-kurta")
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := kurta.Variants[0]
+		if v.Price != (Money{AmountMinor: 349900, Currency: "INR"}) || v.CompareAtPrice == nil || v.CompareAtPrice.AmountMinor != 429900 {
+			t.Fatalf("%s: kurta = %+v, was %+v; want 349900 INR, was 429900", when, v.Price, v.CompareAtPrice)
+		}
+	}
+	priced("after the move")
+	var price int64
+	if err := app.db.QueryRowContext(ctx, `SELECT price_minor FROM variants WHERE id = $1`, theirs).Scan(&price); err != nil || price != 777 {
+		t.Fatalf("the merchant's price = %d (%v), want 777", price, err)
+	}
+	var minimum int64
+	var title string
+	if err := app.db.QueryRowContext(ctx,
+		`SELECT min_subtotal_minor, title FROM discounts WHERE sample AND code = 'BUNDLE15'`).Scan(&minimum, &title); err != nil {
+		t.Fatal(err)
+	}
+	if minimum != 500000 || title != "15% off a basket of 5,000 or more" {
+		t.Fatalf("BUNDLE15 = %d %q, want the rupee minimum and title", minimum, title)
+	}
+
+	if _, err := app.EraseSampleShop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.AddSampleShop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	priced("added again")
+}
+
 // Once an order is paid the store's currency is fixed: changing it would change
 // what that order's amounts mean.
 func TestTheCurrencyIsFixedOnceAnOrderIsPaid(t *testing.T) {
