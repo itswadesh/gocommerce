@@ -1086,7 +1086,7 @@
           "retail-assistant"
         ],
         "summary": "Book in goods that physically arrived",
-        "description": "Moves stock through the stock service, once per line. Needs retailassistant.write and inventory.write.",
+        "description": "Moves stock through the stock service, once per line. A line sends variant_id, or new_product to make a draft product from it, which needs the store's new_products setting. created counts the products made. Needs retailassistant.write and inventory.write.",
         "parameters": [
           {
             "name": "id",
@@ -1124,6 +1124,9 @@
                         },
                         "quantity": {
                           "type": "integer"
+                        },
+                        "new_product": {
+                          "type": "boolean"
                         }
                       }
                     }
@@ -1135,7 +1138,7 @@
         },
         "responses": {
           "200": {
-            "description": "Done."
+            "description": "Done: received and created count lines and new products."
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"

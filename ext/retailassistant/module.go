@@ -457,6 +457,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 				Help: "Where counter sales happen, written as in your tax rates, such as OD. Tax on them is worked out from this."},
 			{Key: "ai_reading", Label: "Read PDFs and photos with AI", Kind: "bool", Default: false,
 				Help: "Sends each PDF and photo to the AI provider set up in the AI gateway, and fills in the review form from what it reads. You still compare every figure with the file before approving. It uses your AI credit."},
+			{Key: "new_products", Label: "Make new products from bill lines", Kind: "bool", Default: false,
+				Help: "When you book in goods, a bill line that matches none of your products becomes a new product, named from the bill, with its barcode, HSN, cost and MRP. It starts as a draft, so nothing goes on sale until you check its price and publish it."},
 		},
 	})
 
@@ -556,6 +558,7 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"wholesale":      m.cfg.B2B != nil,
 		"ai_reading":     reading,
 		"ai_reading_why": why,
+		"new_products":   m.newProductsOn(r.Context()),
 		"enabled":        m.enabled(r.Context()),
 		"channel_ready":  m.channelReady(),
 		"display_number": m.cfg.DisplayNumber,
