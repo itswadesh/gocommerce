@@ -87,6 +87,10 @@ type orderFact struct {
 	Returned  bool
 	Returning bool
 	Attr      *Attribution
+	// When and where, for the breakdowns: the day of the week (1 is Monday)
+	// and hour in the report's zone, and the state shipped to.
+	Weekday, Hour int
+	Region        string
 }
 
 // profit is what the shop keeps of the order, less the tax in it and what
@@ -169,10 +173,12 @@ func (m *Module) facts(ctx context.Context, w window) ([]orderFact, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT o.id, o.number, o.created_at, o.currency, o.total_minor, o.tax_minor, o.refunded_minor,
 		       lower(o.email), o.metadata->'attribution',
-		       EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.status = 'received')
+		       EXISTS (SELECT 1 FROM order_returns r WHERE r.order_id = o.id AND r.status = 'received'),
+		       extract(isodow FROM o.created_at AT TIME ZONE $4)::int, extract(hour FROM o.created_at AT TIME ZONE $4)::int,
+		       coalesce(trim(o.address->>'state'), '')
 		  FROM orders o
 		 WHERE o.created_at >= $1 AND o.created_at < $2 AND o.status = ANY($3)
-		 ORDER BY o.created_at, o.id`, w.lo, w.hi, sales)
+		 ORDER BY o.created_at, o.id`, w.lo, w.hi, sales, w.tz)
 	if err != nil {
 		return nil, gocommerce.Internalf(err, "read the orders")
 	}
@@ -185,7 +191,7 @@ func (m *Module) facts(ctx context.Context, w window) ([]orderFact, error) {
 		var f orderFact
 		var e string
 		var attr []byte
-		if err := rows.Scan(&f.ID, &f.Number, &f.At, &f.Currency, &f.Total, &f.Tax, &f.Refunded, &e, &attr, &f.Returned); err != nil {
+		if err := rows.Scan(&f.ID, &f.Number, &f.At, &f.Currency, &f.Total, &f.Tax, &f.Refunded, &e, &attr, &f.Returned, &f.Weekday, &f.Hour, &f.Region); err != nil {
 			return nil, gocommerce.Internalf(err, "read the orders")
 		}
 		if len(attr) > 0 {

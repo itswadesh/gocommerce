@@ -13523,11 +13523,72 @@ html .tw\:rounded-2xl {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+.ads-cuts {
+    margin: 4px 0 8px;
+    flex-wrap: wrap;
+}
+.ads-quiet > td {
+    color: var(--surfaceTxtHintColor);
+}
+/* A share of the largest line, drawn with scaleX so a change animates on the
+   compositor rather than relaying out the table. */
+.ads-bar {
+    display: block;
+    width: 100%;
+    max-width: 10rem;
+    height: 4px;
+    margin-top: 4px;
+    border-radius: 999px;
+    background: var(--surfaceAlt1Color);
+    overflow: hidden;
+}
+.ads-bar.is-wide {
+    max-width: none;
+    height: 6px;
+    margin: 8px 0 4px;
+}
+.ads-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--txtPrimaryColor);
+    transform-origin: left center;
+    transition: transform 250ms ease-out;
+}
+.ads-bar > span.is-over {
+    background: var(--dangerColor);
+}
+.ads-pace {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+.ads-pace-row {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--borderRadius);
+}
+.ads-pace-row p {
+    margin: 0;
+}
+.ads-pace-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+.ads-budget-form {
+    margin-top: 12px;
+}
 @media (prefers-reduced-motion: reduce) {
     .ads-row-btn,
     .ads-chevron,
     .ads-press,
     .ads-order-link {
+        transition: none;
+    }
+    .ads-bar > span {
         transition: none;
     }
     .ads-row-btn:active,

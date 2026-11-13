@@ -39,6 +39,7 @@
     const ms = (n) => (still ? 0 : n);
 
     let report = $state(null);
+    let breakdown = $state(null);
     let spend = $state([]);
     let loading = $state(true);
     let reqId = 0;
@@ -64,10 +65,11 @@
         open = null;
         try {
             const p = params();
-            const [r, s] = await Promise.all([ads.report(p), ads.spend({ from: p.from, to: p.to })]);
+            const [r, s, b] = await Promise.all([ads.report(p), ads.spend({ from: p.from, to: p.to }), ads.breakdown(p)]);
             if (mine !== reqId) return;
             report = r;
             spend = s ?? [];
+            breakdown = b;
         } catch (err) {
             if (mine === reqId) toast.error(err);
         } finally {
@@ -146,6 +148,62 @@
         URL.revokeObjectURL(url);
     }
 
+    // ----------------------------------------------------------- breakdowns
+
+    const CUTS = [
+        ["weekdays", "Day of week"],
+        ["hours", "Hour"],
+        ["regions", "State"],
+        ["campaigns", "Campaign"],
+    ];
+    const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let cut = $state("weekdays");
+    const cutName = $derived(CUTS.find((c) => c[0] === cut)[1]);
+    function cutLabel(key) {
+        if (cut === "weekdays") return DAYS[Number(key) - 1] ?? key;
+        if (cut === "hours") return `${String(key).padStart(2, "0")}:00`;
+        return key;
+    }
+    /* The bar is each line's share of the busiest line's orders, drawn with
+       scaleX so it animates on the compositor. */
+    const most = (slices) => Math.max(1, ...slices.map((x) => x.orders));
+
+    // ---------------------------------------------------------------- pacing
+
+    let pacing = $state(null);
+    let budget = $state({ source: "", amount: "" });
+    let savingBudget = $state(false);
+    const PACE = { over: "Over budget", under: "Under pace", on_pace: "On pace", none: "No budget" };
+    const PACE_KIND = { over: "wasting", on_pace: "working", under: "watch", none: "watch" };
+
+    function loadPacing() {
+        ads.pacing({ tz }).then((p) => (pacing = p)).catch((err) => toast.error(err));
+    }
+    $effect(() => {
+        if (readable && hasModule("ads")) loadPacing();
+    });
+
+    async function saveBudget(e, source, amountText) {
+        e?.preventDefault();
+        const currency = storeCurrency;
+        const amount = amountText === 0 ? 0 : toMinor(amountText, currency);
+        if (amount === null || amount < 0) {
+            toast.error("Enter the month's budget, such as 30000.");
+            return;
+        }
+        savingBudget = true;
+        try {
+            await ads.saveBudget({ source, amount_minor: amount, currency });
+            toast.success(amount ? "Budget saved." : "Budget removed.");
+            budget = { source: "", amount: "" };
+            loadPacing();
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            savingBudget = false;
+        }
+    }
+
     // --------------------------------------------------------------- summary
 
     let summary = $state(null);
@@ -216,6 +274,7 @@
             await ads.addSpend({ source, medium, campaign, from, to: entry.to || from, amount_minor: amount, currency });
             toast.success("Spend saved.");
             entry = { ...entry, campaign: "", amount: "" };
+            loadPacing();
             await load();
         } catch (err) {
             toast.error(err);
@@ -249,6 +308,7 @@
             );
             file = null;
             form.reset();
+            loadPacing();
             await load();
         } catch (err) {
             toast.error(err);
@@ -260,6 +320,7 @@
     async function removeSpend(s) {
         try {
             await ads.deleteSpend(s.id);
+            loadPacing();
             await load();
         } catch (err) {
             toast.error(err);
@@ -445,6 +506,114 @@
                         </div>
                     </section>
                 {/each}
+
+                {#if breakdown?.currencies?.length}
+                    <section class="recovery-report-card" aria-labelledby="ads-cut-title">
+                        <h2 class="recovery-report-title" id="ads-cut-title">When and where orders come from</h2>
+                        <p class="txt-hint txt-sm recovery-card-desc">
+                            The same orders by the day and hour they were placed in {breakdown.time_zone}, the state they were
+                            shipped to, and campaign name across every source.
+                        </p>
+                        <div class="recovery-seg ads-cuts" role="group" aria-label="Break down by">
+                            {#each CUTS as [value, label] (value)}
+                                <button type="button" class="recovery-seg-btn" aria-pressed={cut === value} onclick={() => (cut = value)}>{label}</button>
+                            {/each}
+                        </div>
+                        {#each breakdown.currencies as b (b.currency)}
+                            {@const slices = b[cut] ?? []}
+                            {@const top = most(slices)}
+                            {#if breakdown.currencies.length > 1}<h3 class="ads-form-title">In {b.currency}</h3>{/if}
+                            {#if !slices.length}
+                                <p class="txt-hint txt-sm">{cut === "campaigns" ? "No order or spend in this period names a campaign." : "No orders in this period."}</p>
+                            {:else}
+                                <div class="page-table-wrapper tw:mt-2 tw:rounded-lg tw:border">
+                                    <table class="table responsive-table ads-table">
+                                        <caption class="tw:sr-only">Orders by {cutName.toLowerCase()}, in {b.currency}</caption>
+                                        <thead class="sticky">
+                                            <tr>
+                                                <th>{cutName}</th>
+                                                <th class="col-field-type-number">Orders</th>
+                                                <th class="col-field-type-number">Net</th>
+                                                <th class="col-field-type-number">Gross profit</th>
+                                                {#if cut === "campaigns"}
+                                                    <th class="col-field-type-number">Spend</th>
+                                                    <th class="col-field-type-number">ROAS</th>
+                                                    <th class="col-field-type-number">Profit / spend</th>
+                                                {/if}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {#each slices as x (cut + x.key)}
+                                                <tr class:ads-quiet={!x.orders}>
+                                                    <td data-name={cutName}>
+                                                        <span class="ads-where">{cutLabel(x.key)}</span>
+                                                        <span class="ads-bar" aria-hidden="true"><span style="transform: scaleX({x.orders / top})"></span></span>
+                                                    </td>
+                                                    <td class="col-field-type-number" data-name="Orders">{count(x.orders)}</td>
+                                                    <td class="col-field-type-number" data-name="Net">{formatMoney(x.net)}</td>
+                                                    <td class="col-field-type-number" data-name="Gross profit">
+                                                        <span class:ads-loss={x.gross_profit.amount_minor < 0}>{formatMoney(x.gross_profit)}</span>
+                                                    </td>
+                                                    {#if cut === "campaigns"}
+                                                        <td class="col-field-type-number" data-name="Spend">{x.spend ? formatMoney(x.spend) : "—"}</td>
+                                                        <td class="col-field-type-number" data-name="ROAS">{ratioText(x.roas ?? null)}</td>
+                                                        <td class="col-field-type-number" data-name="Profit / spend">
+                                                            <span class:ads-loss={x.poas != null && x.poas < 1}>{ratioText(x.poas ?? null)}</span>
+                                                        </td>
+                                                    {/if}
+                                                </tr>
+                                            {/each}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {/if}
+                        {/each}
+                    </section>
+                {/if}
+
+                <section class="recovery-report-card" aria-labelledby="ads-pace-title">
+                    <h2 class="recovery-report-title" id="ads-pace-title">Budget pacing</h2>
+                    <p class="txt-hint txt-sm recovery-card-desc">
+                        {#if pacing}This month's spend to day {pacing.day} of {pacing.days}, against the monthly budget you set for each source.{/if}
+                        Spend counts once it is entered or imported, so a day not yet in reads as under pace.
+                    </p>
+                    {#if pacing?.sources?.length}
+                        <ul class="ads-pace">
+                            {#each pacing.sources as p (p.source + p.spent.currency)}
+                                <li class="ads-pace-row" transition:fade={{ duration: ms(160) }}>
+                                    <div class="ads-pace-head">
+                                        <strong>{p.source}</strong>
+                                        <span class="ads-kind is-{PACE_KIND[p.status]}">{PACE[p.status]}</span>
+                                        <span class="flex-fill"></span>
+                                        <span class="tw:tabular-nums">{formatMoney(p.spent)}{p.budget ? ` of ${formatMoney(p.budget)}` : ""}</span>
+                                        {#if writable && p.budget}
+                                            <button type="button" class="btn circle sm transparent secondary ads-press" aria-label="Remove the budget for {p.source}" title="Remove budget" disabled={savingBudget} onclick={(e) => saveBudget(e, p.source, 0)}>
+                                                <i class="ri-close-line" aria-hidden="true"></i>
+                                            </button>
+                                        {/if}
+                                    </div>
+                                    {#if p.budget}
+                                        <span class="ads-bar is-wide" role="img" aria-label="{formatMoney(p.spent)} spent of {formatMoney(p.budget)}">
+                                            <span class:is-over={p.status === "over"} style="transform: scaleX({Math.min(1, p.spent.amount_minor / p.budget.amount_minor)})"></span>
+                                        </span>
+                                        <p class="txt-hint txt-sm">By today: {formatMoney(p.expected)} · at this rate the month ends at {formatMoney(p.projected)}</p>
+                                    {/if}
+                                </li>
+                            {/each}
+                        </ul>
+                    {:else if pacing}
+                        <p class="txt-hint txt-sm">No budget set and no spend this month.</p>
+                    {/if}
+                    {#if writable}
+                        <form class="ads-form ads-budget-form" onsubmit={(e) => saveBudget(e, budget.source, budget.amount)}>
+                            <div class="ads-grid">
+                                <label class="field"><span class="txt-sm">utm_source</span><input required placeholder="google" bind:value={budget.source} /></label>
+                                <label class="field"><span class="txt-sm">Monthly budget ({storeCurrency})</span><input inputmode="decimal" required bind:value={budget.amount} /></label>
+                            </div>
+                            <button type="submit" class="btn sm ads-press" class:btn-loading={savingBudget} disabled={savingBudget}>Set budget</button>
+                        </form>
+                    {/if}
+                </section>
 
                 <section class="recovery-report-card ads-summary" aria-labelledby="ads-summary-title">
                     <div class="recovery-card-head">

@@ -198,10 +198,347 @@
           "403": {"$ref": "#/components/responses/Forbidden"}
         }
       }
+    },
+    "/api/admin/x/ads/breakdown": {
+      "get": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "The report's orders by weekday, hour, state shipped to and campaign",
+        "description": "The same sales as the report, for the same window, cut four more ways in each currency: by the day of the week and the hour they were placed in the report's zone (every day and hour listed, the empty ones too), by the state in the shipping address, and by campaign name whatever the source, with the spend entered for that campaign name. Nothing is added across currencies.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "tz",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "touch",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "last",
+                "first"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The breakdown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdsBreakdown"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ads/pacing": {
+      "get": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "This month's spend against each source's monthly budget",
+        "description": "Spend entered or imported from the first of this month to today in tz, by source, beside the budget typed in for it, the budget's share for the days gone and the month's spend projected at the rate so far. A source with spend and no budget is listed with status none.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tz",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pacing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdsPacing"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/admin/x/ads/budgets": {
+      "put": {
+        "tags": [
+          "admin:ads"
+        ],
+        "summary": "Set or remove a source's monthly ad budget",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "amount_minor"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "amount_minor": {
+                    "type": "integer",
+                    "description": "Zero removes the budget."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Default the store's currency."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The budget.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Money"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Validation"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdsSlice": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "1 to 7 (Monday first), 0 to 23, a state, or a campaign name."
+          },
+          "orders": {
+            "type": "integer"
+          },
+          "net": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "gross_profit": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "spend": {
+            "$ref": "#/components/schemas/Money",
+            "description": "Campaigns only, and only where spend was entered."
+          },
+          "roas": {
+            "type": "number"
+          },
+          "poas": {
+            "type": "number"
+          }
+        }
+      },
+      "AdsBreakdown": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "touch": {
+            "type": "string"
+          },
+          "currencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "currency": {
+                  "type": "string"
+                },
+                "weekdays": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdsSlice"
+                  }
+                },
+                "hours": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdsSlice"
+                  }
+                },
+                "regions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdsSlice"
+                  }
+                },
+                "campaigns": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdsSlice"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AdsPacing": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-11"
+          },
+          "day": {
+            "type": "integer"
+          },
+          "days": {
+            "type": "integer"
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "budget": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "spent": {
+                  "$ref": "#/components/schemas/Money"
+                },
+                "expected": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Money"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "projected": {
+                  "$ref": "#/components/schemas/Money"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "over",
+                    "under",
+                    "on_pace",
+                    "none"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "AdsRow": {
         "type": "object",
         "properties": {
