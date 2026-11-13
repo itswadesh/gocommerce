@@ -141,8 +141,10 @@ type item struct {
 // mediaBase makes a site-relative picture absolute: the platform fetches it,
 // and "/media/x.jpg" is not an address.
 func (m *Module) items(ctx context.Context, s settings, mediaBase string, every bool) ([]item, error) {
-	exp := exponent(m.app.Settings().Currency)
-	currency := strings.ToUpper(m.app.Settings().Currency)
+	// The store's own currency, not the install's: a rupee store on a dollar
+	// install priced every feed item "2299.00 USD" (D85: a store has its own).
+	currency := strings.ToUpper(m.app.Currency(ctx))
+	exp := exponent(currency)
 	var out []item
 	for offset := 0; ; offset += pageSize {
 		q := gocommerce.ProductQuery{Status: gocommerce.ProductActive, Limit: pageSize, Offset: offset}
