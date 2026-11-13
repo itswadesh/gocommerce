@@ -246,7 +246,7 @@ func checkThemes(side string, themes []themeAnswer, sent map[int64]bool) error {
 func (m *Module) readable(ctx context.Context, productID int64) ([]CitedReview, error) {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, rating, title, body FROM reviews
-		WHERE product_id = $1 AND status = 'approved'
+		WHERE product_id = $1 AND `+published+`
 		ORDER BY created_at DESC, id DESC LIMIT $2`, productID, maxReviewsRead)
 	if err != nil {
 		return nil, err

@@ -19,6 +19,7 @@ package reviews
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -199,13 +200,14 @@ func (m *Module) policy(ctx context.Context) policy {
 }
 
 // bought reports whether an email has an order carrying the product that
-// left the shelf — the store's own definition of a sale.
+// left the shelf — the store's own definition of a sale. A sample order is
+// not one: anybody could type a sample customer's address.
 func (m *Module) bought(ctx context.Context, email string, productID int64) (bool, error) {
 	var yes bool
 	err := m.db.QueryRowContext(ctx, `
 		SELECT EXISTS (
 		    SELECT 1 FROM orders o JOIN order_lines l ON l.order_id = o.id
-		    WHERE lower(o.email) = $1 AND l.product_id = $2
+		    WHERE lower(o.email) = $1 AND l.product_id = $2 AND NOT o.sample
 		      AND o.status IN ('confirmed', 'partial', 'shipped', 'delivered'))`, email, productID).Scan(&yes)
 	return yes, err
 }
@@ -248,10 +250,15 @@ func (m *Module) query(ctx context.Context, where string, args []any, limit, off
 	return out, total, rows.Err()
 }
 
-// summary is the approved reviews of one product in numbers.
+// published is which reviews a shopper sees: approved ones, and never the
+// sample shop's, which nobody wrote (D261) — whatever their status, since a
+// store seeded before that has them approved.
+const published = `status = 'approved' AND NOT sample`
+
+// summary is the published reviews of one product in numbers.
 func (m *Module) summary(ctx context.Context, productID int64) (*Summary, error) {
 	rows, err := m.db.QueryContext(ctx,
-		`SELECT rating, count(*) FROM reviews WHERE product_id = $1 AND status = 'approved' GROUP BY rating`, productID)
+		`SELECT rating, count(*) FROM reviews WHERE product_id = $1 AND `+published+` GROUP BY rating`, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +290,7 @@ func (m *Module) Published(ctx context.Context) ([]Review, error) {
 	}
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, product_id, name, rating, title, body, verified, created_at
-		FROM reviews WHERE status = 'approved' AND NOT sample ORDER BY id`)
+		FROM reviews WHERE `+published+` ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +335,8 @@ func (m *Module) handlePublicList(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
-	rows, total, err := m.query(r.Context(), "r.product_id = $1 AND r.status = 'approved'", []any{productID}, limit, offset)
+	// published, qualified: products has a sample column too.
+	rows, total, err := m.query(r.Context(), "r.product_id = $1 AND r.status = 'approved' AND NOT r.sample", []any{productID}, limit, offset)
 	if err != nil {
 		gocommerce.RespondError(w, r, err)
 		return
@@ -485,6 +493,18 @@ func (m *Module) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		if *patch.Status != StatusPending && *patch.Status != StatusApproved && *patch.Status != StatusRejected {
 			gocommerce.RespondError(w, r, gocommerce.Validationf("status must be pending, approved or rejected"))
 			return
+		}
+		if *patch.Status == StatusApproved {
+			var sample bool
+			err := m.db.QueryRowContext(r.Context(), `SELECT sample FROM reviews WHERE id = $1`, id).Scan(&sample)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				gocommerce.RespondError(w, r, err)
+				return
+			}
+			if sample {
+				gocommerce.RespondError(w, r, gocommerce.Validationf("a sample review cannot be published: nobody wrote it"))
+				return
+			}
 		}
 		args = append(args, *patch.Status)
 		sets = append(sets, fmt.Sprintf("status = $%d", len(args)))

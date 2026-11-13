@@ -2,6 +2,7 @@ package alltest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -43,12 +44,36 @@ func TestTheSampleShopReachesEveryModuleAndErasesCleanly(t *testing.T) {
 		}
 	}
 
-	// Every sample review is by somebody whose sample order bought the
-	// product, so the engine's own test marks it verified.
-	var verified int
+	// Nobody wrote the sample reviews, so none is verified or published
+	// (D261): each waits on the Reviews screen, and cannot be approved.
+	var shown int
 	if err := app.DB().QueryRowContext(ctx,
-		`SELECT count(*) FROM reviews WHERE sample AND verified AND status = 'approved'`).Scan(&verified); err != nil || verified != 11 {
-		t.Fatalf("verified, approved sample reviews = %d (%v), want 11", verified, err)
+		`SELECT count(*) FROM reviews WHERE sample AND (verified OR status <> 'pending')`).Scan(&shown); err != nil || shown != 0 {
+		t.Fatalf("verified or published sample reviews = %d (%v), want 0", shown, err)
+	}
+	var reviewID, productID int64
+	if err := app.DB().QueryRowContext(ctx,
+		`SELECT id, product_id FROM reviews WHERE sample ORDER BY id LIMIT 1`).Scan(&reviewID, &productID); err != nil {
+		t.Fatal(err)
+	}
+	if rec := gctest.AdminRequest(t, app, http.MethodPatch, fmt.Sprintf("/api/admin/x/reviews/%d", reviewID),
+		map[string]any{"status": "approved"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("approve a sample review = %d %s, want 400", rec.Code, rec.Body)
+	}
+	// A store seeded before D261 has them approved and verified; a shopper
+	// still sees none of them, nor a rating made of them.
+	if _, err := app.DB().ExecContext(ctx, `UPDATE reviews SET status = 'approved', verified = true WHERE sample`); err != nil {
+		t.Fatal(err)
+	}
+	var public struct {
+		Reviews []any `json:"reviews"`
+		Summary struct {
+			Count int `json:"count"`
+		} `json:"summary"`
+	}
+	gctest.DecodeData(t, gctest.Request(t, app, http.MethodGet, fmt.Sprintf("/x/reviews?product_id=%d", productID), nil), &public)
+	if len(public.Reviews) != 0 || public.Summary.Count != 0 {
+		t.Fatalf("a shopper sees %d sample reviews and a count of %d, want none", len(public.Reviews), public.Summary.Count)
 	}
 
 	// What a storefront reads. The header nests the categories as they are:
