@@ -13602,3 +13602,40 @@ html .tw\:rounded-2xl {
         transform: none;
     }
 }
+
+/* Ad changes (D268). */
+.ads-items {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.ads-items li {
+    padding: 1px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: var(--smFontSize);
+    overflow-wrap: anywhere;
+}
+.ads-change-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.ads-log {
+    margin-top: 8px;
+    font-size: var(--smFontSize);
+}
+.ads-log pre {
+    margin: 4px 0 8px;
+    padding: 8px;
+    max-height: 12rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--surfaceAlt1Color);
+    border-radius: var(--borderRadius);
+}

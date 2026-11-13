@@ -677,7 +677,8 @@
                                 </h2>
                                 <p class="txt-hint txt-sm recovery-card-desc">
                                     Where this period's ads look wasted, with the figure each point rests on. Suggestions only:
-                                    nothing is changed in your ad accounts.
+                                    nothing is changed in your ad accounts. With an account connected, the changes they lead to wait
+                                    for approval on <a href="{base}/dash/reports/ads/changes">Ad changes</a>.
                                 </p>
                             </div>
                             {#if writable && advice.findings.length}
@@ -791,7 +792,8 @@
                     <h2 class="recovery-report-title" id="ads-connect-title">Spend from Google Ads and Meta</h2>
                     <p class="txt-hint txt-sm recovery-card-desc">
                         Once connected, each day's spend per campaign is read from the platform every day, as an import would
-                        bring it in. Read-only: nothing is changed in your ad accounts. These connections have not yet been tried
+                        bring it in. Nothing is changed in your ad accounts unless a change is approved on
+                        <a href="{base}/dash/reports/ads/changes">Ad changes</a>. These connections have not yet been tried
                         against a real ad account, so compare the first days with the platform's own figures.
                     </p>
                     <ul class="ads-pace">

@@ -739,6 +739,13 @@ export const ads = {
     summarise: (body) => api.post(`${ADS}/summary`, body),
     settings: () => api.get(`${ADS}/settings`),
     saveSettings: (body) => api.put(`${ADS}/settings`, body),
+    changes: () => api.get(`${ADS}/changes`),
+    propose: () => api.post(`${ADS}/changes/propose`, {}),
+    approveAll: () => api.post(`${ADS}/changes/approve`, {}),
+    approve: (id) => api.post(`${ADS}/changes/${id}/approve`, {}),
+    dismiss: (id) => api.post(`${ADS}/changes/${id}/dismiss`, {}),
+    undo: (id) => api.post(`${ADS}/changes/${id}/undo`, {}),
+    pauseAutopilot: () => api.post(`${ADS}/autopilot/pause`, {}),
 };
 
 export const recovery = {
