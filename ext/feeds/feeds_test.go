@@ -12,6 +12,25 @@ import (
 	"github.com/itswadesh/gocommerce/gctest"
 )
 
+// The feed's channel is named after the shop. It used to take the order-number
+// prefix, so the demo store's feed was titled "GC-".
+func TestAFeedIsTitledWithTheStoresName(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	ctx := context.Background()
+	if _, err := app.Profile().Set(ctx, gocommerce.StoreProfile{Name: "ShopNx Demo"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on,
+		Settings: map[string]any{"storefront_url": "https://shop.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>ShopNx Demo</title>") {
+		t.Fatalf("google feed = %d, want it titled with the store's name: %.300s", rec.Code, rec.Body)
+	}
+}
+
 func TestTheFeedsCarryEveryActiveVariant(t *testing.T) {
 	app := gctest.New(t, New(Config{}))
 	ctx := context.Background()

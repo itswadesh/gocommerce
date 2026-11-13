@@ -373,11 +373,13 @@ func (m *Module) handleGoogle(w http.ResponseWriter, r *http.Request) {
 		gocommerce.RespondError(w, r, err)
 		return
 	}
+	// Named after the shop: the order-number prefix it used to take titled the
+	// demo store's feed "GC-".
 	feed := rss{Version: "2.0", NS: "http://base.google.com/ns/1.0", Channel: channel{
-		Title: m.app.Settings().OrderPrefix, Link: s.storefront, Description: "Products",
+		Title: s.storefront, Link: s.storefront, Description: "Products",
 	}}
-	if feed.Channel.Title == "" {
-		feed.Channel.Title = s.storefront
+	if p, err := m.app.Profile().Get(r.Context()); err == nil && strings.TrimSpace(p.Name) != "" {
+		feed.Channel.Title = strings.TrimSpace(p.Name)
 	}
 	for _, it := range items {
 		feed.Channel.Items = append(feed.Channel.Items, googleItem{
