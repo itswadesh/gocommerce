@@ -574,6 +574,12 @@ func (m *Module) recordTx(ctx context.Context, tx *sql.Tx, c *Change, kind, who,
 	msg := ""
 	if sendErr != nil {
 		msg = sendErr.Error()
+		// The engine's own refusals, such as a platform not connected, in
+		// their words, without the code in front.
+		var api *gocommerce.APIError
+		if errors.As(sendErr, &api) {
+			msg = api.Message
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE ads_changes SET status = $2, detail = $3 WHERE id = $1`, c.ID, c.Status, jsonOf(c.d)); err != nil {
 		return gocommerce.Internalf(err, "keep the ad change")
