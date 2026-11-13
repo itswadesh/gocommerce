@@ -20,7 +20,9 @@ import (
 // its open carts and its sample orders — rather than leaving a catalogue in one
 // currency and a store in another. Amounts are not converted: the store is
 // being set up, and a price typed as 2500 meant 2500 in the currency the owner
-// had in mind. A real order that is still unpaid keeps the currency it was
+// had in mind. The sample shop is the exception: nobody typed its prices, so
+// it takes the ones it would have been added with (repriceSamples, D262).
+// A real order that is still unpaid keeps the currency it was
 // placed in, because that is what its shopper was shown and a gateway may be
 // charging it; so do rows a module owns (a B2B quote, a recovery record), as
 // every order does (D14).
@@ -93,6 +95,9 @@ func normalizeCurrency(code string) (string, error) {
 // setCurrency moves the store ctx is bound to onto code, inside tx, and
 // relabels what it has priced so far. The caller has checked hasOrders.
 func (a *App) setCurrency(ctx context.Context, tx *sql.Tx, code string) error {
+	if err := a.repriceSamples(ctx, tx, a.Currency(ctx), code); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE stores SET currency = $1 WHERE id = $2`, code, a.storeOf(ctx)); err != nil {
 		return err
 	}
@@ -104,4 +109,73 @@ func (a *App) setCurrency(ctx context.Context, tx *sql.Tx, code string) error {
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE carts SET currency = $1 WHERE status = 'open' AND currency <> $1`, code)
 	return err
+}
+
+// repriceSamples gives the sample shop the prices it would have been added
+// with in the new currency, rather than relabelling them: the catalogue has
+// its own rupee prices and only a dollar face value for every other currency
+// (sampleProduct.prices), so a store opened in dollars and moved to rupees
+// sold a ₹2,299 kurta at ₹29 (D262). A price the merchant has changed no
+// longer matches the old figure and is theirs to keep.
+//
+// ponytail: sample orders are only relabelled; they are the panel's, never a
+// shopper's, and erasing and re-adding the sample shop prices them too.
+func (a *App) repriceSamples(ctx context.Context, tx *sql.Tx, from, to string) error {
+	if from == to {
+		return nil
+	}
+	for _, s := range sampleCatalogue.Products {
+		wasPrice, wasCompare := s.prices(from)
+		price, compare := s.prices(to)
+		rows, err := tx.QueryContext(ctx, `
+			WITH moved AS (
+			    UPDATE variants v SET price_minor = $4, compare_at_price_minor = $5, updated_at = now()
+			    FROM products p
+			    WHERE p.id = v.product_id AND p.sample AND p.slug = $1
+			      AND v.price_minor = $2 AND v.compare_at_price_minor IS NOT DISTINCT FROM $3
+			    RETURNING v.product_id)
+			SELECT p.id, p.slug, p.title, p.status FROM products p WHERE p.id IN (SELECT product_id FROM moved)`,
+			s.Slug, wasPrice, wasCompare, price, compare)
+		if err != nil {
+			return err
+		}
+		var events []productEvent
+		for rows.Next() {
+			var e productEvent
+			if err := rows.Scan(&e.ID, &e.Slug, &e.Title, &e.Status); err != nil {
+				rows.Close()
+				return err
+			}
+			events = append(events, e)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, e := range events {
+			if err := a.outbox.write(ctx, tx, EventProductUpdated, AggregateProduct, e.ID, e); err != nil {
+				return err
+			}
+		}
+	}
+	pick := func(currency string) int {
+		if currency == sampleCatalogue.Currency {
+			return 0
+		}
+		return 1
+	}
+	for _, d := range sampleDiscounts {
+		if d.minimum[pick(from)] == 0 {
+			continue
+		}
+		was := d.minimum[pick(from)] * currencyScale(from)
+		now := d.minimum[pick(to)] * currencyScale(to)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE discounts SET min_subtotal_minor = $3, title = CASE WHEN title = $4 THEN $5 ELSE title END
+			WHERE sample AND code = $1 AND min_subtotal_minor = $2`,
+			d.code, was, now, d.title[pick(from)], d.title[pick(to)]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
