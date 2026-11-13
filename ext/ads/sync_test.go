@@ -64,7 +64,14 @@ func (p *platforms) serve(w http.ResponseWriter, r *http.Request) {
 func newSyncHarness(t *testing.T) (*harness, *platforms) {
 	t.Helper()
 	p := &platforms{}
-	srv := httptest.NewServer(http.HandlerFunc(p.serve))
+	return newStubHarness(t, p.serve), p
+}
+
+// newStubHarness is a store whose calls to the ad platforms reach serve,
+// with the Host still the platform's so serve knows who was called.
+func newStubHarness(t *testing.T, serve http.HandlerFunc) *harness {
+	t.Helper()
+	srv := httptest.NewServer(serve)
 	t.Cleanup(srv.Close)
 	to, _ := url.Parse(srv.URL)
 	client := &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
@@ -75,7 +82,7 @@ func newSyncHarness(t *testing.T) (*harness, *platforms) {
 	})}
 	mod := New(Config{Client: client})
 	app := gctest.NewWithConfig(t, gocommerce.Config{Currency: "INR"}, mod)
-	return &harness{t: t, app: app, mod: mod}, p
+	return &harness{t: t, app: app, mod: mod}
 }
 
 func (h *harness) plugin(key string, settings map[string]any) {

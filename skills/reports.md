@@ -260,6 +260,10 @@ GET    /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the engine's f
 POST   /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the same, reviewed by AI
 GET    /api/admin/x/ads/connectors     Google Ads and Meta: switched on, what is missing, the last run
 POST   /api/admin/x/ads/connectors/{platform}/sync   google or meta, now
+GET    /api/admin/x/ads/changes        proposed changes, each with its apply/undo log; connected platforms
+POST   /api/admin/x/ads/changes/propose   read the connected platforms and propose now
+POST   /api/admin/x/ads/changes/approve   approve every waiting change   (ads.approve)
+POST   /api/admin/x/ads/changes/{id}/approve | dismiss | undo           (ads.approve)
 ```
 
 - **Where an order came from is `metadata.attribution`**, `{"first": touch,
@@ -315,6 +319,21 @@ POST   /api/admin/x/ads/connectors/{platform}/sync   google or meta, now
   `utm_source` and `utm_medium`, exactly as an import would. Off or incomplete,
   they make no call. They are tested against stub servers only, never a real
   ad account.
+- **Changes** (D268) are proposed only for a connected platform, from its live
+  campaigns matched to report rows by name (ignoring case) under the plugin's
+  `utm_source`, over the last 30 days in the account's time zone: `pause` (no
+  orders, spend at least an average order's gross profit), `budget` −20% (gross
+  profit under spend) or +20% (five orders or more, gross profit at least twice
+  spend, and only while the month stays inside the source's budget),
+  `negative_keywords` and `exclude_placements` on Google (terms and placements
+  that cost at least the campaign's cost per order with no conversions, at most
+  20), and `ad_schedule` on Google (the hours outside the advisor's quiet
+  spans, every day, once there are 30 orders, for a campaign with no schedule).
+  A shared Google budget is never changed. Approving claims the change, sends
+  `googleAds:mutate` or a Graph POST on the campaign or ad set, and logs the
+  request (no tokens) and the answer in `ads_change_log`; undo restores the
+  budget, unpauses, or removes the criteria it created. `ads.approve` is the
+  owner's until a role is given it. Stub-tested only.
 
 ## What these numbers do not measure
 
