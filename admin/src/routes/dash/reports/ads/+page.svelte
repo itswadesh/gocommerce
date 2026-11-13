@@ -40,6 +40,7 @@
 
     let report = $state(null);
     let breakdown = $state(null);
+    let advice = $state(null);
     let spend = $state([]);
     let loading = $state(true);
     let reqId = 0;
@@ -65,8 +66,9 @@
         open = null;
         try {
             const p = params();
-            const [r, s, b] = await Promise.all([ads.report(p), ads.spend({ from: p.from, to: p.to }), ads.breakdown(p)]);
+            const [r, s, b, a] = await Promise.all([ads.report(p), ads.spend({ from: p.from, to: p.to }), ads.breakdown(p), ads.advice(p)]);
             if (mine !== reqId) return;
+            advice = a;
             report = r;
             spend = s ?? [];
             breakdown = b;
@@ -201,6 +203,29 @@
             toast.error(err);
         } finally {
             savingBudget = false;
+        }
+    }
+
+    // --------------------------------------------------------------- advisor
+
+    const FINDING = {
+        no_orders: ["Spends, sells nothing", "wasting"],
+        loss: ["Loses money", "wasting"],
+        quiet_hours: ["Hours that never sell", "watch"],
+        losing_region: ["State that loses money", "watch"],
+        attribution: ["Orders not traced", "watch"],
+    };
+    let reviewing = $state(false);
+
+    async function review() {
+        reviewing = true;
+        try {
+            advice = await ads.review(params());
+            if (advice.source === "ai") toast.success("AI review ready.");
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            reviewing = false;
         }
     }
 
@@ -614,6 +639,50 @@
                         </form>
                     {/if}
                 </section>
+
+                {#if advice}
+                    <section class="recovery-report-card" aria-labelledby="ads-advice-title">
+                        <div class="recovery-card-head">
+                            <div>
+                                <h2 class="recovery-report-title" id="ads-advice-title">
+                                    <i class="ri-lightbulb-flash-line" aria-hidden="true"></i> Ads advisor
+                                </h2>
+                                <p class="txt-hint txt-sm recovery-card-desc">
+                                    Where this period's ads look wasted, with the figure each point rests on. Suggestions only:
+                                    nothing is changed in your ad accounts.
+                                </p>
+                            </div>
+                            {#if writable && advice.findings.length}
+                                <button type="button" class="btn sm secondary ads-press" class:btn-loading={reviewing} disabled={reviewing} onclick={review}>
+                                    <i class="ri-sparkling-2-line" aria-hidden="true"></i>
+                                    <span class="txt">{reviewing ? "Reviewing…" : "Review with AI"}</span>
+                                </button>
+                            {/if}
+                        </div>
+                        {#if advice.note}
+                            <p class="ads-problem txt-sm" role="status" in:fade={{ duration: ms(160) }}>{advice.note}</p>
+                        {/if}
+                        {#if !advice.findings.length}
+                            <p class="txt-hint txt-sm">Nothing stands out as wasted in this period.</p>
+                        {:else}
+                            {#key advice}
+                                <ul class="ads-points" in:fade={{ duration: ms(220) }}>
+                                    {#each advice.findings as f, i (i)}
+                                        <li class="ads-point">
+                                            <div>
+                                                <span class="ads-kind is-{FINDING[f.kind]?.[1] ?? 'watch'}">{FINDING[f.kind]?.[0] ?? f.kind}</span>
+                                                <p>{f.text}</p>
+                                                <p class="ads-action"><i class="ri-arrow-right-line" aria-hidden="true"></i> {f.action}</p>
+                                            </div>
+                                            <p class="ads-figures">{f.figure}</p>
+                                        </li>
+                                    {/each}
+                                </ul>
+                                <p class="txt-hint txt-sm tw:mt-2">{advice.source === "ai" ? "Written by AI from these figures." : "Worked out from the report's own figures; no AI used."}</p>
+                            {/key}
+                        {/if}
+                    </section>
+                {/if}
 
                 <section class="recovery-report-card ads-summary" aria-labelledby="ads-summary-title">
                     <div class="recovery-card-head">

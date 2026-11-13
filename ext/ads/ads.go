@@ -118,7 +118,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 	m.app = app
 	if m.cfg.Gateway != nil {
 		var err error
-		m.tasks.Do(func() { err = m.cfg.Gateway.RegisterTask(summaryTask()) })
+		m.tasks.Do(func() {
+			if err = m.cfg.Gateway.RegisterTask(summaryTask()); err == nil {
+				err = m.cfg.Gateway.RegisterTask(adviseTask())
+			}
+		})
 		if err != nil {
 			return err
 		}
@@ -144,6 +148,8 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("GET /api/admin/x/ads/breakdown", noSellers(m.handleBreakdown), RightRead)
 	app.HandleAdminFunc("GET /api/admin/x/ads/pacing", noSellers(m.handlePacing), RightRead)
 	app.HandleAdminFunc("PUT /api/admin/x/ads/budgets", noSellers(m.handlePutBudget), RightWrite)
+	app.HandleAdminFunc("GET /api/admin/x/ads/advice", noSellers(m.handleAdvice), RightRead)
+	app.HandleAdminFunc("POST /api/admin/x/ads/advice", noSellers(m.handleAdvice), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/settings", noSellers(m.handleGetSettings), RightRead)
 	app.HandleAdminFunc("PUT /api/admin/x/ads/settings", noSellers(m.handlePutSettings), RightWrite)
 	app.OnStart(m.start)
