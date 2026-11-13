@@ -118,7 +118,7 @@ func TestTheFeedsCarryEveryActiveVariant(t *testing.T) {
 	for _, want := range []string{
 		`xmlns:g="http://base.google.com/ns/1.0"`,
 		"<g:id>TEE-S</g:id>", "<g:title>Crew Tee - S</g:title>",
-		"<g:link>https://shop.example/products/crew-tee?variant=TEE-S</g:link>",
+		"<g:link>https://shop.example/products/crew-tee?variant_id=" + strconv.FormatInt(variantID(t, p, "TEE-S"), 10) + "</g:link>",
 		"<g:price>24.99 USD</g:price>", "<g:sale_price>19.99 USD</g:sale_price>",
 		"<g:availability>in stock</g:availability>", "<g:brand>Acme</g:brand>", "<g:gtin>111</g:gtin>",
 		"<g:item_group_id>product-" + strconv.FormatInt(p.ID, 10) + "</g:item_group_id>",
@@ -273,4 +273,16 @@ func TestAFeedUsesTheStoresOwnAddressWithNoneTyped(t *testing.T) {
 	if want := ".shops.example.com/products/" + live.Slug; !strings.Contains(feed.Body.String(), want) {
 		t.Errorf("feed = %s, want a link ending %s", feed.Body, want)
 	}
+}
+
+// variantID is the id of the variant with that SKU.
+func variantID(t *testing.T, p *gocommerce.Product, sku string) int64 {
+	t.Helper()
+	for _, v := range p.Variants {
+		if v.SKU == sku {
+			return v.ID
+		}
+	}
+	t.Fatalf("no variant %s", sku)
+	return 0
 }
