@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +29,45 @@ func TestAFeedIsTitledWithTheStoresName(t *testing.T) {
 	rec := gctest.Request(t, app, http.MethodGet, "/x/feeds/google.xml", nil)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>ShopNx Demo</title>") {
 		t.Fatalf("google feed = %d, want it titled with the store's name: %.300s", rec.Code, rec.Body)
+	}
+}
+
+// A store's feed is priced in the store's own currency. It used to take the
+// install's, so the rupee demo store on a dollar install sent every item to
+// Google as "2299.00 USD".
+func TestAFeedIsPricedInTheStoresCurrency(t *testing.T) {
+	app := gctest.New(t, New(Config{}))
+	if app.Currency(context.Background()) == "INR" {
+		t.Skip("the test install already sells in rupees")
+	}
+	second, err := app.Stores().Create(context.Background(), "Rupee Shop", "rupee-shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := gocommerce.WithStore(context.Background(), second.ID)
+	p, err := app.Profile().Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Currency = "INR"
+	if _, err := app.Profile().Set(ctx, *p, nil); err != nil {
+		t.Fatalf("choose INR: %v", err)
+	}
+	price := int64(229900)
+	if _, err := app.Products().CreateProduct(ctx, gocommerce.ProductInput{Title: "Kurta", SKU: "KURTA-1", PriceMinor: &price, Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if _, err := app.Plugins().Update(ctx, pluginKey, gocommerce.PluginPatch{Enabled: &on,
+		Settings: map[string]any{"storefront_url": "https://shop.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/x/feeds/google.xml", nil)
+	req.Header.Set("X-Store", second.ID)
+	rec := httptest.NewRecorder()
+	app.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "<g:price>2299.00 INR</g:price>") {
+		t.Fatalf("google feed = %d, want the price in INR: %.600s", rec.Code, rec.Body)
 	}
 }
 

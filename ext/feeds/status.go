@@ -57,7 +57,7 @@ func (m *Module) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Enabled:    s.enabled,
 		Configured: s.storefront != "",
 		Storefront: s.storefront,
-		Currency:   strings.ToUpper(m.app.Settings().Currency),
+		Currency:   strings.ToUpper(m.app.Currency(r.Context())),
 	}
 	// Nothing to count until there is an address to build links from: items()
 	// would produce rows pointing at nowhere, and a count of those would
