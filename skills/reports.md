@@ -258,6 +258,8 @@ GET    /api/admin/x/ads/pacing?tz=Asia/Kolkata
 PUT    /api/admin/x/ads/budgets        {"source": "google", "amount_minor": 3000000}   zero removes it
 GET    /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the engine's findings, no AI
 POST   /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the same, reviewed by AI
+GET    /api/admin/x/ads/connectors     Google Ads and Meta: switched on, what is missing, the last run
+POST   /api/admin/x/ads/connectors/{platform}/sync   google or meta, now
 ```
 
 - **Where an order came from is `metadata.attribution`**, `{"first": touch,
@@ -306,6 +308,13 @@ POST   /api/admin/x/ads/advice?from=…&to=…&tz=…&touch=…   the same, revi
   `attribution`. `POST` has the `ads.advise` task word and order them under the
   summary's number check; any refusal returns the rules with `source: "rules"`
   and a `note`. Nothing is stored or applied.
+- **The connectors** (D267) are the plugins `google-ads-spend` and
+  `meta-ads-spend`. Filled in and switched on, the hourly job reads the last 7
+  days of spend per campaign and day, once a good run is 20 hours old, and
+  writes `ads_spend` rows with origin `google` or `meta` under the plugin's
+  `utm_source` and `utm_medium`, exactly as an import would. Off or incomplete,
+  they make no call. They are tested against stub servers only, never a real
+  ad account.
 
 ## What these numbers do not measure
 

@@ -566,7 +566,13 @@ func (m *Module) start(ctx context.Context) error {
 				return
 			case <-t.C:
 			}
-			err := m.app.ForEachStore(ctx, func(ctx context.Context) error { return m.weekly(ctx, time.Now()) })
+			err := m.app.ForEachStore(ctx, func(ctx context.Context) error {
+				// The spend first, so a weekly summary reads today's figures.
+				if err := m.syncAll(ctx, time.Now()); err != nil {
+					m.app.Log().Error("ads: the spend sync failed", "error", err)
+				}
+				return m.weekly(ctx, time.Now())
+			})
 			if err != nil && ctx.Err() == nil {
 				m.app.Log().Error("ads: weekly summaries failed", "error", err)
 			}

@@ -27,6 +27,9 @@ type Config struct {
 	// Gateway is the store's AI gateway, which the summary runs through.
 	// Without it the report and spend work and the summary is refused.
 	Gateway *aigateway.Module
+	// Client reads the ad platforms' APIs; nil uses the store's outbound
+	// client. Tests point it at stub servers.
+	Client *http.Client
 }
 
 // Module is ads intelligence.
@@ -110,6 +113,19 @@ CREATE TABLE ads_budgets (
     PRIMARY KEY (store_id, source)
 );`},
 		gocommerce.ScopeMigration("0004_budgets_scope", "ads_budgets"),
+		{ID: "0005_sync", SQL: `
+-- The latest run of each spend connector (D267), shown on the ads screen.
+CREATE TABLE ads_sync (
+    store_id  text NOT NULL,
+    platform  text NOT NULL CHECK (platform IN ('google', 'meta')),
+    ran_at    timestamptz NOT NULL,
+    ok        boolean NOT NULL,
+    message   text NOT NULL DEFAULT '',
+    days      int NOT NULL DEFAULT 0,
+    campaigns int NOT NULL DEFAULT 0,
+    PRIMARY KEY (store_id, platform)
+);`},
+		gocommerce.ScopeMigration("0006_sync_scope", "ads_sync"),
 	}
 }
 
@@ -150,8 +166,11 @@ func (m *Module) Register(app *gocommerce.App) error {
 	app.HandleAdminFunc("PUT /api/admin/x/ads/budgets", noSellers(m.handlePutBudget), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/advice", noSellers(m.handleAdvice), RightRead)
 	app.HandleAdminFunc("POST /api/admin/x/ads/advice", noSellers(m.handleAdvice), RightWrite)
+	app.HandleAdminFunc("GET /api/admin/x/ads/connectors", noSellers(m.handleConnectors), RightRead)
+	app.HandleAdminFunc("POST /api/admin/x/ads/connectors/{platform}/sync", noSellers(m.handleSync), RightWrite)
 	app.HandleAdminFunc("GET /api/admin/x/ads/settings", noSellers(m.handleGetSettings), RightRead)
 	app.HandleAdminFunc("PUT /api/admin/x/ads/settings", noSellers(m.handlePutSettings), RightWrite)
+	m.registerConnectors(app)
 	app.OnStart(m.start)
 	return nil
 }
