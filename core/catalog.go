@@ -1535,7 +1535,8 @@ var productSorts = SortSpec{
 // ListProducts returns a page of products and the total matching count.
 func (c *Catalog) ListProducts(ctx context.Context, q ProductQuery) ([]*Product, int, error) {
 	join, where, args := productFilters(q, nil)
-	from, order := "products p"+join, "p.id DESC"
+	// The order an operator dragged the list into, then newest first (D272).
+	from, order := "products p"+join, "p.position ASC NULLS FIRST, p.id DESC"
 	if q.CollectionID > 0 {
 		// A collection is curated by hand, so its own order is the answer to
 		// "what order should these be in" — not the catalog's newest-first.

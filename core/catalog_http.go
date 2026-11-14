@@ -32,6 +32,9 @@ func (a *App) mountCatalogRoutes() {
 	a.HandleVendorFunc("GET /api/admin/products/{id}", a.handleAdminGetProduct, RightCatalogRead)
 	a.HandleAdminFunc("PATCH /api/admin/products/{id}", a.handleUpdateProduct, RightCatalogWrite)
 	a.HandleAdminFunc("DELETE /api/admin/products/{id}", a.handleDeleteProduct, RightCatalogWrite)
+	// Drag to reorder and duplicate, from the product list (D272).
+	a.HandleAdminFunc("PUT /api/admin/products/positions", a.handleReorderProducts, RightCatalogWrite)
+	a.HandleAdminFunc("POST /api/admin/products/{id}/duplicate", a.handleDuplicateProduct, RightCatalogWrite)
 	a.HandleAdminFunc("POST /api/admin/products/{id}/options", a.handleAddOption, RightCatalogWrite)
 	// PUT replaces the whole matrix and reconciles the variants with it. That
 	// is what an editor needs: renaming an axis or dropping a value is one
@@ -583,4 +586,33 @@ func queryInt64(q url.Values, name string) (int64, error) {
 		return 0, Validationf("%s must be a positive integer", name)
 	}
 	return id, nil
+}
+
+func (a *App) handleReorderProducts(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := DecodeJSON(w, r, &in); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	if err := a.catalog.ReorderProducts(r.Context(), in.IDs); err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *App) handleDuplicateProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := pathInt64(r, "id")
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	p, err := a.catalog.DuplicateProduct(r.Context(), id)
+	if err != nil {
+		RespondError(w, r, err)
+		return
+	}
+	Respond(w, http.StatusCreated, p)
 }

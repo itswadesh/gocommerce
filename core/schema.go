@@ -128,8 +128,17 @@ func coreMigrations() []Migration {
 		{ID: "0110_gift_card_codes", SQL: migration0110GiftCardCodes},
 		// A code is the money on it, and a cart's typed code is the same code.
 		WithholdFromReports("0111_withhold_gift_card_codes", "gift_cards.code", "carts.gift_card_code"),
+		{ID: "0112_product_position", SQL: migration0112ProductPosition},
 	}
 }
+
+// M112 — where an operator dragged a product to in the list (D272). Null until
+// the list is first reordered, and nulls lead, so a store that never drags
+// keeps newest first and a product added afterwards still opens the list.
+const migration0112ProductPosition = `
+ALTER TABLE products ADD COLUMN position integer;
+CREATE INDEX products_position_idx ON products (store_id, position ASC NULLS FIRST, id DESC);
+`
 
 // M107 — the email last sent asking a person to verify their address, shown until
 // they do (D225). It holds the words with the link taken out. On the person, as

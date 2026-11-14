@@ -3366,6 +3366,87 @@
         }
       }
     },
+    "/api/admin/products/positions": {
+      "put": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Reorder products",
+        "description": "Puts the products named in `ids` in that order among the places they already hold in the product list (D272), so a page or a filtered list reorders only what it shows. The first reorder numbers every product in the order it is listed in. The list, and the storefront's, is in this order when no sort is asked for, then newest first. Needs catalog.write.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "format": "int64"
+                    },
+                    "description": "Product ids in their new order, each once."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Reordered."
+          },
+          "400": {
+            "$ref": "#/components/responses/Validation"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/duplicate": {
+      "post": {
+        "tags": [
+          "admin:catalog"
+        ],
+        "summary": "Duplicate a product",
+        "description": "A draft copy titled \"<title> (copy)\" (D272): description, organisation, category, options, variants and prices, pictures and collections, with no stock, a free slug and SKUs derived from it. Needs catalog.write.",
+        "security": [
+          {
+            "adminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PathID"
+          }
+        ],
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/ProductResponse"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api/admin/products/{id}": {
       "get": {
         "tags": [
@@ -12213,6 +12294,15 @@
             "description": "ISO state or province code, where the store taxes or prices by it."
           },
           {
+            "name": "pickup",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Quote collecting from the shop instead of delivery (D271): no delivery charge, and the country may be left out to tax at the shop's."
+          },
+          {
             "name": "shipping_rate_id",
             "in": "query",
             "required": false,
@@ -12293,15 +12383,6 @@
                     },
                     "tax_inclusive": {
                       "type": "boolean",
-          {
-            "name": "pickup",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            },
-            "description": "Quote collecting from the shop instead of delivery (D271): no delivery charge, and the country may be left out to tax at the shop's."
-          },
                       "description": "The prices contain the tax, so it is reported and not added."
                     },
                     "payment_fee": {

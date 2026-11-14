@@ -529,6 +529,21 @@ their `product_id` is `ON DELETE SET NULL`, and they keep their own snapshot of
 sku, title, label and price, so a historical order stays readable after the
 catalog moves on. See [carts](carts.md) for why cart lines cascade instead.
 
+## How to reorder or duplicate
+
+```http
+PUT /api/admin/products/positions        {"ids": [12, 7, 9]}   → 204
+POST /api/admin/products/42/duplicate                          → 201, the copy
+```
+
+`Catalog.ReorderProducts` puts the named products in that order among the
+places they already hold (D272), so a page or a filtered list reorders only
+its own rows; the first call numbers the whole catalogue in its listed order.
+A listing asked for no sort is in `products.position` order, unnumbered (new)
+products first, then newest first. `Catalog.DuplicateProduct` makes a draft
+"(copy)" through `CreateProduct`, with pictures and collections, no stock and
+SKUs derived from its own free slug.
+
 ## Products from photos
 
 `ext/photo-products` (`-photo-products`, D144) drafts products from a shop's
