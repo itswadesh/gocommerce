@@ -705,10 +705,14 @@ environment:
 				FileKey:          os.Getenv("RETAIL_ASSISTANT_FILE_KEY"),
 				ClamdAddr:        os.Getenv("RETAIL_ASSISTANT_CLAMD_ADDR"),
 				TemplateName:     os.Getenv("RETAIL_ASSISTANT_TEMPLATE"),
-				LoginTemplate:    os.Getenv("RETAIL_ASSISTANT_LOGIN_TEMPLATE"),
-				B2B:              trade,
-				Gateway:          gateway,
-				BaseURL:          os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
+				// Panel sign-in codes went by WhatsApp as well as SMS; the owner
+				// asked on 14 Nov 2026 to stop WhatsApp for now (D270). SMS alone
+				// carries them. Restore os.Getenv("RETAIL_ASSISTANT_LOGIN_TEMPLATE")
+				// here to send them on WhatsApp again.
+				LoginTemplate: "",
+				B2B:           trade,
+				Gateway:       gateway,
+				BaseURL:       os.Getenv("RETAIL_ASSISTANT_GRAPH_URL"),
 			}))
 		}
 		if *withMetal {
