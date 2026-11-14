@@ -963,7 +963,14 @@
        client that could not see what the store was recording. */
     const extraMetadata = $derived(
         Object.entries(order?.metadata ?? {}).filter(
-            ([key]) => key !== "notes" && !(key === "b2b" && showsBusinessCard),
+            ([key]) => key !== "notes" && key !== "checkout_answers" && !(key === "b2b" && showsBusinessCard),
+        ),
+    );
+
+    /* The shopper's answers to the store's checkout questions (D271). */
+    const checkoutAnswers = $derived(
+        (Array.isArray(order?.metadata?.checkout_answers) ? order.metadata.checkout_answers : []).filter(
+            (a) => typeof a?.question === "string" && typeof a?.answer === "string",
         ),
     );
 
@@ -1644,6 +1651,20 @@
                             {cardActions}
                         />
 
+                        {#if checkoutAnswers.length}
+                            <section class="order-card">
+                                <h6 class="order-card-title">Checkout answers</h6>
+                                <div class="order-lines">
+                                    {#each checkoutAnswers as a, i (i)}
+                                        <div class="order-line">
+                                            <span class="txt-hint">{a.question}</span>
+                                            <span>{a.answer}</span>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </section>
+                        {/if}
+
                         {#if extraMetadata.length}
                             <!-- Read-only, and deliberately: these keys belong to
                                  whatever module wrote them, and the patch replaces
@@ -2067,7 +2088,13 @@
                                         <i class="ri-whatsapp-line" aria-hidden="true"></i> Message on WhatsApp
                                     </a>
                                 {/if}
-                                {#if order.address}
+                                {#if order.shipping_method === "Pickup from the shop"}
+                                    <!-- D271: collected at the counter, so no address
+                                         to send it to. -->
+                                    <div class="order-address">
+                                        <i class="ri-store-2-line" aria-hidden="true"></i> Pickup from the shop
+                                    </div>
+                                {:else if order.address}
                                     <address class="order-address">
                                         {order.address.line1}{order.address.line2
                                             ? ", " + order.address.line2

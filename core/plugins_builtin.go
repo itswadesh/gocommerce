@@ -70,6 +70,39 @@ var builtinPlugins = []PluginDef{
 				Help: "Where orders are sent, with the country code: +91 98765 43210. Empty uses the phone number in Store details."},
 		},
 	},
+	// A small shop's order rules (D271), each off until an owner turns it on
+	// and each enforced by checkout, not only shown by the storefront.
+	{
+		Key: PickupPluginKey, Home: homeStoreSettings, Title: "Pickup from the shop", Icon: "ri-store-2-line", Category: "storefront",
+		Description: "Shoppers can collect their order from your shop instead of having it delivered. A pickup order is charged nothing for delivery and needs no delivery address.",
+		Fields: []PluginField{
+			{Key: "address", Label: "Pickup address", Kind: "textarea", Public: true, Required: true,
+				Help: "Where shoppers collect from, as checkout shows it. Add your opening hours if they help."},
+		},
+	},
+	{
+		Key: MinimumOrderPluginKey, Home: homeStoreSettings, Title: "Minimum order", Icon: "ri-scales-3-line", Category: "storefront",
+		Description: "Orders below this amount are not accepted. The cart and checkout tell the shopper how much more to add.",
+		Fields: []PluginField{
+			{Key: "amount", Label: "Minimum order amount", Kind: "number", Public: true, Required: true,
+				Help: "The items' total before delivery, in the store's currency: 200 is ₹200."},
+		},
+	},
+	{
+		Key: PauseOrdersPluginKey, Home: homeStoreSettings, Title: "Pause orders", Icon: "ri-pause-circle-line", Category: "storefront",
+		Description: "Stop taking orders while the shop is closed. Shoppers can still browse; checkout is refused with your message.",
+		Fields: []PluginField{
+			{Key: "message", Label: "Message", Kind: "textarea", Public: true, Default: defaultPausedMessage},
+		},
+	},
+	{
+		Key: CheckoutQuestionsPluginKey, Home: homeStoreSettings, Title: "Checkout questions", Icon: "ri-questionnaire-line", Category: "storefront",
+		Description: "Ask every shopper your own questions at checkout, such as a preferred delivery time. The answers are saved on the order and sent in the WhatsApp order message.",
+		Fields: []PluginField{
+			{Key: "questions", Label: "Questions", Kind: "textarea", Public: true, Required: true,
+				Help: "One question per line. End a line with * to make the answer required: Preferred delivery time *"},
+		},
+	},
 	{
 		Key: "guest-checkout", Home: homeStoreSettings, Title: "Guest checkout", Icon: "ri-user-3-line", Category: "storefront", DefaultEnabled: true,
 		Description: "Let a shopper check out without an account. Off, the storefront asks them to sign in first.",

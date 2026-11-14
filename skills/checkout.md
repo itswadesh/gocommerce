@@ -175,6 +175,19 @@ an order to Meta's Conversions API as a Purchase when it is paid, or when it is
 placed for cash on delivery, with the order number as `event_id`, and only
 while the Meta pixel plugin is on; an order without the block is never sent.
 
+**A shop's order rules are built-in plugins checkout enforces (D271).** With
+`store-pickup` on, `pickup: true` (`pickup=1` on the quote) charges nothing
+for delivery, needs no street, stores the shipping method `PickupMethod`
+("Pickup from the shop") and, with no country, taxes at the shop's.
+`pause-orders` refuses every shopper's checkout with 409 `orders_paused` and
+the store's message; `minimum-order` refuses an items total below it with 400
+`below_minimum_order`. Both run in phase A, in `orderRules`, before the module
+guards, and neither holds an operator's order or a counter sale. With
+`checkout-questions` on, `answers` (keyed by the question's words) become
+`metadata.checkout_answers`, `[{question, answer}]` in the store's order —
+read them with `Order.CheckoutAnswers` — and a required one left empty is a
+400. The WhatsApp order message (D255) carries pickup and the answers.
+
 ## How to check out over HTTP
 
 ```http
