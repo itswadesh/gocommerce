@@ -33,6 +33,13 @@ type CheckoutInput struct {
 	PaymentData      map[string]string `json:"payment_data"`
 	ReturnURL        string            `json:"return_url"`
 	Metadata         Metadata          `json:"metadata"`
+	// Pickup is collecting the order from the shop (D271): nothing is charged
+	// for delivery and no street is needed. Only while the store's pickup
+	// plugin is on.
+	Pickup bool `json:"pickup,omitempty"`
+	// Answers are the buyer's answers to the store's checkout questions, by
+	// the question's words (D271), kept on the order's metadata.
+	Answers map[string]string `json:"answers,omitempty"`
 }
 
 // CheckoutResult is the order and what the client must do to pay for it.
@@ -86,7 +93,13 @@ func (s *Orders) Checkout(ctx context.Context, code string, in CheckoutInput, id
 		// which it was.
 		return nil, NotFoundf("no payment method named %q", code)
 	}
+	if err := s.app.preparePickup(ctx, &in); err != nil {
+		return nil, err
+	}
 	if err := validateCheckoutInput(ctx, &in); err != nil {
+		return nil, err
+	}
+	if err := s.app.applyCheckoutAnswers(ctx, &in); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +184,10 @@ func (s *Orders) Quote(ctx context.Context, method string, in CheckoutInput) (*C
 	if in.CartID == "" {
 		return nil, Validationf("cart is required")
 	}
-	if in.Address.Country == "" {
+	if err := s.app.preparePickup(ctx, &in); err != nil {
+		return nil, err
+	}
+	if in.Address.Country == "" && !in.Pickup {
 		return nil, Validationf("country is required")
 	}
 	var q CheckoutQuote
@@ -356,6 +372,11 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 				break
 			}
 		}
+		// Collected from the counter: not sent, so nothing to charge and no
+		// street to check.
+		if physical && in.Pickup {
+			physical, shippingMethod = false, PickupMethod
+		}
 		// A parcel needs somewhere to go; a download does not (D254). A quote
 		// is asked before the shopper has typed a street, so it is not held to it.
 		if physical && quote == nil {
@@ -536,8 +557,8 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 		// The modules' last word, with every figure final and nothing written
 		// yet (D67). A refusal here rolls back the reservations above and burns
 		// no order number, which is the difference between a credit limit and
-		// an apology for one.
-		if len(s.app.guards) > 0 {
+		// an apology for one. The store's own rules go first (D271).
+		{
 			attempt := &CheckoutAttempt{
 				Method: code, Input: in, VerifiedEmail: verified.String,
 				Subtotal: money(subtotal, currency), Shipping: money(shipping, currency),
@@ -551,6 +572,9 @@ func (s *Orders) createOrderFromCart(ctx context.Context, code string, in Checko
 					Quantity: l.Quantity, UnitPrice: money(l.CurrentPrice, currency),
 					Agreed: l.Agreed,
 				})
+			}
+			if err := s.app.orderRules(ctx, tx, attempt); err != nil {
+				return err
 			}
 			if err := s.app.runGuards(ctx, attempt); err != nil {
 				return err
@@ -944,7 +968,9 @@ func validateCheckoutInput(ctx context.Context, in *CheckoutInput) error {
 	// on the basket, which is not read until the cart is locked. A basket with
 	// nothing to send still names where the buyer is, because tax is charged
 	// by it (D254).
-	if strings.TrimSpace(in.Address.Country) == "" {
+	// A pickup is taxed at the shop, and a shop that never said where it is has
+	// nowhere better to name (D271).
+	if strings.TrimSpace(in.Address.Country) == "" && !in.Pickup {
 		return Validationf("address is missing country")
 	}
 	return nil

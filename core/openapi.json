@@ -12293,6 +12293,15 @@
                     },
                     "tax_inclusive": {
                       "type": "boolean",
+          {
+            "name": "pickup",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Quote collecting from the shop instead of delivery (D271): no delivery charge, and the country may be left out to tax at the shop's."
+          },
                       "description": "The prices contain the tax, so it is reported and not added."
                     },
                     "payment_fee": {
@@ -20927,7 +20936,18 @@
           },
           "metadata": {
             "type": "object",
-            "description": "A `notes` key is refused with a 400: it is reserved for the shop's own note on the order, which is set through PATCH /api/admin/orders/{id}."
+            "description": "A `notes` key is refused with a 400: it is reserved for the shop's own note on the order, which is set through PATCH /api/admin/orders/{id}. A `checkout_answers` key is replaced by the engine's own, from `answers`."
+          },
+          "pickup": {
+            "type": "boolean",
+            "description": "Collect the order from the shop (D271), while the store's `store-pickup` plugin is on: nothing is charged for delivery, no street is needed, the shipping method is \"Pickup from the shop\", and an address with no country is taxed at the shop's country and state. A store without pickup answers 400."
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Answers to the store's checkout questions (the `checkout-questions` plugin, D271), keyed by the question's words. Kept on the order as `metadata.checkout_answers`, a list of `{question, answer}` in the store's order; answers to questions the store does not ask are dropped, a required one left empty is a 400, and an answer is at most 500 characters."
           }
         }
       },

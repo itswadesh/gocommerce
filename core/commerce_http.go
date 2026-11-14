@@ -203,6 +203,7 @@ func (a *App) handleCheckoutQuote(w http.ResponseWriter, r *http.Request) {
 		CartID:  q.Get("cart"),
 		Email:   q.Get("email"),
 		Address: Address{Country: q.Get("country"), State: q.Get("state")},
+		Pickup:  boolParam(r, "pickup"),
 	}
 	if v := q.Get("shipping_rate_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)

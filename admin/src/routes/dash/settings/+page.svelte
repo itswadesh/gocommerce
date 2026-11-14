@@ -644,6 +644,11 @@
                 <FeatureSwitch pluginKey="guest-checkout" />
                 <FeatureSwitch pluginKey="store-close" />
                 <FeatureSwitch pluginKey="enquiry-mode" />
+                <!-- A small shop's order rules (D271); checkout enforces each. -->
+                <FeatureSwitch pluginKey="pause-orders" />
+                <FeatureSwitch pluginKey="minimum-order" />
+                <FeatureSwitch pluginKey="store-pickup" />
+                <FeatureSwitch pluginKey="checkout-questions" />
 
                 <!-- Everything below is read more than it is changed, so it is
                      folded, as on Sitemap and Feeds, and each fold says on its

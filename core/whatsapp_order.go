@@ -134,7 +134,7 @@ func whatsappOrderText(shop string, o *Order) string {
 	fmt.Fprintf(&b, "Total: %s\n", messageMoney(o.Total))
 
 	name, phone := firstOf(o.Name, o.Address.Name), firstOf(o.Phone, o.Address.Phone)
-	if name != "" || phone != "" || o.Address.Line1 != "" {
+	if name != "" || phone != "" || o.Address.Line1 != "" || o.ShippingMethod == PickupMethod {
 		b.WriteString("\n")
 	}
 	if name != "" {
@@ -143,9 +143,17 @@ func whatsappOrderText(shop string, o *Order) string {
 	if phone != "" {
 		fmt.Fprintf(&b, "Phone: %s\n", phone)
 	}
-	if o.Address.Line1 != "" {
+	if o.ShippingMethod == PickupMethod {
+		fmt.Fprintf(&b, "%s\n", PickupMethod)
+	} else if o.Address.Line1 != "" {
 		place := strings.TrimSpace(strings.Join(nonEmpty(o.Address.City, o.Address.State), ", ") + " " + o.Address.PostalCode)
 		fmt.Fprintf(&b, "Deliver to: %s\n", strings.Join(nonEmpty(o.Address.Line1, o.Address.Line2, place), ", "))
+	}
+	if answers := o.CheckoutAnswers(); len(answers) > 0 {
+		b.WriteString("\n")
+		for _, qa := range answers {
+			fmt.Fprintf(&b, "%s: %s\n", qa[0], qa[1])
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
