@@ -48,7 +48,7 @@ start, and a second run adds nothing that is already there.
 
 Chrome, Edge and Firefox send every `*.localhost` name to your own machine.
 
-1. Open <http://shop.localhost:8000/products/a5-notebook>.
+1. Open <http://shop.localhost:8000/products/satin-saree>.
 2. Select **Add to bag**, then open the bag and change the quantity.
 3. Select **Proceed to shipping** and enter any address. Nothing is delivered.
 4. Select **Cash on delivery**, **Review order** and **Confirm order**. The
