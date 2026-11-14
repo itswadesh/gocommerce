@@ -15,8 +15,9 @@ ADMIN_URL=${ADMIN_URL:-http://admin.localhost:8000}
 ADMIN_AUTH="Authorization: Bearer ${GOCOMMERCE_ADMIN_TOKEN:?set GOCOMMERCE_ADMIN_TOKEN}"
 # The engine as the shopper's browser reaches it: the shop's own origin.
 API=$SHOP_URL/backend
-# A product of the engine's sample shop, which the seed service adds.
-SLUG=${SMOKE_PRODUCT:-a5-notebook}
+# A product of the engine's sample shop, which the seed service adds: one
+# size and nothing sold out, so its first variant can always be bought.
+SLUG=${SMOKE_PRODUCT:-satin-saree}
 
 body=$(mktemp)
 trap 'rm -f "$body"' EXIT
