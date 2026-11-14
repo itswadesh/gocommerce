@@ -35,7 +35,9 @@
         pluralize,
     } from "$lib/format.js";
     import { toast } from "$lib/toast.svelte.js";
-    import { rise } from "$lib/motion.js";
+    import { rise, flipDuration } from "$lib/motion.js";
+    import { flip } from "svelte/animate";
+    import { parseItemList } from "$lib/pastelist.js";
     import { hasModule } from "$lib/modules.svelte.js";
     import { settings } from "$lib/settings.svelte.js";
     import BulkBar from "$lib/components/BulkBar.svelte";
@@ -744,6 +746,137 @@
         confirmOpen = true;
     }
 
+    // ---------------------------------------------- duplicate and reorder (D272)
+
+    let duplicating = $state(0);
+    async function duplicate(product, event) {
+        event.stopPropagation();
+        if (duplicating) return;
+        duplicating = product.id;
+        try {
+            const copy = await api.post(`/api/admin/products/${product.id}/duplicate`, {});
+            toast.success(`Made a draft copy of ${product.title}`);
+            await goto(`${base}/dash/products/${copy.id}`);
+        } catch (err) {
+            toast.error(err);
+        } finally {
+            duplicating = 0;
+        }
+    }
+
+    /* Dragging puts the rows on screen in a new order among the places they
+       already hold, so any page or filter can be reordered; only a sorted list
+       or a collection, which has its own curated order, cannot. */
+    const reorderable = $derived(writable && !sort.field && !segment.collection_id);
+    let dragId = $state(0);
+
+    function moveRow(from, to) {
+        if (from < 0 || to < 0 || from === to || to >= products.length) return false;
+        const next = [...products];
+        const [row] = next.splice(from, 1);
+        next.splice(to, 0, row);
+        products = next;
+        return true;
+    }
+
+    async function saveOrder() {
+        try {
+            await api.put("/api/admin/products/positions", { ids: products.map((p) => p.id) });
+            toast.success("Order saved");
+        } catch (err) {
+            toast.error(err);
+            await load();
+        }
+    }
+
+    /* Pointer events rather than HTML drag and drop, so a finger on a phone
+       drags the same handle a mouse does. */
+    function dragStart(event, product) {
+        if (!reorderable) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragId = product.id;
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+
+    function dragMove(event) {
+        if (!dragId) return;
+        const row = document.elementFromPoint(event.clientX, event.clientY)?.closest("tr[data-product-id]");
+        const over = Number(row?.dataset.productId);
+        if (!over || over === dragId) return;
+        moveRow(
+            products.findIndex((p) => p.id === dragId),
+            products.findIndex((p) => p.id === over),
+        );
+    }
+
+    function dragEnd() {
+        if (!dragId) return;
+        dragId = 0;
+        saveOrder();
+    }
+
+    function handleKey(event, index) {
+        const to = event.key === "ArrowUp" ? index - 1 : event.key === "ArrowDown" ? index + 1 : -1;
+        if (to === -1) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const handle = event.currentTarget;
+        if (moveRow(index, to)) {
+            saveOrder();
+            // The row moved; keep the focus on its handle so the keys go on working.
+            requestAnimationFrame(() => handle.focus());
+        }
+    }
+
+    // -------------------------------------------------- paste a list (D272)
+
+    let pasteOpen = $state(false);
+    let pasteText = $state("");
+    let pasteBusy = $state(false);
+    let pasteResults = $state([]);
+    const pasteItems = $derived(parseItemList(pasteText));
+    // A second press retries only what failed: the rest exist now.
+    const pasteReady = $derived(
+        pasteItems.filter(
+            (i) => !i.error && isValidMoney(i.price) && !pasteResults.some((r) => r.ok && r.title === i.title),
+        ),
+    );
+
+    function openPaste() {
+        pasteText = "";
+        pasteResults = [];
+        pasteOpen = true;
+    }
+
+    /* One product at a time through the ordinary create, which gives each a
+       free slug and SKU of its own. The CSV import would have been one call,
+       but it matches variants by SKU, and a pasted name whose SKU another
+       product already had would have moved that product's variant. */
+    async function addPasted() {
+        if (pasteBusy || !pasteReady.length) return;
+        pasteBusy = true;
+        const results = [];
+        for (const item of pasteReady) {
+            try {
+                await api.post("/api/admin/products", {
+                    title: item.title,
+                    status: "draft",
+                    price_minor: toMinor(item.price, currency),
+                });
+                results.push({ title: item.title, ok: true });
+            } catch (err) {
+                results.push({ title: item.title, ok: false, message: err?.message || String(err) });
+            }
+        }
+        pasteResults = [...pasteResults.filter((r) => r.ok), ...results];
+        pasteBusy = false;
+        const made = results.filter((r) => r.ok).length;
+        if (made) toast.success(`Added ${made} draft ${pluralize(made, "product")}`);
+        if (made === results.length && !pasteItems.some((i) => i.error)) pasteOpen = false;
+        await load();
+    }
+
     async function doDelete() {
         try {
             await api.delete(`/api/admin/products/${pendingDelete.id}`);
@@ -1164,6 +1297,10 @@
                     </button>
                 {/if}
                 {#if writable}
+                    <button type="button" class="btn secondary" onclick={openPaste} title="Paste a list of items and prices">
+                        <i class="ri-list-check-2" aria-hidden="true"></i>
+                        <span class="txt">Paste a list</span>
+                    </button>
                     <button type="button" class="btn" onclick={openCreate}>
                         <i class="ri-add-line" aria-hidden="true"></i>
                         <span class="txt">New product</span>
@@ -1307,11 +1444,14 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {#each products as product (product.id)}
+                    {#each products as product, index (product.id)}
                         {@const available = totalAvailable(product)}
                         <tr
                             class="handle"
                             tabindex="0"
+                            data-product-id={product.id}
+                            data-dragging={dragId === product.id}
+                            animate:flip={{ duration: dragId ? 0 : flipDuration() }}
                             onclick={(e) => openEdit(product, e)}
                             onkeydown={(e) => rowKey(e, () => openEdit(product))}
                         >
@@ -1343,6 +1483,22 @@
                                  from its face and colour, not from its position. -->
                             <td class="col-field-name-id" data-name="Product">
                                 <div class="row-product">
+                                    {#if reorderable}
+                                        <button
+                                            type="button"
+                                            class="btn circle sm transparent secondary row-drag"
+                                            title="Drag to reorder, or use the arrow keys"
+                                            aria-label="Reorder {product.title}: use the arrow keys to move it"
+                                            onclick={(e) => e.stopPropagation()}
+                                            onpointerdown={(e) => dragStart(e, product)}
+                                            onpointermove={dragMove}
+                                            onpointerup={dragEnd}
+                                            onpointercancel={dragEnd}
+                                            onkeydown={(e) => handleKey(e, index)}
+                                        >
+                                            <i class="ri-draggable" aria-hidden="true"></i>
+                                        </button>
+                                    {/if}
                                     <!-- A fixed frame whether or not there is a
                                          picture: a thumbnail that collapses when
                                          a product has none takes the whole
@@ -1418,6 +1574,17 @@
                             </td>
                             <td class="col-meta min-width">
                                 {#if writable}
+                                    <button
+                                        type="button"
+                                        class="btn circle sm transparent secondary row-delete"
+                                        class:loading={duplicating === product.id}
+                                        disabled={!!duplicating}
+                                        aria-label="Duplicate {product.title}"
+                                        title="Duplicate"
+                                        onclick={(e) => duplicate(product, e)}
+                                    >
+                                        <i class="ri-file-copy-line" aria-hidden="true"></i>
+                                    </button>
                                     <button
                                         type="button"
                                         class="btn circle sm transparent secondary row-delete"
@@ -1686,6 +1853,62 @@
             disabled={saving}
         >
             <span class="txt">Create product</span>
+        </button>
+    {/snippet}
+</Drawer>
+
+<Drawer open={pasteOpen} size="sm" title="Paste a list" onclose={() => (pasteOpen = false)}>
+    <div class="field">
+        <label for="paste-list">One item per line, with its price at the end</label>
+        <textarea
+            id="paste-list"
+            class="paste-list"
+            bind:value={pasteText}
+            placeholder={"Chocolate cake - 450\nVeg puff - 25"}
+        ></textarea>
+    </div>
+    <div class="field-help m-t-sm">
+        Each line becomes a draft product at that price, in {currency}. Add pictures and descriptions
+        afterwards, then set each one active to put it on sale.
+    </div>
+
+    {#if pasteItems.length}
+        <h6 class="section-title">Preview</h6>
+        <ul class="paste-preview">
+            {#each pasteItems as item, i (i)}
+                {@const result = pasteResults.find((r) => r.title === item.title)}
+                <li in:rise>
+                    <span class="txt-ellipsis">{item.title}</span>
+                    {#if item.error}
+                        <span class="txt-hint txt-sm">{item.error}</span>
+                    {:else if result && !result.ok}
+                        <span class="txt-danger txt-sm">{result.message}</span>
+                    {:else if result}
+                        <span class="txt-success txt-sm">Added</span>
+                    {:else}
+                        <span>{formatMoney({ amount_minor: toMinor(item.price, currency), currency })}</span>
+                    {/if}
+                </li>
+            {/each}
+        </ul>
+    {/if}
+
+    {#snippet footer()}
+        <button type="button" class="btn transparent m-r-auto" onclick={() => (pasteOpen = false)}>
+            <span class="txt">Cancel</span>
+        </button>
+        <button
+            type="button"
+            class="btn"
+            class:loading={pasteBusy}
+            disabled={pasteBusy || !pasteReady.length}
+            onclick={addPasted}
+        >
+            <span class="txt">
+                {pasteReady.length
+                    ? `Add ${pasteReady.length} draft ${pluralize(pasteReady.length, "product")}`
+                    : "Add products"}
+            </span>
         </button>
     {/snippet}
 </Drawer>
@@ -2085,6 +2308,43 @@
 </Drawer>
 
 <style>
+    /* The drag handle (D272): a finger dragging it must not scroll the page. */
+    .row-drag {
+        touch-action: none;
+        cursor: grab;
+        flex-shrink: 0;
+    }
+    .row-drag:active {
+        cursor: grabbing;
+    }
+    tr[data-dragging="true"] {
+        opacity: 0.55;
+        transition: opacity 150ms ease;
+    }
+    tr[data-dragging="true"] > td {
+        box-shadow: inset 0 1px 0 var(--accentColor), inset 0 -1px 0 var(--accentColor);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        tr[data-dragging="true"] {
+            transition-duration: 1ms;
+        }
+    }
+    .paste-list {
+        min-height: 180px;
+        font-family: var(--monospaceFontFamily, monospace);
+    }
+    .paste-preview {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+    .paste-preview li {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--surfaceAlt2Color);
+    }
     .needs-price-toggle {
         transition:
             background-color 150ms ease,

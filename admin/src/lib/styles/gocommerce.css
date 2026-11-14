@@ -3059,6 +3059,7 @@ button.media-check {
 .page-orders .page-header-primary-btns,
 .page-audit .page-header-primary-btns,
 .page-product .page-header-primary-btns,
+.page-products .page-header-primary-btns,
 .page-homepage .page-header-primary-btns {
     flex-wrap: wrap;
     /* Wrapping alone changes nothing while the group is a `flex-shrink: 0` item
@@ -3079,6 +3080,7 @@ button.media-check {
 .page-orders .page-header-primary-btns .btn,
 .page-audit .page-header-primary-btns .btn,
 .page-product .page-header-primary-btns .btn,
+.page-products .page-header-primary-btns .btn,
 .page-homepage .page-header-primary-btns .btn {
     flex-grow: 0;
     /* `flex-basis: auto` has to come with it. PocketBase's pair is
