@@ -74,7 +74,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 const (

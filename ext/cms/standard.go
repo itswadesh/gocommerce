@@ -3,7 +3,7 @@ package cms
 import (
 	"context"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // StandardPages are the pages every storefront links to (D145): the footer

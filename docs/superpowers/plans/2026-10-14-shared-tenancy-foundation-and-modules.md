@@ -1818,7 +1818,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Every table any module creates is behind the store policy, with every

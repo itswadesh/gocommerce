@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // telegramError is why a call to the Bot API did not succeed: Telegram's own

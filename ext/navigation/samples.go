@@ -3,7 +3,7 @@ package navigation
 import (
 	"context"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The sample shop's menu links (D96): the sample categories in the header,

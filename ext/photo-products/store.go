@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Batch statuses.

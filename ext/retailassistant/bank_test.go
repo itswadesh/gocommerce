@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 const statementCSV = `Statement of account,,,,,

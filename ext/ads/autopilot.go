@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // AutopilotPluginKey is the plugin that switches the autopilot on and holds its limits.

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A store sells in its own currency (D85), and every amount this module

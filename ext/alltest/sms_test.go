@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	msg91 "github.com/itswadesh/gocommerce/ext/notify-msg91"
-	twilio "github.com/itswadesh/gocommerce/ext/notify-twilio"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	msg91 "github.com/misiki-in/gocommerce/ext/notify-msg91"
+	twilio "github.com/misiki-in/gocommerce/ext/notify-twilio"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // recipients collects who a stub provider was asked to text.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // AssertPublicRoutesHideCost fails when a public route tells somebody with no

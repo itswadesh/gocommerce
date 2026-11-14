@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
 )
 
 const taskName = "ask-ai.turn"

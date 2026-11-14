@@ -3,7 +3,7 @@ package cms
 import (
 	"context"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The sample shop's pages (D96): the three a shopper looks for before buying,

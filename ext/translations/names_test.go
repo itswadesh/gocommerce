@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 func putKind(t *testing.T, app *gocommerce.App, kind string, id int64, lang string, fields map[string]string) {

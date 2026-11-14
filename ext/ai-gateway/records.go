@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Execution is one run's record (ADR 0005, the spec's AIExecution): what

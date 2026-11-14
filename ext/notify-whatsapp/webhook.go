@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Meta's webhooks, by its "Create a webhook endpoint" guide: a GET to verify

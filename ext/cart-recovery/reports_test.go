@@ -3,7 +3,7 @@ package cartrecovery
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report, and a reminder's link token opens the

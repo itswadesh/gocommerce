@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // Returns: a reverse pickup booked with Shiprocket, collecting goods from the

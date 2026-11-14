@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A text MSG91 took is written to the log, with the id MSG91 filed it under,

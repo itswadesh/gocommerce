@@ -90,7 +90,7 @@ jobs:
             npm ci
             npm run build
             git add src/data/updates.json src/data/page-dates.json
-            git commit -m "Updates: ${GITHUB_SHA::7} from itswadesh/gocommerce"
+            git commit -m "Updates: ${GITHUB_SHA::7} from misiki-in/gocommerce"
             git push origin HEAD:main && exit 0
             # The landing page moved since the checkout. Its page dates must
             # come from a build of its new tip, so record the rows there again.

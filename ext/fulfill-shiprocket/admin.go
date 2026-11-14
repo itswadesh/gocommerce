@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // The panel's side: connecting an account, quoting couriers for an order, and

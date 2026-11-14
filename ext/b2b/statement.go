@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // What a statement's lines are.

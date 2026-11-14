@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // What this module keeps: one row per order it has asked Shiprocket to

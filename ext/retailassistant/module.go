@@ -30,9 +30,9 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
-	"github.com/itswadesh/gocommerce/ext/b2b"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
+	"github.com/misiki-in/gocommerce/ext/b2b"
 )
 
 const (

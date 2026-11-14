@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
 )
 
 // maxBulkLines bounds a pasted order. Every line is one AddLine — core's rules

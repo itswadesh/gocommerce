@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // Signing in to the panel with a phone (D193). Against real Postgres, with a

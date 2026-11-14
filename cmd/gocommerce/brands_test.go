@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // A GOCOMMERCE_BRANDS that would stop the engine is reported by doctor as a

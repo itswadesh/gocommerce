@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A task whose own code panics is a task that cannot be done, not a store

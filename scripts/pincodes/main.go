@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 func main() {

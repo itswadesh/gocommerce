@@ -3,7 +3,7 @@ package webhooks
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report. An endpoint's signing secret lets whoever

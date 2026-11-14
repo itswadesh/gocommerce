@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // sendCSV posts a file to the quick-order route as a buyer.

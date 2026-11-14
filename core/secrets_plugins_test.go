@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // Sealing as a store sees it: a plugin's secret goes into the database sealed

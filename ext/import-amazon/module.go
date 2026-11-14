@@ -75,8 +75,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	"github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
 )
 
 // Config configures the module. Nothing is required: without an API key the

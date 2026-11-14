@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // csvText keeps a spreadsheet from running a cell as a formula. Supplier names and

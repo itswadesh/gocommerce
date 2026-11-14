@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // testDSNEnv names the environment variable holding the PostgreSQL URL used
