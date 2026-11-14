@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 func pathID(r *http.Request) (int64, error) {

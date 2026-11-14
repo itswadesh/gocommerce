@@ -3,7 +3,7 @@ package newsletter
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report, and a subscriber's token is what their

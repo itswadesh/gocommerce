@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // staffWithPhone is somebody in the default store who proved senderA with a code.

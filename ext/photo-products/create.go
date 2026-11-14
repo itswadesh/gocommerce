@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	catalogai "github.com/misiki-in/gocommerce/ext/catalog-ai"
 )
 
 // MetaKey is the product metadata a drafted product carries: which batch and

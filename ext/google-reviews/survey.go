@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Survey is what Google Customer Reviews' opt-in module is rendered with on

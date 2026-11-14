@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
 )
 
 // Review summaries (BI-03, D153): what shoppers praise and what they complain

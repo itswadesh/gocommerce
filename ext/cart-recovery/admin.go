@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Abandonment is one record as the screens read it. Money is minor units plus

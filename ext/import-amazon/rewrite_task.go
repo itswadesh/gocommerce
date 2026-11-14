@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
 )
 
 // The rewrite as a task of the AI gateway (D107). It asks the same thing the

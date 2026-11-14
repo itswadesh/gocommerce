@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // alertDef is one event the owner can be told about, with the wording it has

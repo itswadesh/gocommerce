@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // loginCodes carries core's sign-in code on the install's WhatsApp number. It is

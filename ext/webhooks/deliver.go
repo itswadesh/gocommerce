@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // onEvent turns one event into one row per endpoint that asked for it, and

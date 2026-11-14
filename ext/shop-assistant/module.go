@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
-	"github.com/itswadesh/gocommerce/ext/faq"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
+	"github.com/misiki-in/gocommerce/ext/faq"
 )
 
 // PluginKey is the switch on the panel's Plugins screen.

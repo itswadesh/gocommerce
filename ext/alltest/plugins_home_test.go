@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // The Plugins screen lists add-ons: an optional integration a store wires in

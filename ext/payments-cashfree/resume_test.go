@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // place checks out under a key and returns the input, so a test can retry it.

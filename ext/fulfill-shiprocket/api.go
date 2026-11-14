@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // The transport: one login per store's account, and every call after it.

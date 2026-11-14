@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // mailModule installs a recording email notifier ahead of the modules under

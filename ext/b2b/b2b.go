@@ -47,8 +47,8 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
 )
 
 // Company roles. What a buyer may do inside their company is the company's

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 var testFileKey = base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))

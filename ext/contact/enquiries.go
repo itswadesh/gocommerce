@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // maxQuantity bounds what an enquiry may ask a price for; past it the number

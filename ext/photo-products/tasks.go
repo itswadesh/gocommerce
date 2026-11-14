@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
-	catalogai "github.com/itswadesh/gocommerce/ext/catalog-ai"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
+	catalogai "github.com/misiki-in/gocommerce/ext/catalog-ai"
 )
 
 // The two gateway tasks. Both run on the gateway's strong model, which a

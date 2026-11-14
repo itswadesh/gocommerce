@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The worker is the core outbox's dispatcher, one layer out, and deliberately

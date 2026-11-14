@@ -3,7 +3,7 @@ package faq
 import (
 	"context"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The sample shop's questions and answers (D96): what a shopper asks before

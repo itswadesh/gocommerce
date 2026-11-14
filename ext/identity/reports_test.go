@@ -3,7 +3,7 @@ package identity
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report. A sign-in code's hash is four digits away

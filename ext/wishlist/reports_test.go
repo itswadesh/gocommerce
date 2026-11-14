@@ -3,7 +3,7 @@ package wishlist
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report, and a guest's wishlist token is the only

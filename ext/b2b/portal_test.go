@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // The trade portal (D77) shows a buyer one of the company's orders with what

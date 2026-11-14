@@ -217,18 +217,18 @@ func TestErrorsAreKeptToTheirStore(t *testing.T) {
 func TestTheCulpritIsTheCodeThatFailedInATrimmedBuild(t *testing.T) {
 	stack := "goroutine 7 [running]:\n" +
 		"runtime/debug.Stack()\n\truntime/debug/stack.go:26 +0x5e\n" +
-		"github.com/itswadesh/gocommerce/core.captureServerError(0xc0001)\n\tgithub.com/itswadesh/gocommerce/core/error_tracker.go:331 +0x45\n" +
-		"github.com/itswadesh/gocommerce/core.RespondError({0x1, 0x2})\n\tgithub.com/itswadesh/gocommerce/core/httpx.go:160 +0x1\n" +
-		"github.com/itswadesh/gocommerce/core.(*App).handleListProducts(0xc0002, {0x3})\n\tgithub.com/itswadesh/gocommerce/core/catalog_http.go:88 +0x2c4\n" +
+		"github.com/misiki-in/gocommerce/core.captureServerError(0xc0001)\n\tgithub.com/misiki-in/gocommerce/core/error_tracker.go:331 +0x45\n" +
+		"github.com/misiki-in/gocommerce/core.RespondError({0x1, 0x2})\n\tgithub.com/misiki-in/gocommerce/core/httpx.go:160 +0x1\n" +
+		"github.com/misiki-in/gocommerce/core.(*App).handleListProducts(0xc0002, {0x3})\n\tgithub.com/misiki-in/gocommerce/core/catalog_http.go:88 +0x2c4\n" +
 		"net/http.HandlerFunc.ServeHTTP(0x1, {0x2})\n\tnet/http/server.go:2294 +0x29\n"
 	if got := goCulprit(stack); got != "core.(*App).handleListProducts (catalog_http.go)" {
 		t.Fatalf("culprit = %q", got)
 	}
 	panicked := "goroutine 9 [running]:\n" +
 		"runtime/debug.Stack()\n\truntime/debug/stack.go:26 +0x5e\n" +
-		"github.com/itswadesh/gocommerce/core.(*App).recoverMW.func1.1()\n\tgithub.com/itswadesh/gocommerce/core/httpx.go:290 +0x5\n" +
+		"github.com/misiki-in/gocommerce/core.(*App).recoverMW.func1.1()\n\tgithub.com/misiki-in/gocommerce/core/httpx.go:290 +0x5\n" +
 		"panic({0x1, 0x2})\n\truntime/panic.go:791 +0x132\n" +
-		"github.com/itswadesh/gocommerce/ext/cms.(*Module).handlePage(0x1)\n\tgithub.com/itswadesh/gocommerce/ext/cms/cms.go:120 +0x9\n"
+		"github.com/misiki-in/gocommerce/ext/cms.(*Module).handlePage(0x1)\n\tgithub.com/misiki-in/gocommerce/ext/cms/cms.go:120 +0x9\n"
 	if got := goCulprit(panicked); got != "cms.(*Module).handlePage (cms.go)" {
 		t.Fatalf("panic culprit = %q", got)
 	}

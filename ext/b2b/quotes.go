@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
 )
 
 // Quote states. Expiry is read, not stored: a quoted quote past its

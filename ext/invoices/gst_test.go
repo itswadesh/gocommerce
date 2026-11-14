@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 const supplierGSTIN = "21AAPFU0939F1Z7" // Odisha

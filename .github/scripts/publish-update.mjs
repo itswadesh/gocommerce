@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 const env = process.env
-const REPO = env.GITHUB_REPOSITORY || 'itswadesh/gocommerce'
+const REPO = env.GITHUB_REPOSITORY || 'misiki-in/gocommerce'
 const PAGE = env.UPDATES_PAGE_URL || 'https://kitcommerce.store/updates/'
 // What `record` hands `announce`: only the rows it added, so a re-run of the
 // workflow finds them already on the page and posts nothing twice.

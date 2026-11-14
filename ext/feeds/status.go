@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // What is in the feed right now.

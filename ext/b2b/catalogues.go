@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/identity"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/identity"
 )
 
 // RejectNotInCatalogue is a line outside the catalogue its company is held

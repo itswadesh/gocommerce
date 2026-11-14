@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // fakeShiprocket answers the documented requests with the documented shapes

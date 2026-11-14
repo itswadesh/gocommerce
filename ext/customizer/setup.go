@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strconv"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/ext/layouts"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/ext/layouts"
 )
 
 const (

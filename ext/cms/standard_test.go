@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A new store starts with the six standard pages as drafts, which no shopper

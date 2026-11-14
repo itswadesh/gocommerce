@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // claude answers in Anthropic's place: the gateway's hosts are constants, so

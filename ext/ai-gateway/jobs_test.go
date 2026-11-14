@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 func enqueue(t *testing.T, app *gocommerce.App, m *Module, ctx context.Context, input any, key string) int64 {

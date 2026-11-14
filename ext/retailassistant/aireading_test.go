@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
 )
 
 // fakeClaude answers every model with the next queued answer, or the last one.
