@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // localApp is an install whose operators run the server, so a receiver on this

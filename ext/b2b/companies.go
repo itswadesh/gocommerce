@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // optionalInt64 tells a field the client left out from one it set to null:

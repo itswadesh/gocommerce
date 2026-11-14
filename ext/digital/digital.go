@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Config configures the module. The zero value is the intended one.

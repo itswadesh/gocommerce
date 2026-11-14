@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // A store chooses one way for its customers to sign in (D116): an email and a

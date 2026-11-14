@@ -3,8 +3,8 @@ package b2b
 import (
 	"testing"
 
-	"github.com/itswadesh/gocommerce/ext/identity"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/ext/identity"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Staff may run any saved report, and a partial checkout keeps the token of

@@ -145,7 +145,7 @@ successful migration and do not start. If the volume holds a database from a
 newer engine, start again from nothing.
 
 **The storefront build fails.** The build fetches
-`github.com/itswadesh/svelte-commerce` at `STOREFRONT_COMMIT` and installs from
+`github.com/misiki-in/svelte-commerce` at `STOREFRONT_COMMIT` and installs from
 its `bun.lock`. A failure at the `test ... = "$CONNECTOR_VERSION"` step means that
 commit's lockfile has a different connector than `compose.yaml` expects. Change
 `CONNECTOR_VERSION` and the commit together.

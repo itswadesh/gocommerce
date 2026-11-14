@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // publicCard is a showcase in a list: what a storefront needs to put a player

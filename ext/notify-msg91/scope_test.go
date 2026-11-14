@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // MSG91 is for India (the owner's rule): Indian numbers, and every number of

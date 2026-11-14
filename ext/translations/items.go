@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The translation screen's list (D87): a page of one kind's items, each with

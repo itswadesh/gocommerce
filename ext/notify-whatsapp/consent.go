@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // callingCodes is the country code a number typed without one is read in, by

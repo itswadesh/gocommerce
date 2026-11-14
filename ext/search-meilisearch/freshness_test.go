@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	metalpricing "github.com/itswadesh/gocommerce/ext/metal-pricing"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	metalpricing "github.com/misiki-in/gocommerce/ext/metal-pricing"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Every way a variant's price reaches the catalogue must reach a search card on

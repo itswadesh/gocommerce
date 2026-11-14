@@ -1,6 +1,6 @@
 package cartrecovery
 
-import gocommerce "github.com/itswadesh/gocommerce/core"
+import gocommerce "github.com/misiki-in/gocommerce/core"
 
 // The messages a step can send, registered with the engine (D58) so their
 // wording is the store's to edit on Notifications › Setup Email, and what that

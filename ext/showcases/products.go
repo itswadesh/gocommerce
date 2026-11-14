@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // ProductSummary is a product as a showcase lists it: enough for a card and a

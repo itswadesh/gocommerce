@@ -3,7 +3,7 @@ package banners
 import (
 	"context"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The sample shop adds no banners any more (D257). It used to add three

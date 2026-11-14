@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // purchase is the part of the transaction payload this package is responsible

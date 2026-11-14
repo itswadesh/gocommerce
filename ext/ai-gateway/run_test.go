@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // A store that has not switched the gateway on sees nothing and pays

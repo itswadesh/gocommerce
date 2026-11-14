@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A store chooses one way for customers to sign in (D116): an email and a

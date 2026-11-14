@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The platform's own AI (D151, amended 2026-10-29). An install may give the

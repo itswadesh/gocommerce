@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Limits per phone do not stop one client texting many numbers. The two routes that

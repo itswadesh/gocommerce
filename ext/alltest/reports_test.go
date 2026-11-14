@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // credentialName is a column name that may hold a key to something.

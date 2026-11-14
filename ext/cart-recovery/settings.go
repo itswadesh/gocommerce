@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Settings is the automation screen: one sequence for baskets that reached

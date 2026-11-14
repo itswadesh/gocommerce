@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // The TallyPrime export (D138): a period's GST tax invoices as Tally's

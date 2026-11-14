@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/itswadesh/gocommerce/admin"
+	"github.com/misiki-in/gocommerce/admin"
 )
 
 // AdminPanelPath is where the admin panel is served.

@@ -16,9 +16,9 @@ import (
 	"sync"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	cartrecovery "github.com/itswadesh/gocommerce/ext/cart-recovery"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	cartrecovery "github.com/misiki-in/gocommerce/ext/cart-recovery"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 const (

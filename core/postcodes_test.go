@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // PIN codes (D134): the city and state from India Post's directory.

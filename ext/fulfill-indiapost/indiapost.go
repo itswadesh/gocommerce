@@ -49,7 +49,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/itswadesh/gocommerce/core"
+	"github.com/misiki-in/gocommerce/core"
 )
 
 // s10 is the UPU standard India Post issues under: two letters, nine digits,

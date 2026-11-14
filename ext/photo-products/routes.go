@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 func (m *Module) mountRoutes(app *gocommerce.App) {

@@ -1,6 +1,6 @@
 # GoCommerce
 
-GoCommerce is the open-source engine. [Svelte Commerce](https://github.com/itswadesh/svelte-commerce) is its storefront, and [ShopNx](https://shopnx.in) is the hosted service built on both.
+GoCommerce is the open-source engine. [Svelte Commerce](https://github.com/misiki-in/svelte-commerce) is its storefront, and [ShopNx](https://shopnx.in) is the hosted service built on both.
 
 **Commerce primitives in Go, without a commerce monolith.**
 
@@ -44,7 +44,7 @@ if err != nil {
 log.Fatal(app.ListenAndServe())
 ```
 
-The engine imports as `github.com/itswadesh/gocommerce/core`; the package is
+The engine imports as `github.com/misiki-in/gocommerce/core`; the package is
 still named `gocommerce`, so the code reads as above. The old root import path
 no longer resolves as a package — ignore any stale pkg.go.dev page for it.
 
@@ -225,7 +225,7 @@ contract cannot quietly drift from the code.
 ### Storefronts
 
 The API is the only thing a storefront needs, and anything that speaks HTTP will
-do. For [Svelte Commerce](https://github.com/itswadesh/svelte-commerce) there is
+do. For [Svelte Commerce](https://github.com/misiki-in/svelte-commerce) there is
 a connector, [`@misiki/gocommerce-connector`](https://github.com/misiki-in/gocommerce-connector),
 kept in a repository of its own like every connector in that family. It maps the
 storefront's service surface onto these routes and the storefront modules —

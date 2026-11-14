@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	aigateway "github.com/itswadesh/gocommerce/ext/ai-gateway"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	aigateway "github.com/misiki-in/gocommerce/ext/ai-gateway"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // The models the tests name, so a change to the gateway's defaults does not

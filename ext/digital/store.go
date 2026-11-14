@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // chunkSize is one row of digital_chunks. A megabyte keeps a 100 MiB file to a

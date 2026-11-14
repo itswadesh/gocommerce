@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // tracer is a module whose one route answers with the trace id its handler

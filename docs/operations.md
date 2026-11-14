@@ -110,7 +110,7 @@ docker compose up -d
 ```
 
 That starts the engine with its admin panel, PostgreSQL, Meilisearch, the
-shopper storefront ([Svelte Commerce](https://github.com/itswadesh/svelte-commerce),
+shopper storefront ([Svelte Commerce](https://github.com/misiki-in/svelte-commerce),
 built from its `gocomm` branch, so the first start takes several minutes) and
 Caddy on ports 80 and 443. Caddy gets every certificate from Let's Encrypt by
 itself.

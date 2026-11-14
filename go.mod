@@ -1,4 +1,4 @@
-module github.com/itswadesh/gocommerce
+module github.com/misiki-in/gocommerce
 
 go 1.27.0
 

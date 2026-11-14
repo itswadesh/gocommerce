@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A shopper asks about one product. The enquiry lands in the same inbox as the

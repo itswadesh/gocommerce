@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // A record keeps the currency its basket was in (D85), and a store may change

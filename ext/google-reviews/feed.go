@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	feeds "github.com/itswadesh/gocommerce/ext/feeds"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	feeds "github.com/misiki-in/gocommerce/ext/feeds"
 )
 
 // The product reviews feed, schema 2.4:

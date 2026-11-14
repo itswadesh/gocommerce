@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // maxScheduleAhead bounds how far ahead a page may be set to publish: a year

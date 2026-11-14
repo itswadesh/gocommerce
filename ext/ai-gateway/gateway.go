@@ -63,7 +63,7 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // The providers a store may choose. Each one's API host is a constant in

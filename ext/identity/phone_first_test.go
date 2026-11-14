@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Phone first, as Myntra signs in (D123): a store that allows both ways asks

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Fifty reservations racing for a cap that holds ten: exactly ten win, and

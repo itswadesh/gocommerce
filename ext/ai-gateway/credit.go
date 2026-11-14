@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // DefaultFreeTrial is the free AI trial a store gets before an operator tops

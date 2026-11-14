@@ -30,9 +30,9 @@ import (
 	"sync"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	feeds "github.com/itswadesh/gocommerce/ext/feeds"
-	reviews "github.com/itswadesh/gocommerce/ext/reviews"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	feeds "github.com/misiki-in/gocommerce/ext/feeds"
+	reviews "github.com/misiki-in/gocommerce/ext/reviews"
 )
 
 const pluginKey = "google-reviews"

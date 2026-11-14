@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
-	"github.com/itswadesh/gocommerce/gctest"
+	gocommerce "github.com/misiki-in/gocommerce/core"
+	"github.com/misiki-in/gocommerce/gctest"
 )
 
 // Chrome on Android fills a code in by itself when the text ends with

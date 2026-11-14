@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // The review of agent keys (PR #69): what an agent could still reach, what

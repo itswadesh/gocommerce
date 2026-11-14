@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Who changed a company's terms.

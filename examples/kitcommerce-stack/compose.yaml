@@ -127,7 +127,7 @@ services:
       # The gocomm branch, pinned to one commit. Its bun.lock pins
       # @misiki/gocommerce-connector; the build fails when that is not
       # CONNECTOR_VERSION.
-      context: https://github.com/itswadesh/svelte-commerce.git#${STOREFRONT_COMMIT:-9bddb23d53fc555df58ae0378f0848c5a9578090}
+      context: https://github.com/misiki-in/svelte-commerce.git#${STOREFRONT_COMMIT:-9bddb23d53fc555df58ae0378f0848c5a9578090}
       args:
         GIT_SHA: ${STOREFRONT_COMMIT:-9bddb23d53fc555df58ae0378f0848c5a9578090}
         CONNECTOR_VERSION: "0.14.0"

@@ -294,7 +294,7 @@ services:
   # every verified domain of a store.
   storefront:
     build:
-      context: https://github.com/itswadesh/svelte-commerce.git#${STOREFRONT_REF:-gocomm}
+      context: https://github.com/misiki-in/svelte-commerce.git#${STOREFRONT_REF:-gocomm}
     restart: unless-stopped
     depends_on:
       - gocommerce

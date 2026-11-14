@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // adEntity is a campaign, or a Meta ad set, as the platform has it now.

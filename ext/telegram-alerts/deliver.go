@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 // Delivery is one alert on its way to the owner's chat.

@@ -31,7 +31,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	gocommerce "github.com/itswadesh/gocommerce/core"
+	gocommerce "github.com/misiki-in/gocommerce/core"
 )
 
 const (

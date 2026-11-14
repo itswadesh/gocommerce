@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/itswadesh/gocommerce/internal/testdb"
+	"github.com/misiki-in/gocommerce/internal/testdb"
 )
 
 // newStrictTestApp boots an engine the way `serve` runs it: no default store,
