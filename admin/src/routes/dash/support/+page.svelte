@@ -1,35 +1,35 @@
 <script>
     /**
-     * Where a store's people reach the install's support. The message starts with
+     * Where a store's people reach the install's support, by email: the owner took
+     * the phone number and WhatsApp off it (14 Nov 2026). The message starts with
      * the store's name, so nobody has to be asked which store it is, and they can
-     * change it in WhatsApp before sending.
+     * change it before sending.
      */
     import { base } from "$app/paths";
     import { titled } from "$lib/brand.svelte.js";
     import { can } from "$lib/session.svelte.js";
     import { myStores } from "$lib/stores.svelte.js";
 
-    // ponytail: one number for the whole panel. Move it to the brand's settings
+    // ponytail: one address for the whole panel. Move it to the brand's settings
     // when a brand needs its own.
-    const WHATSAPP = "918249028220";
-    const SHOWN = "+91 82490 28220";
+    const EMAIL = "hi@shopnx.in";
 
     const store = $derived(myStores.current?.name);
     const message = $derived(store ? `Hi, I need help with my store ${store}.` : "Hi, I need help with my store.");
-    const whatsappTo = (text) => `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(text)}`;
-    const link = $derived(whatsappTo(message));
-    const setupLink = $derived(whatsappTo(store ? `Hi, I need help setting up my store ${store}.` : "Hi, I need help setting up my store."));
+    const mailTo = (text) => `mailto:${EMAIL}?subject=${encodeURIComponent("Support request")}&body=${encodeURIComponent(text)}`;
+    const link = $derived(mailTo(message));
+    const setupLink = $derived(mailTo(store ? `Hi, I need help setting up my store ${store}.` : "Hi, I need help setting up my store."));
 
-    // Sent as WhatsApp messages like the rest of this page, so they reach the same
+    // Sent as emails like the rest of this page, so they reach the same
     // person, and the store's name comes along. The first words say which kind it
     // is. An empty box has no link, so nothing blank can be sent.
     const fromStore = $derived(store ? ` from my store ${store}` : "");
     let issue = $state("");
     const reported = $derived(issue.trim());
-    const issueLink = $derived(reported && whatsappTo(`Issue report${fromStore}: ${reported}`));
+    const issueLink = $derived(reported && mailTo(`Issue report${fromStore}: ${reported}`));
     let feature = $state("");
     const asked = $derived(feature.trim());
-    const featureLink = $derived(asked && whatsappTo(`Feature request${fromStore}: ${asked}`));
+    const featureLink = $derived(asked && mailTo(`Feature request${fromStore}: ${asked}`));
 
     // Each opens as its own tab, so the panel stays where the person left it.
     const READING = [
@@ -84,15 +84,15 @@
             </nav>
         </header>
 
-        {#snippet sendOnWhatsapp(href, label)}
+        {#snippet sendByEmail(href, label)}
             {#if href}
-                <a class="btn support-whatsapp" {href} target="_blank" rel="noopener noreferrer">
-                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                <a class="btn support-send" {href}>
+                    <i class="ri-mail-send-line" aria-hidden="true"></i>
                     <span class="txt">{label}</span>
                 </a>
             {:else}
-                <button type="button" class="btn support-whatsapp" disabled>
-                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
+                <button type="button" class="btn support-send" disabled>
+                    <i class="ri-mail-send-line" aria-hidden="true"></i>
                     <span class="txt">{label}</span>
                 </button>
             {/if}
@@ -100,13 +100,13 @@
 
         <div class="support-cards">
             <section class="card support-card">
-                <h2 class="tw:text-sm tw:font-semibold">Message us on WhatsApp</h2>
+                <h2 class="tw:text-sm tw:font-semibold">Email us</h2>
                 <p class="txt-hint">Tell us what you need help with, and which screen you were on.</p>
-                <a class="btn support-whatsapp" href={link} target="_blank" rel="noopener noreferrer">
-                    <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                    <span class="txt">Chat on WhatsApp</span>
+                <a class="btn support-send" href={link}>
+                    <i class="ri-mail-send-line" aria-hidden="true"></i>
+                    <span class="txt">Email us</span>
                 </a>
-                <p class="txt-hint support-number">{SHOWN}</p>
+                <p class="txt-hint support-number">{EMAIL}</p>
                 <p class="support-promise">
                     <i class="ri-shield-check-line" aria-hidden="true"></i>
                     <span>No unwanted, promotional or spam messages. Guaranteed.</span>
@@ -115,12 +115,12 @@
     
             <section class="card support-card support-form">
                 <h2 class="tw:text-sm tw:font-semibold">Report an issue</h2>
-                <p class="txt-hint">Tell us what went wrong and which screen you were on. You can add a screenshot in WhatsApp.</p>
+                <p class="txt-hint">Tell us what went wrong and which screen you were on. You can attach a screenshot to the email.</p>
                 <div class="field support-form-field">
                     <label for="support_issue">What went wrong?</label>
                     <textarea id="support_issue" rows="3" maxlength="1000" bind:value={issue}></textarea>
                 </div>
-                {@render sendOnWhatsapp(issueLink, "Send report on WhatsApp")}
+                {@render sendByEmail(issueLink, "Send report by email")}
             </section>
     
             <section class="card support-card support-form">
@@ -130,7 +130,7 @@
                     <label for="support_feature">What should we add?</label>
                     <textarea id="support_feature" rows="3" maxlength="1000" bind:value={feature}></textarea>
                 </div>
-                {@render sendOnWhatsapp(featureLink, "Send request on WhatsApp")}
+                {@render sendByEmail(featureLink, "Send request by email")}
             </section>
         </div>
 
@@ -152,9 +152,9 @@
 
         <section class="card support-card support-setup-help">
             <h2 class="tw:text-sm tw:font-semibold">Need help setting up your store? Talk to us anytime.</h2>
-            <a class="btn support-whatsapp" href={setupLink} target="_blank" rel="noopener noreferrer">
-                <i class="ri-whatsapp-line" aria-hidden="true"></i>
-                <span class="txt">Talk to us on WhatsApp</span>
+            <a class="btn support-send" href={setupLink}>
+                <i class="ri-mail-send-line" aria-hidden="true"></i>
+                <span class="txt">Email us</span>
             </a>
         </section>
 
@@ -296,11 +296,11 @@
     .support-card p {
         margin: 0;
     }
-    .support-whatsapp {
+    .support-send {
         min-height: 44px;
         transition: transform 150ms ease-out;
     }
-    .support-whatsapp:active {
+    .support-send:active {
         transform: scale(0.98);
     }
     .support-video-head {
@@ -365,10 +365,10 @@
         transform: scale(0.98);
     }
     @media (prefers-reduced-motion: reduce) {
-        .support-whatsapp {
+        .support-send {
             transition: none;
         }
-        .support-whatsapp:active,
+        .support-send:active,
         .support-video:active,
         .support-link:active {
             transform: none;
