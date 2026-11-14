@@ -42,7 +42,16 @@ const SWITCHES = {
     newsletter: ["newsletter"],
     reviews: ["product-reviews"],
     wishlists: ["wishlist"],
-    settings: ["identity", "guest-checkout", "store-close", "enquiry-mode"],
+    settings: [
+        "identity",
+        "guest-checkout",
+        "store-close",
+        "enquiry-mode",
+        "pause-orders",
+        "minimum-order",
+        "store-pickup",
+        "checkout-questions",
+    ],
 };
 
 for (const [route, keys] of Object.entries(SWITCHES)) {
