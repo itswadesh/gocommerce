@@ -23,11 +23,16 @@ test("an issue report says it is one and carries what was typed", () => {
     assert.match(page, /Issue report\$\{fromStore\}: \$\{reported\}/);
 });
 
-test("the WhatsApp section keeps its promise about messages in view", () => {
+test("the email section keeps its promise about messages in view", () => {
     assert.match(page, /No unwanted, promotional or spam messages\. Guaranteed\./);
 });
 
 test("a feature request says when we will respond", () => {
     assert.match(page, /Found a feature somewhere and want it in your store\?/);
     assert.match(page, /respond within 24 hours/);
+});
+
+test("the Support page shows no phone number and no WhatsApp", () => {
+    assert.doesNotMatch(page, /wa\.me|ri-whatsapp|on WhatsApp|8249028220/);
+    assert.match(page, /mailto:\$\{EMAIL\}/);
 });
