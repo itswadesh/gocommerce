@@ -132,6 +132,10 @@ makes the code, limits the tries, checks it and issues the session, and a phone 
 linked to a store gives nobody a way in. A person still needs an operator account with
 that phone on it.
 
+**Paused since 14 November 2026 (D270):** the owner asked to stop WhatsApp sign-in codes
+for now, so the engine ignores `RETAIL_ASSISTANT_LOGIN_TEMPLATE` and codes go by SMS
+alone. To bring them back, restore the variable in `cmd/gocommerce/main.go`.
+
 1. In WhatsApp Manager, create an **Authentication** template with a copy-code button, in
    English (`en`) and Hindi (`hi`), and wait for Meta to approve it.
 2. Set `RETAIL_ASSISTANT_LOGIN_TEMPLATE` to its name.
