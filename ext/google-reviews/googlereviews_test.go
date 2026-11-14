@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -476,7 +477,7 @@ func TestTheProductRatingsFeedCarriesOnlyRealPublishedReviews(t *testing.T) {
 		s, m := rv.Products[0], rv.Products[1]
 		if strings.Join(s.GTINs, ",") != "4006381333931" || strings.Join(s.SKUs, ",") != "TEE-S" ||
 			strings.Join(s.MPNs, ",") != "TEE-S" || strings.Join(s.Brands, ",") != "Acme" ||
-			s.Name != "Crew Tee - S" || s.URL != "https://shop.example/products/crew-tee?variant=TEE-S" {
+			s.Name != "Crew Tee - S" || s.URL != fmt.Sprintf("https://shop.example/products/crew-tee?variant_id=%d", tee.Variants[0].ID) {
 			t.Errorf("first product = %+v", s)
 		}
 		if len(m.GTINs) != 0 || strings.Join(m.SKUs, ",") != "TEE-M" {
